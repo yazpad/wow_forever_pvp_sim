@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run library tests");
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/combat_soa.zig"),
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
     });

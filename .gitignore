@@ -1,2 +1,15 @@
 .zig-cache/
 zig-out/
+# Generated training and evaluation artifacts
+*.bin
+*.pop
+/matches/
+/models/
+/last_match.lua
+/last_match.json
+/gauntlet_match.lua
+/gauntlet_match.json
+/spec_matrix.lua
+/spec_matrix.json
+/training_metrics.lua
+/training_metrics.json
