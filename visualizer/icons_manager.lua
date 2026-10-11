@@ -227,4 +227,3 @@ function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, border
 end
 
 return icons
-

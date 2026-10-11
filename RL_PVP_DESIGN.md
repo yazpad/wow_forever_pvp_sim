@@ -225,6 +225,3 @@ Packaged branchlessly across 16 parallel duels:
     * CLI flag: `--gauntlet-interval <N>` evaluates the reigning champion against the gauntlet during training runs to track objective skill growth over generations.
     * CLI flag: `--eval-gauntlet <model.bin>` evaluates an existing model directly against the gauntlet suite and outputs a formatted ASCII diagnostic scorecard.
     * CLI flag: `--eval-bot <model.bin> <aggro|kiter|turret|draintank>` benchmarks a model against a specific bot with optional 100 Hz match recording and 2D Love2D visualizer playback (`--visualize`).
-
-
-

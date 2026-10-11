@@ -185,7 +185,7 @@ function matrix_view.draw()
         -- Row Header (Model Name & Elo)
         love.graphics.setColor((r == selectedRow) and 0.16 or 0.08, (r == selectedRow) and 0.22 or 0.11, (r == selectedRow) and 0.32 or 0.17, 0.9)
         love.graphics.rectangle("fill", 24, ry + 1, startX - 32, cellH - 2, 4)
-        
+
         icons.drawClassIcon("warlock", 40, ry + cellH * 0.5, 24)
 
         love.graphics.setColor(0.95, 0.95, 1.0, 1.0)

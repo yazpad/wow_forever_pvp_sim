@@ -92,7 +92,7 @@ end
 function love.load(arg)
     love.graphics.setBackgroundColor(0.03, 0.05, 0.09)
     icons.load()
-    
+
     local path = "last_match.lua"
     local metricsPath = "training_metrics.lua"
     local matrixPath = "spec_matrix.lua"
@@ -253,7 +253,7 @@ local function checkEvents(currT, frame)
             local col = isDc and { 0.2, 0.95, 0.4 } or { 0.95, 0.45, 1.0 }
             local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or string.format("-%d", math.floor(ev.a + 0.5))
             addFCT(targetX, -60, label, col, isDc and 1.6 or 1.4)
-            
+
             if not isDc then
                 table.insert(projectiles, {
                     kind = "shadowbolt",
@@ -336,7 +336,7 @@ function love.update(dt)
     for i = #projectiles, 1, -1 do
         local p = projectiles[i]
         p.progress = p.progress + dt / p.duration
-        
+
         -- Emit trailing particles
         if math.random() < 0.6 then
             local curX = p.sx + (p.tx - p.sx) * p.progress
@@ -431,7 +431,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     -- 2. Token Core with Class Icon (clean token, single border)
     love.graphics.setColor(0.10, 0.13, 0.20, 1.0)
     love.graphics.circle("fill", x, y, 32)
-    
+
     -- Draw Class Icon inside circular token
     local drawnClass = icons.drawClassIcon("warlock", x, y, 56)
     if not drawnClass then
