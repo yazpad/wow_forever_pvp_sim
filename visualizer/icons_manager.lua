@@ -1,4 +1,4 @@
--- 🎨 PVP_SIM: ICONS & TEXTURE MANAGER
+-- PVP_SIM: ICONS & TEXTURE MANAGER
 local icons = {}
 
 local loadedImages = {}
@@ -101,9 +101,21 @@ function icons.get(name)
 end
 
 --- Draw an icon centered at (x, y) with specified size (diameter/box)
+local frostSymbols = {icelance="IL", frostnova="FN", polymorph="PM", frostbolt="FB", blink="BL", icebarrier="IB", counterspell="CS", slow="SL"}
+local function drawFrostSymbol(name, x, y, w, h, alpha)
+    local symbol = frostSymbols[name]
+    if not symbol then return false end
+    love.graphics.setColor(0.08, 0.22, 0.35, alpha or 1)
+    love.graphics.rectangle("fill", x, y, w, h, 3)
+    love.graphics.setColor(0.4, 0.85, 1, alpha or 1)
+    love.graphics.rectangle("line", x, y, w, h, 3)
+    love.graphics.printf(symbol, x, y + (h-12)*0.5, w, "center")
+    return true
+end
+
 function icons.draw(name, x, y, size, r, g, b, a)
     local img = loadedImages[name]
-    if not img then return false end
+    if not img then return drawFrostSymbol(name, x-size*0.5, y-size*0.5, size, size, a) end
 
     love.graphics.setColor(r or 1, g or 1, b or 1, a or 1)
     local iw, ih = img:getDimensions()
@@ -116,7 +128,7 @@ end
 --- Draw an icon top-left aligned at (x, y) with size w, h
 function icons.drawRect(name, x, y, w, h, r, g, b, a)
     local img = loadedImages[name]
-    if not img then return false end
+    if not img then return drawFrostSymbol(name, x, y, w, h, a) end
 
     love.graphics.setColor(r or 1, g or 1, b or 1, a or 1)
     local iw, ih = img:getDimensions()
@@ -202,7 +214,7 @@ end
 -- maxDuration: full duration (e.g. 18.0s for Agony, 6.0s for Shield)
 function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, borderCol)
     local img = loadedImages[iconName]
-    if not img then return end
+    if not img and not frostSymbols[iconName] then return end
 
     -- Background frame
     love.graphics.setColor(0.04, 0.05, 0.08, 0.95)
@@ -210,8 +222,7 @@ function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, border
 
     -- Icon inside
     love.graphics.setColor(1, 1, 1, 1)
-    local iw, ih = img:getDimensions()
-    love.graphics.draw(img, x + 1, y + 1, 0, (size - 2) / iw, (size - 2) / ih)
+    icons.drawRect(iconName, x + 1, y + 1, size - 2, size - 2)
 
     -- Rotating duration mask (invert = true for buffs/debuffs so dark sweep fills as duration elapses)
     if duration and maxDuration and maxDuration > 0 then

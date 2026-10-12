@@ -13,3 +13,7 @@ zig-out/
 /spec_matrix.json
 /training_metrics.lua
 /training_metrics.json
+
+/training_runs/
+/evaluation_runs/
+/evaluation-status.txt

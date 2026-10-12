@@ -8,6 +8,7 @@ const match_recorder = @import("match_recorder.zig");
 const gauntlet_mod = @import("gauntlet.zig");
 const training_logger = @import("training_logger.zig");
 const spec_matrix_mod = @import("spec_matrix.zig");
+const spec_status_mod = @import("spec_status.zig");
 
 const CombatantPool = combat_soa.CombatantPool;
 const MatchRecorder = match_recorder.MatchRecorder;
@@ -15,6 +16,8 @@ const GauntletRunner = gauntlet_mod.GauntletRunner;
 const GauntletBotKind = gauntlet_mod.GauntletBotKind;
 const TrainingLogger = training_logger.TrainingLogger;
 const SpecMatrixEvaluator = spec_matrix_mod.SpecMatrixEvaluator;
+const Spec = @import("spec.zig").Spec;
+const spec_policy = @import("spec_policy.zig");
 
 fn exportAndMaybeVisualize(
     allocator: std.mem.Allocator,
@@ -53,6 +56,20 @@ fn exportAndMaybeVisualize(
 }
 
 pub fn main() !void {
+    var args = std.process.args();
+    var class: Spec = .warlock;
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--class")) class = Spec.parse(args.next() orelse return error.MissingClass) orelse return error.UnknownClass;
+    }
+    switch (class) {
+        .warlock => try runMain(.warlock),
+        .frost_mage => try runMain(.frost_mage),
+    }
+}
+
+fn runMain(comptime class: Spec) !void {
+    const ClassLeague = league_mod.LeagueFor(class);
+    const ClassGauntlet = gauntlet_mod.GauntletFor(class);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -60,7 +77,12 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
     // Default Configuration
+    var train_only = false;
+    var external_spec: ?Spec = null;
+    var live_metrics = false;
+    var stop_file: ?[]const u8 = null;
     var num_generations: usize = 10;
+    var threads: usize = 1;
     var pop_size: usize = 64;
     var duels_per_agent: usize = 4;
     var render_best: bool = false;
@@ -91,16 +113,33 @@ pub fn main() !void {
     var matrix_duels: usize = 32;
     var record_all_matches_dir: ?[]const u8 = null;
 
+    var check_spec_status: bool = false;
+    var spec_status_dir: []const u8 = "models";
+    var spec_status_out: ?[]const u8 = null;
+
     // Parse CLI arguments
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
     _ = args.next(); // Skip executable path
 
     while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--generations")) {
+        if (std.mem.eql(u8, arg, "--class")) {
+            _ = args.next() orelse return error.MissingClass;
+        } else if (std.mem.eql(u8, arg, "--opponent-class")) {
+            external_spec = Spec.parse(args.next() orelse return error.MissingOpponentClass) orelse return error.UnknownClass;
+        } else if (std.mem.eql(u8, arg, "--train-only")) {
+            train_only = true;
+        } else if (std.mem.eql(u8, arg, "--live-metrics")) {
+            live_metrics = true;
+        } else if (std.mem.eql(u8, arg, "--stop-file")) {
+            stop_file = args.next() orelse return error.MissingStopFile;
+        } else if (std.mem.eql(u8, arg, "--generations")) {
             if (args.next()) |val| {
                 num_generations = std.fmt.parseInt(usize, val, 10) catch 10;
             }
+        } else if (std.mem.eql(u8, arg, "--threads")) {
+            threads = try std.fmt.parseInt(usize, args.next() orelse return error.MissingThreadCount, 10);
+            if (threads == 0) return error.InvalidThreadCount;
         } else if (std.mem.eql(u8, arg, "--pop")) {
             if (args.next()) |val| {
                 pop_size = std.fmt.parseInt(usize, val, 10) catch 64;
@@ -171,6 +210,17 @@ pub fn main() !void {
                     eval_bot_target_name = val_bot;
                 }
             }
+        } else if (std.mem.eql(u8, arg, "--spec-status")) {
+            check_spec_status = true;
+            if (args.next()) |val| {
+                if (!std.mem.startsWith(u8, val, "--")) {
+                    spec_status_dir = val;
+                }
+            }
+        } else if (std.mem.eql(u8, arg, "--spec-status-out")) {
+            if (args.next()) |val| {
+                spec_status_out = val;
+            }
         } else if (std.mem.eql(u8, arg, "--eval-matrix")) {
             if (args.next()) |val| {
                 eval_matrix_dir = val;
@@ -200,8 +250,14 @@ pub fn main() !void {
                 \\Usage: pvp_sim [OPTIONS]
                 \\
                 \\Training & Evolution:
+                \\  --class <warlock|frost_mage>    Training class (default: warlock)
+                \\  --opponent-class <class>       Class of external sparring models (default: same class)
+                \\  --train-only                  Skip throughput benchmarks before training
+                \\  --live-metrics                Publish atomic metrics snapshots during training
+                \\  --stop-file <path>            Stop between generations when this file exists
                 \\  --generations <N>             Number of league evolution generations (default: 10)
                 \\  --pop <N>                     Population size in genomes (default: 64)
+                \\  --threads <N>                 Training workers (default: 1)
                 \\  --duels <N>                   Duels per agent per generation (default: 4)
                 \\  --save-champion <path.bin>    Export champion neural weights (.bin)
                 \\  --save-population <path.pop>  Export full population checkpoint (.pop)
@@ -238,6 +294,9 @@ pub fn main() !void {
         }
     }
 
+    if (pop_size < 2 or duels_per_agent == 0 or checkpoint_interval == 0 or gauntlet_interval == 0)
+        return error.InvalidTrainingConfiguration;
+
     try stdout.print("\n======================================================\n", .{});
     try stdout.print("         ⚔️  PVP_SIM: HIGH-PERFORMANCE SIMD ENGINE       \n", .{});
     try stdout.print("======================================================\n\n", .{});
@@ -247,17 +306,17 @@ pub fn main() !void {
     // ---------------------------------------------------------
     if (eval_gauntlet_path) |path| {
         try stdout.print("[Objective Gauntlet] Benchmarking '{s}' against 4 baseline bot archetypes...\n", .{path});
-        const model = try policy_simd.PolicyGenome.loadFromFile(path);
+        const model = try spec_policy.loadFor(class, path);
 
-        var runner = try GauntletRunner.init(allocator);
+        var runner = try ClassGauntlet.init(allocator);
         defer runner.deinit();
 
         const report = runner.evaluateChampion(&model, 64, 45.0, 0.010);
-        try GauntletRunner.printReport(&report, stdout);
+        try ClassGauntlet.printReport(&report, stdout);
 
         if (record_match_path != null or launch_visualizer) {
             try stdout.print("Recording representative match vs Fear-Kite Specialist...\n", .{});
-            var traj = try GauntletRunner.recordDuelVsBot(allocator, &model, .FearKiter, path, 45.0, 0.010);
+            var traj = try ClassGauntlet.recordDuelVsBot(allocator, &model, .FearKiter, path, 45.0, 0.010);
             defer traj.deinit();
             try exportAndMaybeVisualize(allocator, &traj, record_match_path, launch_visualizer, stdout);
         }
@@ -276,12 +335,12 @@ pub fn main() !void {
             bot_kind.getIcon(),
             bot_kind.getName(),
         });
-        const model = try policy_simd.PolicyGenome.loadFromFile(path);
+        const model = try spec_policy.loadFor(class, path);
 
-        var runner = try GauntletRunner.init(allocator);
+        var runner = try ClassGauntlet.init(allocator);
         defer runner.deinit();
 
-        var traj = try GauntletRunner.recordDuelVsBot(allocator, &model, bot_kind, path, 45.0, 0.010);
+        var traj = try ClassGauntlet.recordDuelVsBot(allocator, &model, bot_kind, path, 45.0, 0.010);
         defer traj.deinit();
 
         try stdout.print("  -> Match Duration: {d:0.2}s | Victor: {s}\n\n", .{
@@ -299,25 +358,27 @@ pub fn main() !void {
     if (eval_model_a) |path_a| {
         if (eval_model_b) |path_b| {
             try stdout.print("[Evaluation Mode] Pitting two pre-trained models head-to-head...\n", .{});
-            const model_a = try policy_simd.PolicyGenome.loadFromFile(path_a);
-            const model_b = try policy_simd.PolicyGenome.loadFromFile(path_b);
-
-            try stdout.print("  -> Competitor A: '{s}' (Elo: {d:0.1})\n", .{ path_a, model_a.elo });
-            try stdout.print("  -> Competitor B: '{s}' (Elo: {d:0.1})\n\n", .{ path_b, model_b.elo });
-
-            // Display text replay
-            var league = try league_mod.League.init(allocator, .{ .pop_size = 16 }, 1);
-            defer league.deinit();
-            try league.replayDuelVisual(&model_a, &model_b, stdout);
-
-            // Record trajectory and/or launch Love2D visualizer if requested
-            if (record_match_path != null or launch_visualizer) {
-                try stdout.print("\nRecording high-fidelity 100Hz trajectory...\n", .{});
-                var traj = try MatchRecorder.recordDuel(allocator, &model_a, &model_b, path_a, path_b, 45.0, 0.010);
-                defer traj.deinit();
-
-                try exportAndMaybeVisualize(allocator, &traj, record_match_path, launch_visualizer, stdout);
+            const model_a = try spec_policy.load(path_a);
+            const model_b = try spec_policy.load(path_b);
+            try stdout.print("  -> {s} vs {s}\n", .{ @tagName(model_a.spec), @tagName(model_b.spec) });
+            if (model_a.spec == .warlock and model_b.spec == .warlock) {
+                var league = try league_mod.League.init(allocator, .{ .pop_size = 16 }, 1);
+                defer league.deinit();
+                try league.replayDuelVisual(&model_a.genome, &model_b.genome, stdout);
             }
+            var traj = switch (model_a.spec) {
+                .warlock => switch (model_b.spec) {
+                    .warlock => try MatchRecorder.recordDuel(allocator, &model_a.genome, &model_b.genome, path_a, path_b, 45, 0.01),
+                    .frost_mage => try MatchRecorder.recordPair(.warlock, .frost_mage, allocator, &model_a.genome, &model_b.genome, model_b.genome.elo, path_a, path_b, 45, 0.01),
+                },
+                .frost_mage => switch (model_b.spec) {
+                    .warlock => try MatchRecorder.recordPair(.frost_mage, .warlock, allocator, &model_a.genome, &model_b.genome, model_b.genome.elo, path_a, path_b, 45, 0.01),
+                    .frost_mage => try MatchRecorder.recordPair(.frost_mage, .frost_mage, allocator, &model_a.genome, &model_b.genome, model_b.genome.elo, path_a, path_b, 45, 0.01),
+                },
+            };
+            defer traj.deinit();
+            try stdout.print("  -> Match Duration: {d:.2}s | Victor: {s}\n", .{ traj.total_time_s, if (traj.victor == 0) "A" else if (traj.victor == 1) "B" else "Draw" });
+            try exportAndMaybeVisualize(allocator, &traj, record_match_path, launch_visualizer, stdout);
 
             return;
         }
@@ -399,71 +460,96 @@ pub fn main() !void {
     }
 
     // ---------------------------------------------------------
+    // Mode D: Spec & Pairwise Health Status Check (--spec-status)
+    // ---------------------------------------------------------
+    if (check_spec_status) {
+        var monitor = spec_status_mod.SpecHealthMonitor.init(allocator);
+        defer monitor.deinit();
+
+        try stdout.print("[Spec Monitor] Scanning models from '{s}' and 'training_runs'...\n", .{spec_status_dir});
+        try monitor.scanModels(spec_status_dir);
+        try monitor.scanModels("training_runs");
+
+        const health = try monitor.analyze();
+        try monitor.renderReport(health, stdout);
+
+        if (spec_status_out) |out_path| {
+            try monitor.exportLua(health, out_path);
+            try stdout.print("  -> Exported spec health status to '{s}'\n\n", .{out_path});
+        }
+        return;
+    }
+
+    // ---------------------------------------------------------
     // Benchmark 1: Mass Unit Status / Damage Ticking (AVX-512)
     // ---------------------------------------------------------
-    const num_units = 100_000;
-    try stdout.print("[Benchmark 1] Initializing {d} combatants in SoA layout...\n", .{num_units});
-    
-    var pool = try CombatantPool.init(allocator, num_units);
-    defer pool.deinit();
-    pool.seedRandom(num_units, 42);
+    if (!train_only) {
+        const num_units = 100_000;
+        try stdout.print("[Benchmark 1] Initializing {d} combatants in SoA layout...\n", .{num_units});
 
-    const num_ticks = 1_000;
-    const dt: f32 = 0.016; // 60 FPS tick (16ms)
-    try stdout.print("Simulating {d} ticks (dt = {d:0.3}s) for {d} units...\n", .{ num_ticks, dt, num_units });
+        var pool = try CombatantPool.init(allocator, num_units);
+        defer pool.deinit();
+        pool.seedRandom(num_units, 42);
 
-    const start_tick_ns = std.time.nanoTimestamp();
-    var last_alive: usize = 0;
-    for (0..num_ticks) |_| {
-        last_alive = pool.tickBatch(dt);
+        const num_ticks = 1_000;
+        const dt: f32 = 0.016; // 60 FPS tick (16ms)
+        try stdout.print("Simulating {d} ticks (dt = {d:0.3}s) for {d} units...\n", .{ num_ticks, dt, num_units });
+
+        const start_tick_ns = std.time.nanoTimestamp();
+        var last_alive: usize = 0;
+        for (0..num_ticks) |_| {
+            last_alive = pool.tickBatch(dt);
+        }
+        const end_tick_ns = std.time.nanoTimestamp();
+        const tick_duration_s = @as(f64, @floatFromInt(end_tick_ns - start_tick_ns)) / 1e9;
+        const total_evaluations = @as(f64, @floatFromInt(num_units * num_ticks));
+        const evaluations_per_sec = total_evaluations / tick_duration_s;
+
+        try stdout.print("  -> Completed in:      {d:0.3} seconds\n", .{tick_duration_s});
+        try stdout.print("  -> Combatant Ticks:   {d:0.2} Million / sec\n", .{evaluations_per_sec / 1e6});
+        try stdout.print("  -> Per-Batch Tick:    {d:0.3} ms\n", .{(tick_duration_s / @as(f64, @floatFromInt(num_ticks))) * 1000.0});
+        try stdout.print("  -> Units Surviving:   {d} / {d}\n\n", .{ last_alive, num_units });
+
+        // ---------------------------------------------------------
+        // Benchmark 2: Monte-Carlo Parallel 1v1 Duels
+        // ---------------------------------------------------------
+        const num_duels = 64_000;
+        try stdout.print("[Benchmark 2] Simulating {d} simultaneous 1v1 Duels...\n", .{num_duels});
+
+        var team_a = try CombatantPool.init(allocator, num_duels);
+        defer team_a.deinit();
+        team_a.seedRandom(num_duels, 101);
+
+        var team_b = try CombatantPool.init(allocator, num_duels);
+        defer team_b.deinit();
+        team_b.seedRandom(num_duels, 202);
+
+        const start_duel_ns = std.time.nanoTimestamp();
+        const duel_results = CombatantPool.simulateDuelsSoA(&team_a, &team_b, 0.05, 500);
+        const end_duel_ns = std.time.nanoTimestamp();
+
+        const duel_duration_s = @as(f64, @floatFromInt(end_duel_ns - start_duel_ns)) / 1e9;
+        const duels_per_sec = @as(f64, @floatFromInt(num_duels)) / duel_duration_s;
+
+        try stdout.print("  -> Completed in:      {d:0.3} seconds\n", .{duel_duration_s});
+        try stdout.print("  -> Duel Throughput:   {d:0.1} Duels / sec\n", .{duels_per_sec});
+        try stdout.print("  -> Total Sim Ticks:   {d:0.2} Million ticks\n", .{@as(f64, @floatFromInt(duel_results.total_ticks)) / 1e6});
+        try stdout.print("  -> Results:           Team A wins: {d} | Team B wins: {d} | Draws: {d}\n\n", .{
+            duel_results.wins_a,
+            duel_results.wins_b,
+            duel_results.draws,
+        });
     }
-    const end_tick_ns = std.time.nanoTimestamp();
-    const tick_duration_s = @as(f64, @floatFromInt(end_tick_ns - start_tick_ns)) / 1e9;
-    const total_evaluations = @as(f64, @floatFromInt(num_units * num_ticks));
-    const evaluations_per_sec = total_evaluations / tick_duration_s;
-
-    try stdout.print("  -> Completed in:      {d:0.3} seconds\n", .{tick_duration_s});
-    try stdout.print("  -> Combatant Ticks:   {d:0.2} Million / sec\n", .{evaluations_per_sec / 1e6});
-    try stdout.print("  -> Per-Batch Tick:    {d:0.3} ms\n", .{(tick_duration_s / @as(f64, @floatFromInt(num_ticks))) * 1000.0});
-    try stdout.print("  -> Units Surviving:   {d} / {d}\n\n", .{ last_alive, num_units });
-
-    // ---------------------------------------------------------
-    // Benchmark 2: Monte-Carlo Parallel 1v1 Duels
-    // ---------------------------------------------------------
-    const num_duels = 64_000;
-    try stdout.print("[Benchmark 2] Simulating {d} simultaneous 1v1 Duels...\n", .{num_duels});
-
-    var team_a = try CombatantPool.init(allocator, num_duels);
-    defer team_a.deinit();
-    team_a.seedRandom(num_duels, 101);
-
-    var team_b = try CombatantPool.init(allocator, num_duels);
-    defer team_b.deinit();
-    team_b.seedRandom(num_duels, 202);
-
-    const start_duel_ns = std.time.nanoTimestamp();
-    const duel_results = CombatantPool.simulateDuelsSoA(&team_a, &team_b, 0.05, 500);
-    const end_duel_ns = std.time.nanoTimestamp();
-
-    const duel_duration_s = @as(f64, @floatFromInt(end_duel_ns - start_duel_ns)) / 1e9;
-    const duels_per_sec = @as(f64, @floatFromInt(num_duels)) / duel_duration_s;
-
-    try stdout.print("  -> Completed in:      {d:0.3} seconds\n", .{duel_duration_s});
-    try stdout.print("  -> Duel Throughput:   {d:0.1} Duels / sec\n", .{duels_per_sec});
-    try stdout.print("  -> Total Sim Ticks:   {d:0.2} Million ticks\n", .{@as(f64, @floatFromInt(duel_results.total_ticks)) / 1e6});
-    try stdout.print("  -> Results:           Team A wins: {d} | Team B wins: {d} | Draws: {d}\n\n", .{
-        duel_results.wins_a,
-        duel_results.wins_b,
-        duel_results.draws,
-    });
 
     // ---------------------------------------------------------
     // Benchmark 3: Vectorized Warlock RL Tournament (League Play)
     // ---------------------------------------------------------
-    try stdout.print("[Benchmark 3] Running Vectorized RL Warlock League Play (Neuroevolution)...\n", .{});
+    try stdout.print("[Benchmark 3] Running Vectorized RL {s} League Play (Neuroevolution)...\n", .{@tagName(class)});
 
-    var league: league_mod.League = undefined;
+    var league: ClassLeague = undefined;
     const league_cfg = league_mod.LeagueConfig{
+        .threads = threads,
+        .external_spec = external_spec,
         .pop_size = pop_size,
         .hall_of_fame_capacity = 16,
         .duels_per_agent = duels_per_agent,
@@ -474,13 +560,13 @@ pub fn main() !void {
 
     if (resume_checkpoint_path) |ckpt_path| {
         try stdout.print("  -> Resuming population state from checkpoint '{s}'...\n", .{ckpt_path});
-        league = try league_mod.League.loadCheckpoint(allocator, ckpt_path, league_cfg);
+        league = try ClassLeague.loadCheckpoint(allocator, ckpt_path, league_cfg);
     } else if (seed_from_path) |seed_path| {
         try stdout.print("  -> Seeding new population around champion '{s}' (Gaussian sigma = 0.05)...\n", .{seed_path});
-        const champ = try policy_simd.PolicyGenome.loadFromFile(seed_path);
-        league = try league_mod.League.seedFromChampion(allocator, league_cfg, &champ, 42, 0.05);
+        const champ = try spec_policy.loadFor(class, seed_path);
+        league = try ClassLeague.seedFromChampion(allocator, league_cfg, &champ, 42, 0.05);
     } else {
-        league = try league_mod.League.init(allocator, league_cfg, 42);
+        league = try ClassLeague.init(allocator, league_cfg, 42);
     }
     defer league.deinit();
 
@@ -495,14 +581,15 @@ pub fn main() !void {
         try stdout.print("  -> Loaded {d} external sparring partners into matchmaking.\n", .{loaded});
     }
 
-    var gauntlet_runner: ?GauntletRunner = null;
+    var gauntlet_runner: ?ClassGauntlet = null;
     if (gauntlet_interval != null or run_gauntlet_end) {
-        gauntlet_runner = try GauntletRunner.init(allocator);
+        gauntlet_runner = try ClassGauntlet.init(allocator);
     }
     defer if (gauntlet_runner) |*gr| gr.deinit();
 
     var logger = TrainingLogger.init(allocator);
     defer logger.deinit();
+    logger.spec = class;
 
     const start_gen = league.generation;
     const target_gen = start_gen + num_generations;
@@ -518,7 +605,19 @@ pub fn main() !void {
     var current_gen: usize = start_gen;
     var duels_before_gen: usize = league.total_duels_simulated;
 
+    var last_metrics_ns = start_league_ns;
+    if (live_metrics) {
+        if (metrics_path) |path| try logger.exportAtomic(path);
+    }
     while (current_gen < target_gen) : (current_gen += 1) {
+        if (stop_file) |path| {
+            if (std.fs.cwd().access(path, .{})) |_| {
+                try stdout.print("Stop requested; saving at generation {d}.\n", .{league.generation});
+                break;
+            } else |err| {
+                if (err != error.FileNotFound) return err;
+            }
+        }
         const gen_start = std.time.nanoTimestamp();
         league.stepGeneration();
         const gen_end = std.time.nanoTimestamp();
@@ -565,30 +664,31 @@ pub fn main() !void {
         }
 
         try logger.record(m);
+        const now_ns = std.time.nanoTimestamp();
+        if (live_metrics and now_ns - last_metrics_ns >= 250 * std.time.ns_per_ms) {
+            if (metrics_path) |path| try logger.exportAtomic(path);
+            last_metrics_ns = now_ns;
+        }
     }
     const end_league_ns = std.time.nanoTimestamp();
 
     const total_league_s = @as(f64, @floatFromInt(end_league_ns - start_league_ns)) / 1e9;
     const duels_per_sec_league = @as(f64, @floatFromInt(league.total_duels_simulated)) / total_league_s;
 
-    try stdout.print("\n  -> Completed {d} Gens in: {d:0.3} seconds\n", .{ num_generations, total_league_s });
+    try stdout.print("\n  -> Completed {d} Gens in: {d:0.3} seconds\n", .{ league.generation - start_gen, total_league_s });
     try stdout.print("  -> Total Duels Fought:   {d}\n", .{league.total_duels_simulated});
     try stdout.print("  -> RL Duel Throughput:   {d:0.1} Duels / sec (with NN policy inference!)\n\n", .{duels_per_sec_league});
 
     // Export training metrics
     if (metrics_path) |m_path| {
-        if (std.mem.endsWith(u8, m_path, ".json")) {
-            try logger.exportJson(m_path);
-        } else {
-            try logger.exportLua(m_path);
-        }
+        try logger.exportAtomic(m_path);
         try stdout.print("Saved training progress telemetry to '{s}' ({d} generations)\n\n", .{ m_path, logger.history.items.len });
     }
 
     // Optional: Save champion
     if (save_champion_path) |path| {
-        try league.getBest().saveToFile(path);
-        try stdout.print("Saved champion weights to '{s}' ({d} bytes)\n\n", .{ path, @sizeOf(policy_simd.PolicyGenome) });
+        try spec_policy.save(league.getBest(), class, path);
+        try stdout.print("Saved champion weights to '{s}' ({d} bytes)\n\n", .{ path, @sizeOf(policy_simd.PolicyGenome) + (if (class == .frost_mage) @as(usize, 8) else 0) });
     }
 
     // Optional: Save full population checkpoint
@@ -601,7 +701,7 @@ pub fn main() !void {
     if (run_gauntlet_end and gauntlet_runner != null) {
         try stdout.print("[Objective Gauntlet Evaluation] Running final scorecard against baseline bots...\n", .{});
         const rep = gauntlet_runner.?.evaluateChampion(league.getBest(), 64, 45.0, 0.010);
-        try GauntletRunner.printReport(&rep, stdout);
+        try ClassGauntlet.printReport(&rep, stdout);
     }
 
     // Optional: Launch Love2D Visualizer directly in training graph mode
@@ -628,7 +728,7 @@ pub fn main() !void {
         const best = league.getBest();
         const runner_up = &league.population[@min(1, league.population.len - 1)];
         try stdout.print("Recording high-fidelity 100Hz champion duel...\n", .{});
-        var traj = try MatchRecorder.recordDuel(allocator, best, runner_up, "Tournament Champion", "Runner-Up", 45.0, 0.010);
+        var traj = try MatchRecorder.recordPair(class, class, allocator, best, runner_up, runner_up.elo, "Tournament Champion", "Runner-Up", 45.0, 0.010);
         defer traj.deinit();
 
         try exportAndMaybeVisualize(allocator, &traj, record_match_path, launch_visualizer, stdout);

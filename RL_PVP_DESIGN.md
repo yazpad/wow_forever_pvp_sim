@@ -143,20 +143,31 @@ Packaged branchlessly across 16 parallel duels:
     * Full RL Neuroevolution Duels: $\ge 20,000$ duels/sec with neural forward passes and action masking.
   * Static compile-time checks (`@typeInfo`) ensuring all SoA arrays are 64-byte aligned and processed via `@Vector(16, f32)`.
 
-### TODO 2: Multi-Spec League Architecture & Asymmetric Spec-vs-Spec Specialization [OPEN]
-* **Objective:** Expand beyond Warlock into a full multi-spec PvP meta (Mage, Warrior, Rogue) with a two-stage specialization training curriculum.
-* **Current state:** The model matrix compares Warlock policies sharing the same kit; filenames such as “destro” and “soul link” do not enable distinct spec mechanics. Multi-class registration and the two-stage training curriculum remain unimplemented.
+### TODO 2: Multi-Spec League Architecture & Asymmetric Spec-vs-Spec Specialization [IN PROGRESS]
+* **Objective:** Expand beyond base classes into a full talent-based multi-spec PvP meta (x/y/z builds) with complete base foundation coverage, pairwise spec-vs-spec models, and visualizer monitoring.
+* **Current state:**
+  * **Talent Builds (`x/y/z`) & Modifiers:** `src/spec.zig` defines `TalentBuild` (parsing `x/y/z` distributions e.g. Affliction `30/0/21`, Soul Link `20/31/0`, Destruction `0/17/34`, Deep Frost `17/0/34`, Elemental `0/28/23`) and compile-time branchless `CombatModifiers` (damage multipliers, cast times, cooldowns, and defensives).
+  * **Spec Health & Coverage Monitor (`src/spec_status.zig`):** CLI flags `--spec-status [dir]` and `--spec-status-out <path.lua>` audit which canonical specs have trained bases and which pairwise $(S_i, S_j)$ matchup models exist vs missing.
+  * **Pairwise Models:** Need models trained for each spec vs spec pair across the meta matrix.
+* **Visualizer Support Requirements (Love2D Dashboard):**
+  * **Spec & Meta Health Dashboard Tab (`visualizer/`):**
+    * Display canonical spec list with talent breakdowns (`x/y/z`), tree point bars, and base foundation training status (trained badge, Elo, model file).
+    * Show an interactive $N \times N$ Pairwise Matchup Matrix grid highlighting:
+      - Trained specialized models (with win rates, sample duels, and fight replays).
+      - Missing / unspecialized pairs with one-click "Train Pair Matchup" button.
+      - Meta health gauges: Overall Base Coverage % and Pairwise Coverage %.
+  * **Training Pipeline Automation (`visualizer/pipeline.lua`):**
+    * Dynamically generate pipeline training stages for all canonical specs (Base Foundations) and all pairwise matchup stages ($S_i \text{ vs } S_j$).
+    * Allow queueing "Train All Bases" or "Train Missing Pairs" directly from the visualizer UI.
+  * **Matchup Card & Replay Integration:**
+    * In Matrix View (`visualizer/matrix_view.lua`), display the exact talent builds `x/y/z` and combat modifier highlights (e.g. "+25% DoT Dmg", "-20% Dmg Taken") on the deep-dive card.
 * **Two-Stage Spec Training Pipeline:**
   1. **Phase 1: Base Class Foundation Training:**
-     * Train a general foundation model per class (e.g., base Warlock, base Mage, base Warrior, base Rogue) on core kit mechanics, resource management, distance control, and generic dueling.
+     * Train a general foundation model per spec (e.g., base Affliction, base Soul Link, base Destro, base Deep Frost) on core kit mechanics, resource management, distance control, and generic dueling.
   2. **Phase 2: Asymmetric Spec-vs-Spec Specialization Tuning:**
-     * Branch from base models into specialized spec-vs-spec matchup policies (e.g. *Affliction Warlock tuned specifically vs. Arms Warrior*, *Frost Mage tuned vs. Subtlety Rogue*).
+     * Branch from base models into specialized spec-vs-spec matchup policies (e.g. *Affliction Warlock tuned specifically vs. Deep Frost Mage*).
      * The final deployed models do not use the raw base model; instead, specialized heads/policies handle distinct matchup dynamics (e.g., kiting gap-closers vs. counter-spell fake casting).
-     * Provide inspection tooling to compare spec vs. spec performance, isolate weak matchup segments, and improve targeted abilities/heuristics.
-* **Requirements:**
-  * Unified spec registration in `MultiSpecArenaPool` (parameter tables for Frostbolt, Nova, Blink, Mortal Strike, Charge, Pummel, Shadowstep, Kick, Cheap Shot, etc.).
-  * Cross-Spec Matchmaking Matrix with intra-spec and cross-spec Elo tracking.
-  * Specialized matchmaking schedules pairing candidate spec agents against frozen sparring pools of opponent specs.
+     * Provide inspection tooling in Love2D to compare spec vs. spec performance, isolate weak matchup segments, and replay representative fights.
 
 ### TODO 3: Zero-Overhead Deployment & 2D PvP Fight Visualizer (Evaluation) ✅ [COMPLETE]
 * **Objective:** Visually inspect and evaluate PvP matches in a full 2D representation without degrading headless training throughput.
@@ -225,3 +236,15 @@ Packaged branchlessly across 16 parallel duels:
     * CLI flag: `--gauntlet-interval <N>` evaluates the reigning champion against the gauntlet during training runs to track objective skill growth over generations.
     * CLI flag: `--eval-gauntlet <model.bin>` evaluates an existing model directly against the gauntlet suite and outputs a formatted ASCII diagnostic scorecard.
     * CLI flag: `--eval-bot <model.bin> <aggro|kiter|turret|draintank>` benchmarks a model against a specific bot with optional 100 Hz match recording and 2D Love2D visualizer playback (`--visualize`).
+
+### TODO 6: Multi-Threaded Training ✅ [IMPLEMENTED]
+* **Objective:** Distribute SIMD duel batches across CPU cores while preserving single-threaded training behavior and keeping the Love2D app responsive.
+* **Delivered:** Persistent workers with private aligned 16-lane arenas, main-thread matchmaking and ordered scoring, batch-scoped physics, CLI/Love2D thread controls, exact equivalence and resume tests, and desktop stop/save integration coverage. See [benchmark results and performance concerns](MULTITHREADING.md).
+* **Implementation checklist:**
+  * [x] Precompute the generation's match schedule on the main thread using the existing random generator and scheduling order.
+  * [x] Separate duel simulation from result application; workers read policy weights and return outcomes without mutating agents or league counters.
+  * [x] Use a persistent worker pool with a private, aligned arena per worker and retain 16-wide SIMD within each batch.
+  * [x] Apply results on the main thread in the original match/lane order to preserve Elo and fitness updates; join workers before metrics, checkpoints, or breeding.
+  * [x] Add `--threads N` and a matching Love2D training setting, retaining a one-thread fallback.
+  * [x] Verify equivalent outcomes, fitness, Elo, and telemetry across thread counts for fixed seeds, including peer, historical, external, and bot opponents; cover resume and graceful stop/save.
+  * [x] Benchmark 1, 2, 4, and higher worker counts on the target CPU, including overhead and memory usage, before selecting a default.

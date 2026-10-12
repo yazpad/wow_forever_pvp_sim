@@ -7,6 +7,9 @@ const match_recorder = @import("match_recorder.zig");
 const gauntlet_mod = @import("gauntlet.zig");
 
 const PolicyGenome = policy_simd.PolicyGenome;
+const Spec = @import("spec.zig").Spec;
+const spec_policy = @import("spec_policy.zig");
+const multi_spec = @import("multi_spec.zig");
 const WarlockArenaPool = combat_spec.WarlockArenaPool;
 const WarlockConstants = combat_spec.WarlockConstants;
 const VEC_LEN = simd.SimdConfig.VecLen16;
@@ -15,6 +18,7 @@ const GauntletBotKind = gauntlet_mod.GauntletBotKind;
 const GauntletRunner = gauntlet_mod.GauntletRunner;
 
 pub const ModelEntry = struct {
+    spec: Spec = .warlock,
     file_name: []const u8,
     file_path: []const u8,
     display_name: []const u8,
@@ -80,7 +84,7 @@ pub const SpecMatrixEvaluator = struct {
                 const full_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dir_path, entry.name });
                 errdefer self.allocator.free(full_path);
 
-                const genome = policy_simd.PolicyGenome.loadFromFile(full_path) catch {
+                const model = spec_policy.load(full_path) catch {
                     self.allocator.free(full_path);
                     continue;
                 };
@@ -98,7 +102,8 @@ pub const SpecMatrixEvaluator = struct {
                     .file_name = f_name,
                     .file_path = full_path,
                     .display_name = disp,
-                    .genome = genome,
+                    .genome = model.genome,
+                    .spec = model.spec,
                 });
                 count += 1;
             }
@@ -115,13 +120,6 @@ pub const SpecMatrixEvaluator = struct {
         const n = self.models.items.len;
         if (n == 0) return;
 
-        var arena = try WarlockArenaPool.init(self.allocator, 64);
-        defer arena.deinit();
-
-        const dt: f32 = 0.010;
-        const max_duel_seconds: f32 = 30.0;
-        const max_ticks: usize = @intFromFloat(max_duel_seconds / dt);
-
         // 1. Initialize matrix tables
         for (0..n) |_| {
             var row = std.ArrayList(MatchupResult).init(self.allocator);
@@ -133,7 +131,6 @@ pub const SpecMatrixEvaluator = struct {
         }
 
         // 2. Model vs Model Evaluation
-        const num_batches = (duels_per_matchup + VEC_LEN - 1) / VEC_LEN;
         for (0..n) |i| {
             for (0..n) |j| {
                 if (i == j) {
@@ -147,61 +144,7 @@ pub const SpecMatrixEvaluator = struct {
                     continue;
                 }
 
-                var res = MatchupResult{};
-                var p_a = self.models.items[i].genome;
-                var p_b = self.models.items[j].genome;
-
-                for (0..num_batches) |_| {
-                    for (0..VEC_LEN) |lane| arena.resetDuel(lane);
-                    var elapsed_ticks: usize = 0;
-
-                    while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
-                        const act_mask = arena.is_active[0..VEC_LEN].* > @as(simd.u32x16, @splat(0));
-                        if (!@reduce(.Or, act_mask)) break;
-
-                        const dec_a = arena.needsDecisionA(0);
-                        if (@reduce(.Or, dec_a)) {
-                            const obs_a = arena.getObservationsA(0);
-                            const masks_a = arena.getActionMaskA(0);
-                            const out_a = p_a.forward16(obs_a, masks_a);
-                            arena.applyActionA(0, out_a.actions, out_a.move_intents);
-                        }
-
-                        const dec_b = arena.needsDecisionB(0);
-                        if (@reduce(.Or, dec_b)) {
-                            const obs_b = arena.getObservationsB(0);
-                            const masks_b = arena.getActionMaskB(0);
-                            const out_b = p_b.forward16(obs_b, masks_b);
-                            arena.applyActionB(0, out_b.actions, out_b.move_intents);
-                        }
-
-                        _ = arena.tickPhysics(dt);
-                    }
-
-                    for (0..VEC_LEN) |lane| {
-                        res.duels += 1;
-                        const hp_a = arena.hp_a[lane];
-                        const hp_b = arena.hp_b[lane];
-                        res.avg_hp_a += hp_a;
-                        res.avg_hp_b += hp_b;
-                        res.avg_duration_s += @as(f32, @floatFromInt(elapsed_ticks)) * dt;
-
-                        if (hp_a > 0.0 and hp_b <= 0.0) {
-                            res.wins_a += 1;
-                        } else if (hp_b > 0.0 and hp_a <= 0.0) {
-                            res.wins_b += 1;
-                        } else {
-                            res.draws += 1;
-                        }
-                    }
-                }
-
-                if (res.duels > 0) {
-                    const d_f = @as(f32, @floatFromInt(res.duels));
-                    res.avg_duration_s /= d_f;
-                    res.avg_hp_a /= d_f;
-                    res.avg_hp_b /= d_f;
-                }
+                const res = try self.modelMatchup(self.models.items[i], self.models.items[j], duels_per_matchup);
 
                 self.matrix.items[i].items[j] = res;
 
@@ -210,19 +153,9 @@ pub const SpecMatrixEvaluator = struct {
                     var match_file_buf: [256]u8 = undefined;
                     const clean_name_a = self.models.items[i].file_name[0 .. self.models.items[i].file_name.len - 4];
                     const clean_name_b = self.models.items[j].file_name[0 .. self.models.items[j].file_name.len - 4];
-                    const match_path = try std.fmt.bufPrint(&match_file_buf, "{s}/match_{s}_vs_{s}.lua", .{
-                        out_dir, clean_name_a, clean_name_b
-                    });
+                    const match_path = try std.fmt.bufPrint(&match_file_buf, "{s}/match_{s}_vs_{s}.lua", .{ out_dir, clean_name_a, clean_name_b });
 
-                    var traj = try MatchRecorder.recordDuel(
-                        self.allocator,
-                        &self.models.items[i].genome,
-                        &self.models.items[j].genome,
-                        self.models.items[i].display_name,
-                        self.models.items[j].display_name,
-                        35.0,
-                        0.010,
-                    );
+                    var traj = try self.recordModels(self.models.items[i], self.models.items[j]);
                     defer traj.deinit();
                     try traj.exportLua(match_path);
                 }
@@ -234,83 +167,117 @@ pub const SpecMatrixEvaluator = struct {
             for (0..GauntletBotKind.COUNT) |b_idx| {
                 const bot_kind: GauntletBotKind = @enumFromInt(@as(u32, @intCast(b_idx)));
                 const bot = gauntlet_mod.GauntletBot.init(bot_kind);
-                var p_a = self.models.items[i].genome;
-                var res = MatchupResult{};
-
-                for (0..num_batches) |_| {
-                    for (0..VEC_LEN) |lane| arena.resetDuel(lane);
-                    var elapsed_ticks: usize = 0;
-
-                    while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
-                        const act_mask = arena.is_active[0..VEC_LEN].* > @as(simd.u32x16, @splat(0));
-                        if (!@reduce(.Or, act_mask)) break;
-
-                        const dec_a = arena.needsDecisionA(0);
-                        if (@reduce(.Or, dec_a)) {
-                            const obs_a = arena.getObservationsA(0);
-                            const masks_a = arena.getActionMaskA(0);
-                            const out_a = p_a.forward16(obs_a, masks_a);
-                            arena.applyActionA(0, out_a.actions, out_a.move_intents);
-                        }
-
-                        const dec_b = arena.needsDecisionB(0);
-                        if (@reduce(.Or, dec_b)) {
-                            const obs_b = arena.getObservationsB(0);
-                            const masks_b = arena.getActionMaskB(0);
-                            const out_b = bot.forward16(obs_b, masks_b);
-                            arena.applyActionB(0, out_b.actions, out_b.move_intents);
-                        }
-
-                        _ = arena.tickPhysics(dt);
-                    }
-
-                    for (0..VEC_LEN) |lane| {
-                        res.duels += 1;
-                        const hp_a = arena.hp_a[lane];
-                        const hp_b = arena.hp_b[lane];
-                        res.avg_hp_a += hp_a;
-                        res.avg_hp_b += hp_b;
-                        res.avg_duration_s += @as(f32, @floatFromInt(elapsed_ticks)) * dt;
-
-                        if (hp_a > 0.0 and hp_b <= 0.0) {
-                            res.wins_a += 1;
-                        } else if (hp_b > 0.0 and hp_a <= 0.0) {
-                            res.wins_b += 1;
-                        } else {
-                            res.draws += 1;
-                        }
-                    }
-                }
-
-                if (res.duels > 0) {
-                    const d_f = @as(f32, @floatFromInt(res.duels));
-                    res.avg_duration_s /= d_f;
-                    res.avg_hp_a /= d_f;
-                    res.avg_hp_b /= d_f;
-                }
+                const res = try switch (self.models.items[i].spec) {
+                    .warlock => matchup(.warlock, .warlock, self.allocator, &self.models.items[i].genome, &bot, duels_per_matchup),
+                    .frost_mage => matchup(.frost_mage, .warlock, self.allocator, &self.models.items[i].genome, &bot, duels_per_matchup),
+                };
 
                 self.bot_matrix.items[i][b_idx] = res;
 
                 if (record_matches_dir) |out_dir| {
                     var match_file_buf: [256]u8 = undefined;
                     const clean_name_a = self.models.items[i].file_name[0 .. self.models.items[i].file_name.len - 4];
-                    const match_path = try std.fmt.bufPrint(&match_file_buf, "{s}/match_{s}_vs_{s}.lua", .{
-                        out_dir, clean_name_a, @tagName(bot_kind)
-                    });
+                    const match_path = try std.fmt.bufPrint(&match_file_buf, "{s}/match_{s}_vs_{s}.lua", .{ out_dir, clean_name_a, @tagName(bot_kind) });
 
-                    var traj = try GauntletRunner.recordDuelVsBot(
-                        self.allocator,
-                        &self.models.items[i].genome,
-                        bot_kind,
-                        self.models.items[i].display_name,
-                        35.0,
-                        0.010,
-                    );
+                    var traj = try switch (self.models.items[i].spec) {
+                        .warlock => GauntletRunner.recordDuelVsBot(self.allocator, &self.models.items[i].genome, bot_kind, self.models.items[i].display_name, 35, 0.01),
+                        .frost_mage => gauntlet_mod.GauntletFor(.frost_mage).recordDuelVsBot(self.allocator, &self.models.items[i].genome, bot_kind, self.models.items[i].display_name, 35, 0.01),
+                    };
                     defer traj.deinit();
                     try traj.exportLua(match_path);
                 }
             }
         }
+    }
+
+    fn matchup(comptime a: Spec, comptime b: Spec, allocator: mem.Allocator, p_a: *const PolicyGenome, p_b: anytype, duels: usize) !MatchupResult {
+        var arena = try multi_spec.ArenaPool(a, b).init(allocator, VEC_LEN);
+        defer arena.deinit();
+        const dt: f32 = 0.01;
+        const max_ticks: usize = 3000;
+        const num_batches = (duels + VEC_LEN - 1) / VEC_LEN;
+        var res = MatchupResult{};
+        for (0..num_batches) |_| {
+            for (0..VEC_LEN) |lane| arena.resetDuel(lane);
+            var elapsed_ticks: usize = 0;
+            var lane_ticks = [_]usize{max_ticks} ** VEC_LEN;
+
+            while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
+                const act_mask = arena.combat().is_active[0..VEC_LEN].* > @as(simd.u32x16, @splat(0));
+                if (!@reduce(.Or, act_mask)) break;
+
+                const dec_a = arena.needsDecisionA(0);
+                if (@reduce(.Or, dec_a)) {
+                    const obs_a = arena.getObservationsA(0);
+                    const masks_a = arena.getActionMaskA(0);
+                    const out_a = p_a.forward16(obs_a, masks_a);
+                    arena.applyActionA(0, out_a.actions, out_a.move_intents);
+                }
+
+                const dec_b = arena.needsDecisionB(0);
+                if (@reduce(.Or, dec_b)) {
+                    const obs_b = arena.getObservationsB(0);
+                    const masks_b = arena.getActionMaskB(0);
+                    const out_b = p_b.forward16(obs_b, masks_b);
+                    arena.applyActionB(0, out_b.actions, out_b.move_intents);
+                }
+
+                _ = arena.tickPhysics16(dt, 0);
+                for (0..VEC_LEN) |lane| if (act_mask[lane] and arena.combat().is_active[lane] == 0) {
+                    lane_ticks[lane] = elapsed_ticks + 1;
+                };
+            }
+
+            for (0..VEC_LEN) |lane| {
+                res.duels += 1;
+                const hp_a = arena.combat().hp_a[lane];
+                const hp_b = arena.combat().hp_b[lane];
+                res.avg_hp_a += hp_a;
+                res.avg_hp_b += hp_b;
+                res.avg_duration_s += @as(f32, @floatFromInt(lane_ticks[lane])) * dt;
+
+                if (hp_a > 0.0 and hp_b <= 0.0) {
+                    res.wins_a += 1;
+                } else if (hp_b > 0.0 and hp_a <= 0.0) {
+                    res.wins_b += 1;
+                } else {
+                    res.draws += 1;
+                }
+            }
+        }
+
+        if (res.duels > 0) {
+            const d_f = @as(f32, @floatFromInt(res.duels));
+            res.avg_duration_s /= d_f;
+            res.avg_hp_a /= d_f;
+            res.avg_hp_b /= d_f;
+        }
+
+        return res;
+    }
+    fn modelMatchup(self: *SpecMatrixEvaluator, a: ModelEntry, b: ModelEntry, duels: usize) !MatchupResult {
+        return switch (a.spec) {
+            .warlock => switch (b.spec) {
+                .warlock => matchup(.warlock, .warlock, self.allocator, &a.genome, &b.genome, duels),
+                .frost_mage => matchup(.warlock, .frost_mage, self.allocator, &a.genome, &b.genome, duels),
+            },
+            .frost_mage => switch (b.spec) {
+                .warlock => matchup(.frost_mage, .warlock, self.allocator, &a.genome, &b.genome, duels),
+                .frost_mage => matchup(.frost_mage, .frost_mage, self.allocator, &a.genome, &b.genome, duels),
+            },
+        };
+    }
+    fn recordModels(self: *SpecMatrixEvaluator, a: ModelEntry, b: ModelEntry) !match_recorder.MatchTrajectory {
+        return switch (a.spec) {
+            .warlock => switch (b.spec) {
+                .warlock => MatchRecorder.recordDuel(self.allocator, &a.genome, &b.genome, a.display_name, b.display_name, 35, 0.01),
+                .frost_mage => MatchRecorder.recordPair(.warlock, .frost_mage, self.allocator, &a.genome, &b.genome, b.genome.elo, a.display_name, b.display_name, 35, 0.01),
+            },
+            .frost_mage => switch (b.spec) {
+                .warlock => MatchRecorder.recordPair(.frost_mage, .warlock, self.allocator, &a.genome, &b.genome, b.genome.elo, a.display_name, b.display_name, 35, 0.01),
+                .frost_mage => MatchRecorder.recordPair(.frost_mage, .frost_mage, self.allocator, &a.genome, &b.genome, b.genome.elo, a.display_name, b.display_name, 35, 0.01),
+            },
+        };
     }
 
     /// Export matrix and all matchup entries to high-performance Lua table format
@@ -325,9 +292,7 @@ pub const SpecMatrixEvaluator = struct {
         // Models list
         try w.writeAll("  models = {\n");
         for (self.models.items, 0..) |m, idx| {
-            try w.print("    [{d}] = {{ id = {d}, name = \"{s}\", file = \"{s}\", elo = {d:0.1} }},\n", .{
-                idx + 1, idx + 1, m.display_name, m.file_name, m.genome.elo
-            });
+            try w.print("    [{d}] = {{ id = {d}, name = \"{s}\", file = \"{s}\", spec = \"{s}\", elo = {d:0.1} }},\n", .{ idx + 1, idx + 1, m.display_name, m.file_name, @tagName(m.spec), m.genome.elo });
         }
         try w.writeAll("  },\n");
 
@@ -335,9 +300,7 @@ pub const SpecMatrixEvaluator = struct {
         try w.writeAll("  bots = {\n");
         for (0..GauntletBotKind.COUNT) |b_idx| {
             const kind: GauntletBotKind = @enumFromInt(@as(u32, @intCast(b_idx)));
-            try w.print("    [{d}] = {{ name = \"{s}\", icon = \"{s}\", baseline_elo = {d:0.0} }},\n", .{
-                b_idx + 1, kind.getName(), kind.getIcon(), kind.getBaselineElo()
-            });
+            try w.print("    [{d}] = {{ name = \"{s}\", icon = \"{s}\", baseline_elo = {d:0.0} }},\n", .{ b_idx + 1, kind.getName(), kind.getIcon(), kind.getBaselineElo() });
         }
         try w.writeAll("  },\n");
 
@@ -346,9 +309,7 @@ pub const SpecMatrixEvaluator = struct {
         for (self.matrix.items, 0..) |row, i| {
             try w.print("    [{d}] = {{\n", .{i + 1});
             for (row.items, 0..) |res, j| {
-                try w.print("      [{d}] = {{ duels = {d}, win_rate = {d:0.3}, wins_a = {d}, wins_b = {d}, draws = {d}, avg_time = {d:0.2}, hp_a = {d:0.0}, hp_b = {d:0.0} }},\n", .{
-                    j + 1, res.duels, res.winRateA(), res.wins_a, res.wins_b, res.draws, res.avg_duration_s, res.avg_hp_a, res.avg_hp_b
-                });
+                try w.print("      [{d}] = {{ duels = {d}, win_rate = {d:0.3}, wins_a = {d}, wins_b = {d}, draws = {d}, avg_time = {d:0.2}, hp_a = {d:0.0}, hp_b = {d:0.0} }},\n", .{ j + 1, res.duels, res.winRateA(), res.wins_a, res.wins_b, res.draws, res.avg_duration_s, res.avg_hp_a, res.avg_hp_b });
             }
             try w.writeAll("    },\n");
         }
@@ -359,9 +320,7 @@ pub const SpecMatrixEvaluator = struct {
         for (self.bot_matrix.items, 0..) |bot_row, i| {
             try w.print("    [{d}] = {{\n", .{i + 1});
             for (bot_row, 0..) |res, b_idx| {
-                try w.print("      [{d}] = {{ duels = {d}, win_rate = {d:0.3}, wins_a = {d}, wins_b = {d}, draws = {d}, avg_time = {d:0.2}, hp_a = {d:0.0}, hp_b = {d:0.0} }},\n", .{
-                    b_idx + 1, res.duels, res.winRateA(), res.wins_a, res.wins_b, res.draws, res.avg_duration_s, res.avg_hp_a, res.avg_hp_b
-                });
+                try w.print("      [{d}] = {{ duels = {d}, win_rate = {d:0.3}, wins_a = {d}, wins_b = {d}, draws = {d}, avg_time = {d:0.2}, hp_a = {d:0.0}, hp_b = {d:0.0} }},\n", .{ b_idx + 1, res.duels, res.winRateA(), res.wins_a, res.wins_b, res.draws, res.avg_duration_s, res.avg_hp_a, res.avg_hp_b });
             }
             try w.writeAll("    },\n");
         }
@@ -378,4 +337,27 @@ test "SpecMatrixEvaluator load and empty check" {
 
     _ = eval.loadModelsFromDir("models") catch {};
     try std.testing.expect(eval.models.items.len >= 0);
+}
+
+test "Matrix loads class tags and evaluates both asymmetric pairings and bot rows" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir);
+    var prng = std.Random.DefaultPrng.init(5);
+    const genome = PolicyGenome.initRandom(prng.random());
+    inline for (.{ Spec.warlock, Spec.frost_mage }) |class| {
+        const path = try std.fs.path.join(allocator, &.{ dir, @tagName(class) ++ ".bin" });
+        defer allocator.free(path);
+        try spec_policy.save(&genome, class, path);
+    }
+    var evaluator = SpecMatrixEvaluator.init(allocator);
+    defer evaluator.deinit();
+    try std.testing.expectEqual(@as(usize, 2), try evaluator.loadModelsFromDir(dir));
+    try std.testing.expect(evaluator.models.items[0].spec != evaluator.models.items[1].spec);
+    try evaluator.evaluateAll(16, null);
+    try std.testing.expectEqual(@as(usize, 16), evaluator.matrix.items[0].items[1].duels);
+    try std.testing.expectEqual(@as(usize, 16), evaluator.matrix.items[1].items[0].duels);
+    for (evaluator.bot_matrix.items) |row| for (row) |result| try std.testing.expectEqual(@as(usize, 16), result.duels);
 }

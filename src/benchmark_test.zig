@@ -152,3 +152,30 @@ test "Raw duel throughput regression floor" {
     const rate = @as(f64, count) * 1e9 / @as(f64, @floatFromInt(elapsed));
     try std.testing.expect(rate >= (if (builtin.mode == .ReleaseFast) @as(f64, 1_000_000) else 10_000));
 }
+
+test "Frost Mage keeps compact policies and ReleaseFast neural throughput floor" {
+    const Arena = @import("multi_spec.zig").ArenaPool(.frost_mage, .frost_mage);
+    comptime {
+        for (@typeInfo(Arena).@"struct".fields) |field| {
+            switch (@typeInfo(field.type)) {
+                .pointer => |ptr| if (ptr.size == .slice and ptr.alignment != 64) {
+                    @compileError("Mage SoA storage must have 64-byte alignment");
+                },
+                else => {},
+            }
+        }
+    }
+    var league = try league_mod.FrostMageLeague.init(std.testing.allocator, .{
+        .pop_size = 16,
+        .duels_per_agent = 1,
+        .max_duel_seconds = 30,
+    }, 123);
+    defer league.deinit();
+    var timer = try std.time.Timer.start();
+    league.stepGeneration();
+    const elapsed = timer.read();
+    const rate = @as(f64, @floatFromInt(league.total_duels_simulated)) * 1e9 / @as(f64, @floatFromInt(elapsed));
+    try std.testing.expect(rate >= (if (builtin.mode == .ReleaseFast) @as(f64, 20_000) else 500));
+    try std.testing.expectEqual(@as(usize, 24), policy_simd.IN_DIM);
+    try std.testing.expectEqual(@as(usize, 9), policy_simd.ACTION_DIM);
+}

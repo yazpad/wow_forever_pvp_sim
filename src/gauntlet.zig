@@ -37,10 +37,10 @@ pub const GauntletBotKind = enum(u32) {
 
     pub fn getIcon(self: GauntletBotKind) []const u8 {
         return switch (self) {
-            .AggroRusher => "🗡️",
-            .FearKiter => "🏃",
-            .TurretCaster => "🏰",
-            .DrainTank => "🛡️",
+            .AggroRusher => "[A]",
+            .FearKiter => "[K]",
+            .TurretCaster => "[T]",
+            .DrainTank => "[D]",
         };
     }
 
@@ -313,394 +313,403 @@ pub const GauntletReport = struct {
     bot_results: [GauntletBotKind.COUNT]BotBenchmarkResult,
 };
 
-pub const GauntletRunner = struct {
-    allocator: mem.Allocator,
-    arena_pool: WarlockArenaPool,
+pub const GauntletRunner = GauntletFor(.warlock);
+pub fn GauntletFor(comptime class: @import("spec.zig").Spec) type {
+    return struct {
+        const Self = @This();
+        const Arena = @import("multi_spec.zig").ArenaPool(class, .warlock);
+        allocator: mem.Allocator,
+        arena_pool: Arena,
 
-    pub fn init(allocator: mem.Allocator) !GauntletRunner {
-        var arena = try WarlockArenaPool.init(allocator, 64);
-        errdefer arena.deinit();
+        pub fn init(allocator: mem.Allocator) !Self {
+            var arena = try Arena.init(allocator, 64);
+            errdefer arena.deinit();
 
-        return GauntletRunner{
-            .allocator = allocator,
-            .arena_pool = arena,
-        };
-    }
+            return Self{
+                .allocator = allocator,
+                .arena_pool = arena,
+            };
+        }
 
-    pub fn deinit(self: *GauntletRunner) void {
-        self.arena_pool.deinit();
-    }
+        pub fn deinit(self: *Self) void {
+            self.arena_pool.deinit();
+        }
 
-    /// Evaluates a candidate PolicyGenome against all 4 Gauntlet Bots.
-    /// Runs multiple 16-duel batches per bot archetype with SIMD throughput.
-    pub fn evaluateChampion(
-        self: *GauntletRunner,
-        champion: *const PolicyGenome,
-        duels_per_bot: usize,
-        max_duel_seconds: f32,
-        physics_dt: f32,
-    ) GauntletReport {
-        const batch_size = VEC_LEN;
-        const num_batches = @max(1, (duels_per_bot + batch_size - 1) / batch_size);
-        const actual_duels_per_bot = num_batches * batch_size;
+        /// Evaluates a candidate PolicyGenome against all 4 Gauntlet Bots.
+        /// Runs multiple 16-duel batches per bot archetype with SIMD throughput.
+        pub fn evaluateChampion(
+            self: *Self,
+            champion: *const PolicyGenome,
+            duels_per_bot: usize,
+            max_duel_seconds: f32,
+            physics_dt: f32,
+        ) GauntletReport {
+            const batch_size = VEC_LEN;
+            const num_batches = @max(1, (duels_per_bot + batch_size - 1) / batch_size);
+            const actual_duels_per_bot = num_batches * batch_size;
 
-        var report = GauntletReport{
-            .champion_elo = champion.elo,
-            .total_duels = 0,
-            .total_wins = 0,
-            .total_losses = 0,
-            .total_draws = 0,
-            .overall_win_rate = 0.0,
-            .objective_elo = 1200.0,
-            .bot_results = undefined,
-        };
-
-        var weighted_elo_sum: f32 = 0.0;
-        var total_weight: f32 = 0.0;
-
-        inline for (0..GauntletBotKind.COUNT) |b_idx| {
-            const kind: GauntletBotKind = @enumFromInt(b_idx);
-            const bot = GauntletBot.init(kind);
-
-            var bot_wins: u32 = 0;
-            var bot_losses: u32 = 0;
-            var bot_draws: u32 = 0;
-            var bot_time_sum: f32 = 0.0;
-            var bot_hp_sum: f32 = 0.0;
-
-            for (0..num_batches) |_| {
-                // Reset 16 lanes
-                for (0..batch_size) |lane| {
-                    self.arena_pool.resetDuel(lane);
-                }
-
-                const max_ticks: usize = @intFromFloat(max_duel_seconds / physics_dt);
-                var elapsed_ticks: usize = 0;
-
-                while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
-                    const act_mask = self.arena_pool.is_active[0..batch_size].* > @as(u32x16, @splat(0));
-                    if (!@reduce(.Or, act_mask)) break;
-
-                    // 1. Champion Decision (Team A)
-                    const dec_a = self.arena_pool.needsDecisionA(0);
-                    if (@reduce(.Or, dec_a)) {
-                        const obs_a = self.arena_pool.getObservationsA(0);
-                        const masks_a = self.arena_pool.getActionMaskA(0);
-                        const out_a = champion.forward16(obs_a, masks_a);
-                        self.arena_pool.applyActionA(0, out_a.actions, out_a.move_intents);
-                    }
-
-                    // 2. Gauntlet Bot Decision (Team B)
-                    const dec_b = self.arena_pool.needsDecisionB(0);
-                    if (@reduce(.Or, dec_b)) {
-                        const obs_b = self.arena_pool.getObservationsB(0);
-                        const masks_b = self.arena_pool.getActionMaskB(0);
-                        const out_b = bot.forward16(obs_b, masks_b);
-                        self.arena_pool.applyActionB(0, out_b.actions, out_b.move_intents);
-                    }
-
-                    // 3. Step Physics (100 Hz)
-                    _ = self.arena_pool.tickPhysics(physics_dt);
-                }
-
-                // Tally batch
-                const match_time = @as(f32, @floatFromInt(elapsed_ticks)) * physics_dt;
-                for (0..batch_size) |lane| {
-                    const hp_a = self.arena_pool.hp_a[lane];
-                    const hp_b = self.arena_pool.hp_b[lane];
-
-                    bot_time_sum += match_time;
-                    bot_hp_sum += @max(0.0, hp_a);
-
-                    if (hp_a > 0.0 and hp_b <= 0.0) {
-                        bot_wins += 1;
-                    } else if (hp_b > 0.0 and hp_a <= 0.0) {
-                        bot_losses += 1;
-                    } else {
-                        bot_draws += 1;
-                    }
-                }
-            }
-
-            const total_b = @as(f32, @floatFromInt(actual_duels_per_bot));
-            const win_rate = @as(f32, @floatFromInt(bot_wins)) / total_b;
-
-            report.bot_results[b_idx] = .{
-                .bot_kind = kind,
-                .duels_fought = @intCast(actual_duels_per_bot),
-                .wins = bot_wins,
-                .losses = bot_losses,
-                .draws = bot_draws,
-                .win_rate = win_rate,
-                .avg_duration_s = bot_time_sum / total_b,
-                .avg_surviving_hp = bot_hp_sum / total_b,
+            var report = GauntletReport{
+                .champion_elo = champion.elo,
+                .total_duels = 0,
+                .total_wins = 0,
+                .total_losses = 0,
+                .total_draws = 0,
+                .overall_win_rate = 0.0,
+                .objective_elo = 1200.0,
+                .bot_results = undefined,
             };
 
-            report.total_duels += @intCast(actual_duels_per_bot);
-            report.total_wins += bot_wins;
-            report.total_losses += bot_losses;
-            report.total_draws += bot_draws;
+            var weighted_elo_sum: f32 = 0.0;
+            var total_weight: f32 = 0.0;
 
-            // Objective Elo Calculation based on baseline opponent ratings:
-            // Score = wins + 0.5 * draws
-            const score = @as(f32, @floatFromInt(bot_wins)) + 0.5 * @as(f32, @floatFromInt(bot_draws));
-            const score_ratio = @min(0.99, @max(0.01, score / total_b));
-            // Logit-based Elo estimate vs this bot: Elo_opp - 400 * log10((1 - S) / S)
-            const elo_delta = -400.0 * @log10((1.0 - score_ratio) / score_ratio);
-            const est_elo = kind.getBaselineElo() + elo_delta;
+            inline for (0..GauntletBotKind.COUNT) |b_idx| {
+                const kind: GauntletBotKind = @enumFromInt(b_idx);
+                const bot = GauntletBot.init(kind);
 
-            weighted_elo_sum += est_elo;
-            total_weight += 1.0;
+                var bot_wins: u32 = 0;
+                var bot_losses: u32 = 0;
+                var bot_draws: u32 = 0;
+                var bot_time_sum: f32 = 0.0;
+                var bot_hp_sum: f32 = 0.0;
+
+                for (0..num_batches) |_| {
+                    // Reset 16 lanes
+                    for (0..batch_size) |lane| {
+                        self.arena_pool.resetDuel(lane);
+                    }
+
+                    const max_ticks: usize = @intFromFloat(max_duel_seconds / physics_dt);
+                    var elapsed_ticks: usize = 0;
+
+                    while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
+                        const act_mask = self.arena_pool.combat().is_active[0..batch_size].* > @as(u32x16, @splat(0));
+                        if (!@reduce(.Or, act_mask)) break;
+
+                        // 1. Champion Decision (Team A)
+                        const dec_a = self.arena_pool.needsDecisionA(0);
+                        if (@reduce(.Or, dec_a)) {
+                            const obs_a = self.arena_pool.getObservationsA(0);
+                            const masks_a = self.arena_pool.getActionMaskA(0);
+                            const out_a = champion.forward16(obs_a, masks_a);
+                            self.arena_pool.applyActionA(0, out_a.actions, out_a.move_intents);
+                        }
+
+                        // 2. Gauntlet Bot Decision (Team B)
+                        const dec_b = self.arena_pool.needsDecisionB(0);
+                        if (@reduce(.Or, dec_b)) {
+                            const obs_b = self.arena_pool.getObservationsB(0);
+                            const masks_b = self.arena_pool.getActionMaskB(0);
+                            const out_b = bot.forward16(obs_b, masks_b);
+                            self.arena_pool.applyActionB(0, out_b.actions, out_b.move_intents);
+                        }
+
+                        // 3. Step Physics (100 Hz)
+                        _ = self.arena_pool.tickPhysics(physics_dt);
+                    }
+
+                    // Tally batch
+                    const match_time = @as(f32, @floatFromInt(elapsed_ticks)) * physics_dt;
+                    for (0..batch_size) |lane| {
+                        const hp_a = self.arena_pool.combat().hp_a[lane];
+                        const hp_b = self.arena_pool.combat().hp_b[lane];
+
+                        bot_time_sum += match_time;
+                        bot_hp_sum += @max(0.0, hp_a);
+
+                        if (hp_a > 0.0 and hp_b <= 0.0) {
+                            bot_wins += 1;
+                        } else if (hp_b > 0.0 and hp_a <= 0.0) {
+                            bot_losses += 1;
+                        } else {
+                            bot_draws += 1;
+                        }
+                    }
+                }
+
+                const total_b = @as(f32, @floatFromInt(actual_duels_per_bot));
+                const win_rate = @as(f32, @floatFromInt(bot_wins)) / total_b;
+
+                report.bot_results[b_idx] = .{
+                    .bot_kind = kind,
+                    .duels_fought = @intCast(actual_duels_per_bot),
+                    .wins = bot_wins,
+                    .losses = bot_losses,
+                    .draws = bot_draws,
+                    .win_rate = win_rate,
+                    .avg_duration_s = bot_time_sum / total_b,
+                    .avg_surviving_hp = bot_hp_sum / total_b,
+                };
+
+                report.total_duels += @intCast(actual_duels_per_bot);
+                report.total_wins += bot_wins;
+                report.total_losses += bot_losses;
+                report.total_draws += bot_draws;
+
+                // Objective Elo Calculation based on baseline opponent ratings:
+                // Score = wins + 0.5 * draws
+                const score = @as(f32, @floatFromInt(bot_wins)) + 0.5 * @as(f32, @floatFromInt(bot_draws));
+                const score_ratio = @min(0.99, @max(0.01, score / total_b));
+                // Logit-based Elo estimate vs this bot: Elo_opp - 400 * log10((1 - S) / S)
+                const elo_delta = -400.0 * @log10((1.0 - score_ratio) / score_ratio);
+                const est_elo = kind.getBaselineElo() + elo_delta;
+
+                weighted_elo_sum += est_elo;
+                total_weight += 1.0;
+            }
+
+            report.overall_win_rate = @as(f32, @floatFromInt(report.total_wins)) / @as(f32, @floatFromInt(report.total_duels));
+            report.objective_elo = weighted_elo_sum / total_weight;
+
+            return report;
         }
 
-        report.overall_win_rate = @as(f32, @floatFromInt(report.total_wins)) / @as(f32, @floatFromInt(report.total_duels));
-        report.objective_elo = weighted_elo_sum / total_weight;
+        /// Record a high-fidelity 100 Hz duel between a PolicyGenome and a specific Gauntlet Bot
+        pub fn recordDuelVsBot(
+            allocator: mem.Allocator,
+            p_a: *const PolicyGenome,
+            bot_kind: GauntletBotKind,
+            name_a: []const u8,
+            max_seconds: f32,
+            dt: f32,
+        ) !MatchTrajectory {
+            if (class == .frost_mage) {
+                const bot = GauntletBot.init(bot_kind);
+                return match_recorder.MatchRecorder.recordPair(class, .warlock, allocator, p_a, &bot, bot_kind.getBaselineElo(), name_a, bot_kind.getName(), max_seconds, dt);
+            }
+            var arena = try Arena.init(allocator, 16);
+            defer arena.deinit();
 
-        return report;
-    }
+            arena.resetDuel(0);
+            const bot = GauntletBot.init(bot_kind);
 
-    /// Record a high-fidelity 100 Hz duel between a PolicyGenome and a specific Gauntlet Bot
-    pub fn recordDuelVsBot(
-        allocator: mem.Allocator,
-        p_a: *const PolicyGenome,
-        bot_kind: GauntletBotKind,
-        name_a: []const u8,
-        max_seconds: f32,
-        dt: f32,
-    ) !MatchTrajectory {
-        var arena = try WarlockArenaPool.init(allocator, 16);
-        defer arena.deinit();
+            var traj = try MatchTrajectory.init(allocator, name_a, bot_kind.getName(), p_a.elo, bot_kind.getBaselineElo());
+            errdefer traj.deinit();
 
-        arena.resetDuel(0);
-        const bot = GauntletBot.init(bot_kind);
+            const max_ticks: usize = @intFromFloat(max_seconds / dt);
+            var elapsed_ticks: usize = 0;
 
-        var traj = try MatchTrajectory.init(allocator, name_a, bot_kind.getName(), p_a.elo, bot_kind.getBaselineElo());
-        errdefer traj.deinit();
+            var pos_a: f32 = -12.5;
+            var pos_b: f32 = 12.5;
 
-        const max_ticks: usize = @intFromFloat(max_seconds / dt);
-        var elapsed_ticks: usize = 0;
+            var last_act_a: u32 = 0;
+            var last_act_b: u32 = 0;
 
-        var pos_a: f32 = -12.5;
-        var pos_b: f32 = 12.5;
+            var prev_hp_a = arena.combat().hp_a[0];
+            var prev_hp_b = arena.combat().hp_b[0];
+            var prev_cid_a: u32 = arena.combat().cast_id_a[0];
+            var prev_cid_b: u32 = arena.combat().cast_id_b[0];
+            var prev_ctmr_a: f32 = arena.combat().cast_timer_a[0];
+            var prev_ctmr_b: f32 = arena.combat().cast_timer_b[0];
+            var prev_fear_a = arena.combat().fear_timer_a[0];
+            var prev_fear_b = arena.combat().fear_timer_b[0];
+            var prev_un_a = arena.combat().unending_dur_a[0];
+            var prev_un_b = arena.combat().unending_dur_b[0];
 
-        var last_act_a: u32 = 0;
-        var last_act_b: u32 = 0;
+            while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
+                const cur_hp_a = arena.combat().hp_a[0];
+                const cur_hp_b = arena.combat().hp_b[0];
+                if (cur_hp_a <= 0.0 or cur_hp_b <= 0.0) break;
 
-        var prev_hp_a = arena.hp_a[0];
-        var prev_hp_b = arena.hp_b[0];
-        var prev_cid_a: u32 = arena.cast_id_a[0];
-        var prev_cid_b: u32 = arena.cast_id_b[0];
-        var prev_ctmr_a: f32 = arena.cast_timer_a[0];
-        var prev_ctmr_b: f32 = arena.cast_timer_b[0];
-        var prev_fear_a = arena.fear_timer_a[0];
-        var prev_fear_b = arena.fear_timer_b[0];
-        var prev_un_a = arena.unending_dur_a[0];
-        var prev_un_b = arena.unending_dur_b[0];
+                const time_s = @as(f32, @floatFromInt(elapsed_ticks)) * dt;
 
-        while (elapsed_ticks < max_ticks) : (elapsed_ticks += 1) {
-            const cur_hp_a = arena.hp_a[0];
-            const cur_hp_b = arena.hp_b[0];
-            if (cur_hp_a <= 0.0 or cur_hp_b <= 0.0) break;
+                // Decision A (Champion)
+                const dec_a = arena.needsDecisionA(0);
+                if (dec_a[0]) {
+                    const obs_a = arena.getObservationsA(0);
+                    const masks_a = arena.getActionMaskA(0);
+                    const out_a = p_a.forward16(obs_a, masks_a);
+                    last_act_a = out_a.actions[0];
+                    arena.applyActionA(0, out_a.actions, out_a.move_intents);
 
-            const time_s = @as(f32, @floatFromInt(elapsed_ticks)) * dt;
-
-            // Decision A (Champion)
-            const dec_a = arena.needsDecisionA(0);
-            if (dec_a[0]) {
-                const obs_a = arena.getObservationsA(0);
-                const masks_a = arena.getActionMaskA(0);
-                const out_a = p_a.forward16(obs_a, masks_a);
-                last_act_a = out_a.actions[0];
-                arena.applyActionA(0, out_a.actions, out_a.move_intents);
-
-                if (last_act_a != 0) {
-                    try traj.events.append(.{
-                        .time_s = time_s,
-                        .source = 0,
-                        .target = 1,
-                        .kind = .ActionUsed,
-                        .spell_id = last_act_a,
-                        .amount = 0.0,
-                    });
+                    if (last_act_a != 0) {
+                        try traj.events.append(.{
+                            .time_s = time_s,
+                            .source = 0,
+                            .target = 1,
+                            .kind = .ActionUsed,
+                            .spell_id = last_act_a,
+                            .amount = 0.0,
+                        });
+                    }
                 }
-            }
 
-            // Decision B (Gauntlet Bot)
-            const dec_b = arena.needsDecisionB(0);
-            if (dec_b[0]) {
-                const obs_b = arena.getObservationsB(0);
-                const masks_b = arena.getActionMaskB(0);
-                const out_b = bot.forward16(obs_b, masks_b);
-                last_act_b = out_b.actions[0];
-                arena.applyActionB(0, out_b.actions, out_b.move_intents);
+                // Decision B (Gauntlet Bot)
+                const dec_b = arena.needsDecisionB(0);
+                if (dec_b[0]) {
+                    const obs_b = arena.getObservationsB(0);
+                    const masks_b = arena.getActionMaskB(0);
+                    const out_b = bot.forward16(obs_b, masks_b);
+                    last_act_b = out_b.actions[0];
+                    arena.applyActionB(0, out_b.actions, out_b.move_intents);
 
-                if (last_act_b != 0) {
-                    try traj.events.append(.{
-                        .time_s = time_s,
-                        .source = 1,
-                        .target = 0,
-                        .kind = .ActionUsed,
-                        .spell_id = last_act_b,
-                        .amount = 0.0,
-                    });
+                    if (last_act_b != 0) {
+                        try traj.events.append(.{
+                            .time_s = time_s,
+                            .source = 1,
+                            .target = 0,
+                            .kind = .ActionUsed,
+                            .spell_id = last_act_b,
+                            .amount = 0.0,
+                        });
+                    }
                 }
-            }
 
-            _ = arena.tickPhysics(dt);
+                _ = arena.tickPhysics(dt);
 
-            // Update Positions
-            const mv_a = arena.move_intent_a[0];
-            const mv_b = arena.move_intent_b[0];
-            const is_cast_a = arena.cast_id_a[0] > 0;
-            const is_cast_b = arena.cast_id_b[0] > 0;
-            const is_feared_a = arena.fear_timer_a[0] > 0.0;
-            const is_feared_b = arena.fear_timer_b[0] > 0.0;
+                // Update Positions
+                const mv_a = arena.combat().move_intent_a[0];
+                const mv_b = arena.combat().move_intent_b[0];
+                const is_cast_a = arena.combat().cast_id_a[0] > 0;
+                const is_cast_b = arena.combat().cast_id_b[0] > 0;
+                const is_feared_a = arena.combat().fear_timer_a[0] > 0.0;
+                const is_feared_b = arena.combat().fear_timer_b[0] > 0.0;
 
-            var spd_a: f32 = 0.0;
-            if (!is_cast_a and !is_feared_a) {
-                if (mv_a < 0.0) spd_a = WarlockConstants.ForwardSpeed else if (mv_a > 0.0) spd_a = -WarlockConstants.BackpedalSpeed;
-            } else if (is_feared_a) {
-                spd_a = -WarlockConstants.ForwardSpeed;
-            }
-
-            var spd_b: f32 = 0.0;
-            if (!is_cast_b and !is_feared_b) {
-                if (mv_b < 0.0) spd_b = -WarlockConstants.ForwardSpeed else if (mv_b > 0.0) spd_b = WarlockConstants.BackpedalSpeed;
-            } else if (is_feared_b) {
-                spd_b = WarlockConstants.ForwardSpeed;
-            }
-
-            pos_a = @min(pos_b - WarlockConstants.MinDistance, @max(-30.0, pos_a + spd_a * dt));
-            pos_b = @max(pos_a + WarlockConstants.MinDistance, @min(30.0, pos_b + spd_b * dt));
-
-            // Record events
-            if (arena.unending_dur_a[0] > 0.0 and prev_un_a == 0.0) {
-                try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 0, .kind = .DefensiveActivated, .spell_id = 6, .amount = 0.0 });
-            }
-            if (arena.unending_dur_b[0] > 0.0 and prev_un_b == 0.0) {
-                try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .DefensiveActivated, .spell_id = 6, .amount = 0.0 });
-            }
-            if (arena.fear_timer_b[0] > 0.0 and prev_fear_b == 0.0) {
-                try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .FearApplied, .spell_id = 3, .amount = 0.0 });
-            }
-            if (arena.fear_timer_a[0] > 0.0 and prev_fear_a == 0.0) {
-                try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .FearApplied, .spell_id = 3, .amount = 0.0 });
-            }
-
-            // Damage delta detection
-            if (arena.hp_b[0] < prev_hp_b) {
-                const dmg = prev_hp_b - arena.hp_b[0];
-                traj.total_dmg_a += dmg;
-                if (dmg > 50.0) {
-                    try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .DamageHit, .spell_id = 4, .amount = dmg });
+                var spd_a: f32 = 0.0;
+                if (!is_cast_a and !is_feared_a) {
+                    if (mv_a < 0.0) spd_a = WarlockConstants.ForwardSpeed else if (mv_a > 0.0) spd_a = -WarlockConstants.BackpedalSpeed;
+                } else if (is_feared_a) {
+                    spd_a = -WarlockConstants.ForwardSpeed;
                 }
-            }
-            if (arena.hp_a[0] < prev_hp_a) {
-                const dmg = prev_hp_a - arena.hp_a[0];
-                traj.total_dmg_b += dmg;
-                if (dmg > 50.0) {
-                    try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .DamageHit, .spell_id = 4, .amount = dmg });
+
+                var spd_b: f32 = 0.0;
+                if (!is_cast_b and !is_feared_b) {
+                    if (mv_b < 0.0) spd_b = -WarlockConstants.ForwardSpeed else if (mv_b > 0.0) spd_b = WarlockConstants.BackpedalSpeed;
+                } else if (is_feared_b) {
+                    spd_b = WarlockConstants.ForwardSpeed;
                 }
+
+                pos_a = std.math.clamp(pos_a + spd_a * dt, -30.0, 30.0);
+                pos_b = std.math.clamp(pos_b + spd_b * dt, -30.0, 30.0);
+
+                // Record events
+                if (arena.combat().unending_dur_a[0] > 0.0 and prev_un_a == 0.0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 0, .kind = .DefensiveActivated, .spell_id = 6, .amount = 0.0 });
+                }
+                if (arena.combat().unending_dur_b[0] > 0.0 and prev_un_b == 0.0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .DefensiveActivated, .spell_id = 6, .amount = 0.0 });
+                }
+                if (arena.combat().fear_timer_b[0] > 0.0 and prev_fear_b == 0.0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .FearApplied, .spell_id = 3, .amount = 0.0 });
+                }
+                if (arena.combat().fear_timer_a[0] > 0.0 and prev_fear_a == 0.0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .FearApplied, .spell_id = 3, .amount = 0.0 });
+                }
+
+                // Damage delta detection
+                if (arena.combat().hp_b[0] < prev_hp_b) {
+                    const dmg = prev_hp_b - arena.combat().hp_b[0];
+                    traj.total_dmg_a += dmg;
+                    if (dmg > 50.0) {
+                        try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .DamageHit, .spell_id = 4, .amount = dmg });
+                    }
+                }
+                if (arena.combat().hp_a[0] < prev_hp_a) {
+                    const dmg = prev_hp_a - arena.combat().hp_a[0];
+                    traj.total_dmg_b += dmg;
+                    if (dmg > 50.0) {
+                        try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .DamageHit, .spell_id = 4, .amount = dmg });
+                    }
+                }
+
+                prev_hp_a = arena.combat().hp_a[0];
+                prev_hp_b = arena.combat().hp_b[0];
+                prev_cid_a = arena.combat().cast_id_a[0];
+                prev_cid_b = arena.combat().cast_id_b[0];
+                prev_ctmr_a = arena.combat().cast_timer_a[0];
+                prev_ctmr_b = arena.combat().cast_timer_b[0];
+                prev_fear_a = arena.combat().fear_timer_a[0];
+                prev_fear_b = arena.combat().fear_timer_b[0];
+                prev_un_a = arena.combat().unending_dur_a[0];
+                prev_un_b = arena.combat().unending_dur_b[0];
+
+                try traj.frames.append(.{
+                    .time_s = time_s,
+                    .dist = arena.combat().distance[0],
+                    .pos_a = pos_a,
+                    .pos_b = pos_b,
+                    .hp_a = arena.combat().hp_a[0],
+                    .hp_b = arena.combat().hp_b[0],
+                    .mana_a = arena.combat().mana_a[0],
+                    .mana_b = arena.combat().mana_b[0],
+                    .speed_a = spd_a,
+                    .speed_b = spd_b,
+                    .cast_id_a = arena.combat().cast_id_a[0],
+                    .cast_id_b = arena.combat().cast_id_b[0],
+                    .cast_timer_a = arena.combat().cast_timer_a[0],
+                    .cast_timer_b = arena.combat().cast_timer_b[0],
+                    .cast_total_a = arena.combat().cast_total_a[0],
+                    .cast_total_b = arena.combat().cast_total_b[0],
+                    .agony_a = arena.combat().agony_timer_a[0],
+                    .agony_b = arena.combat().agony_timer_b[0],
+                    .corruption_a = arena.combat().corruption_timer_a[0],
+                    .corruption_b = arena.combat().corruption_timer_b[0],
+                    .fear_a = arena.combat().fear_timer_a[0],
+                    .fear_b = arena.combat().fear_timer_b[0],
+                    .horror_a = arena.combat().horror_timer_a[0],
+                    .horror_b = arena.combat().horror_timer_b[0],
+                    .unending_dur_a = arena.combat().unending_dur_a[0],
+                    .unending_dur_b = arena.combat().unending_dur_b[0],
+                    .unending_cd_a = arena.combat().unending_cd_a[0],
+                    .unending_cd_b = arena.combat().unending_cd_b[0],
+                    .death_coil_cd_a = arena.combat().death_coil_cd_a[0],
+                    .death_coil_cd_b = arena.combat().death_coil_cd_b[0],
+                    .fear_dr_a = arena.combat().fear_dr_tier_a[0],
+                    .fear_dr_b = arena.combat().fear_dr_tier_b[0],
+                    .fear_dr_timer_a = arena.combat().fear_dr_timer_a[0],
+                    .fear_dr_timer_b = arena.combat().fear_dr_timer_b[0],
+                    .horror_dr_a = arena.combat().horror_dr_tier_a[0],
+                    .horror_dr_b = arena.combat().horror_dr_tier_b[0],
+                    .horror_dr_timer_a = arena.combat().horror_dr_timer_a[0],
+                    .horror_dr_timer_b = arena.combat().horror_dr_timer_b[0],
+                    .action_a = last_act_a,
+                    .action_b = last_act_b,
+                });
             }
 
-            prev_hp_a = arena.hp_a[0];
-            prev_hp_b = arena.hp_b[0];
-            prev_cid_a = arena.cast_id_a[0];
-            prev_cid_b = arena.cast_id_b[0];
-            prev_ctmr_a = arena.cast_timer_a[0];
-            prev_ctmr_b = arena.cast_timer_b[0];
-            prev_fear_a = arena.fear_timer_a[0];
-            prev_fear_b = arena.fear_timer_b[0];
-            prev_un_a = arena.unending_dur_a[0];
-            prev_un_b = arena.unending_dur_b[0];
+            traj.total_time_s = @as(f32, @floatFromInt(elapsed_ticks)) * dt;
+            if (arena.combat().hp_a[0] > 0.0 and arena.combat().hp_b[0] <= 0.0) {
+                traj.victor = 0;
+            } else if (arena.combat().hp_b[0] > 0.0 and arena.combat().hp_a[0] <= 0.0) {
+                traj.victor = 1;
+            } else {
+                traj.victor = 2;
+            }
 
-            try traj.frames.append(.{
-                .time_s = time_s,
-                .dist = arena.distance[0],
-                .pos_a = pos_a,
-                .pos_b = pos_b,
-                .hp_a = arena.hp_a[0],
-                .hp_b = arena.hp_b[0],
-                .mana_a = arena.mana_a[0],
-                .mana_b = arena.mana_b[0],
-                .speed_a = spd_a,
-                .speed_b = spd_b,
-                .cast_id_a = arena.cast_id_a[0],
-                .cast_id_b = arena.cast_id_b[0],
-                .cast_timer_a = arena.cast_timer_a[0],
-                .cast_timer_b = arena.cast_timer_b[0],
-                .cast_total_a = arena.cast_total_a[0],
-                .cast_total_b = arena.cast_total_b[0],
-                .agony_a = arena.agony_timer_a[0],
-                .agony_b = arena.agony_timer_b[0],
-                .corruption_a = arena.corruption_timer_a[0],
-                .corruption_b = arena.corruption_timer_b[0],
-                .fear_a = arena.fear_timer_a[0],
-                .fear_b = arena.fear_timer_b[0],
-                .horror_a = arena.horror_timer_a[0],
-                .horror_b = arena.horror_timer_b[0],
-                .unending_dur_a = arena.unending_dur_a[0],
-                .unending_dur_b = arena.unending_dur_b[0],
-                .unending_cd_a = arena.unending_cd_a[0],
-                .unending_cd_b = arena.unending_cd_b[0],
-                .death_coil_cd_a = arena.death_coil_cd_a[0],
-                .death_coil_cd_b = arena.death_coil_cd_b[0],
-                .fear_dr_a = arena.fear_dr_tier_a[0],
-                .fear_dr_b = arena.fear_dr_tier_b[0],
-                .fear_dr_timer_a = arena.fear_dr_timer_a[0],
-                .fear_dr_timer_b = arena.fear_dr_timer_b[0],
-                .horror_dr_a = arena.horror_dr_tier_a[0],
-                .horror_dr_b = arena.horror_dr_tier_b[0],
-                .horror_dr_timer_a = arena.horror_dr_timer_a[0],
-                .horror_dr_timer_b = arena.horror_dr_timer_b[0],
-                .action_a = last_act_a,
-                .action_b = last_act_b,
+            return traj;
+        }
+
+        /// Print formatted objective gauntlet scorecard
+        pub fn printReport(report: *const GauntletReport, writer: anytype) !void {
+            try writer.print("\n╔══════════════════════════════════════════════════════════════════════════════╗\n", .{});
+            try writer.print("║                   ⚔️  OBJECTIVE GAUNTLET BENCHMARK REPORT                    ║\n", .{});
+            try writer.print("╠══════════════════════════╦══════════════╦════════════════╦═══════════════════╣\n", .{});
+            try writer.print("║ Opponent Bot             ║ Win Rate     ║ Record (W/L/D) ║ Avg Surviving HP  ║\n", .{});
+            try writer.print("╠══════════════════════════╬══════════════╬════════════════╬═══════════════════╣\n", .{});
+
+            for (report.bot_results) |res| {
+                try writer.print("║ {s} {s: <20} ║   {d:5.1}%     ║ {d:3}W/{d:3}L/{d:3}D  ║   {d:4.0}/2000 HP   ║\n", .{
+                    res.bot_kind.getIcon(),
+                    res.bot_kind.getName(),
+                    res.win_rate * 100.0,
+                    res.wins,
+                    res.losses,
+                    res.draws,
+                    res.avg_surviving_hp,
+                });
+            }
+
+            try writer.print("╠══════════════════════════╬══════════════╬════════════════╬═══════════════════╣\n", .{});
+            try writer.print("║ 🏆 OVERALL PERFORMANCE   ║   {d:5.1}%     ║ {d:3}W/{d:3}L/{d:3}D  ║ Objective Elo: {d:4.0}║\n", .{
+                report.overall_win_rate * 100.0,
+                report.total_wins,
+                report.total_losses,
+                report.total_draws,
+                report.objective_elo,
             });
+            try writer.print("╚══════════════════════════╩══════════════╩════════════════╩═══════════════════╝\n\n", .{});
         }
-
-        traj.total_time_s = @as(f32, @floatFromInt(elapsed_ticks)) * dt;
-        if (arena.hp_a[0] > 0.0 and arena.hp_b[0] <= 0.0) {
-            traj.victor = 0;
-        } else if (arena.hp_b[0] > 0.0 and arena.hp_a[0] <= 0.0) {
-            traj.victor = 1;
-        } else {
-            traj.victor = 2;
-        }
-
-        return traj;
-    }
-
-    /// Print formatted objective gauntlet scorecard
-    pub fn printReport(report: *const GauntletReport, writer: anytype) !void {
-        try writer.print("\n╔══════════════════════════════════════════════════════════════════════════════╗\n", .{});
-        try writer.print("║                   ⚔️  OBJECTIVE GAUNTLET BENCHMARK REPORT                    ║\n", .{});
-        try writer.print("╠══════════════════════════╦══════════════╦════════════════╦═══════════════════╣\n", .{});
-        try writer.print("║ Opponent Bot             ║ Win Rate     ║ Record (W/L/D) ║ Avg Surviving HP  ║\n", .{});
-        try writer.print("╠══════════════════════════╬══════════════╬════════════════╬═══════════════════╣\n", .{});
-
-        for (report.bot_results) |res| {
-            try writer.print("║ {s} {s: <20} ║   {d:5.1}%     ║ {d:3}W/{d:3}L/{d:3}D  ║   {d:4.0}/2000 HP   ║\n", .{
-                res.bot_kind.getIcon(),
-                res.bot_kind.getName(),
-                res.win_rate * 100.0,
-                res.wins,
-                res.losses,
-                res.draws,
-                res.avg_surviving_hp,
-            });
-        }
-
-        try writer.print("╠══════════════════════════╬══════════════╬════════════════╬═══════════════════╣\n", .{});
-        try writer.print("║ 🏆 OVERALL PERFORMANCE   ║   {d:5.1}%     ║ {d:3}W/{d:3}L/{d:3}D  ║ Objective Elo: {d:4.0}║\n", .{
-            report.overall_win_rate * 100.0,
-            report.total_wins,
-            report.total_losses,
-            report.total_draws,
-            report.objective_elo,
-        });
-        try writer.print("╚══════════════════════════╩══════════════╩════════════════╩═══════════════════╝\n\n", .{});
-    }
-};
+    };
+}
 
 test "GauntletBot decision forward16" {
     inline for (0..GauntletBotKind.COUNT) |b_idx| {

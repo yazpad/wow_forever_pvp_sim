@@ -1,4 +1,5 @@
--- 📈 PVP_SIM: TRAINING GRAPHS & PROGRESS DASHBOARD (Love2D Native Module)
+local ui = require("ui")
+-- PVP_SIM: TRAINING GRAPHS & PROGRESS DASHBOARD (Love2D Native Module)
 local graphs = {}
 local json = require("json")
 
@@ -18,7 +19,14 @@ local ACTION_COLORS = {
     [8] = { 0.85, 0.40, 0.20 }, -- Cancel Cast (Orange)
 }
 
-function graphs.loadMetricsFile(path)
+function graphs.clear()
+    METRICS_DATA = nil
+    selectedGenIdx = 1
+end
+
+function graphs.loadMetricsFile(path, preserveSelection)
+    local previousIndex = selectedGenIdx
+    local followLatest = not graphs.hasData() or selectedGenIdx == #METRICS_DATA.generations
     currentMetricsPath = path
     local file, err = io.open(path, "r")
     if not file then
@@ -33,7 +41,7 @@ function graphs.loadMetricsFile(path)
         local content = file:read("*a")
         file:close()
         local ok, data = pcall(json.decode, content)
-        if not ok then
+        if not ok or type(data) ~= "table" or type(data.generations) ~= "table" or type(data.action_names) ~= "table" then
             print("Error parsing metrics: " .. tostring(data))
             return false
         end
@@ -42,15 +50,19 @@ function graphs.loadMetricsFile(path)
         for i, name in ipairs(data.action_names) do names[i - 1] = name end
         data.action_names = names
         METRICS_DATA = data
-        selectedGenIdx = (data.generations and #data.generations) or 1
+        selectedGenIdx = math.max(1, #data.generations)
+        if preserveSelection and not followLatest then selectedGenIdx = math.min(previousIndex, selectedGenIdx) end
         return true
     end
     file:close()
 
     local fn, loadErr = loadfile(path)
     if fn then
-        METRICS_DATA = fn()
-        selectedGenIdx = (METRICS_DATA.generations and #METRICS_DATA.generations) or 1
+        local ok, data = pcall(fn)
+        if not ok or type(data) ~= "table" or type(data.generations) ~= "table" then return false end
+        METRICS_DATA = data
+        selectedGenIdx = math.max(1, #METRICS_DATA.generations)
+        if preserveSelection and not followLatest then selectedGenIdx = math.min(previousIndex, selectedGenIdx) end
         return true
     else
         print("Error parsing metrics: " .. tostring(loadErr))
@@ -80,8 +92,8 @@ end
 
 function graphs.mousepressed(x, y, button)
     if not graphs.hasData() then return end
-    local screenW = love.graphics.getWidth()
-    local screenH = love.graphics.getHeight()
+    local screenW = ui.width()
+    local screenH = ui.height()
     local gens = METRICS_DATA.generations
     local numGens = #gens
 
@@ -114,8 +126,8 @@ local function drawCard(x, y, w, h, title, subtitle)
 end
 
 function graphs.draw()
-    local screenW = love.graphics.getWidth()
-    local screenH = love.graphics.getHeight()
+    local screenW = ui.width()
+    local screenH = ui.height()
 
     -- 1. Dark Backdrop
     love.graphics.setColor(0.02, 0.04, 0.08, 0.98)
@@ -123,7 +135,7 @@ function graphs.draw()
 
     if not graphs.hasData() then
         love.graphics.setColor(0.8, 0.8, 0.9)
-        love.graphics.printf("No training metrics loaded.\nRun './zig-out/bin/pvp_sim --metrics training_metrics.lua' first.", 0, screenH / 2 - 20, screenW, "center")
+        love.graphics.printf("No training metrics loaded.\nOpen Training Controls [F6] to start a run.", 0, screenH / 2 - 20, screenW, "center")
         return
     end
 
@@ -134,11 +146,11 @@ function graphs.draw()
     love.graphics.setColor(0.12, 0.65, 1.0, 1.0)
     love.graphics.rectangle("fill", 24, 18, 5, 34)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("⚔️ PVP_SIM: NEURAL TRAINING TELEMETRY & PROGRESS DASHBOARD", 38, 18)
+    love.graphics.print("Training telemetry", 38, 18)
     love.graphics.setColor(0.55, 0.65, 0.8, 1.0)
     local totalDuels = 0
     for _, generation in ipairs(gens) do totalDuels = totalDuels + (generation.total_duels or 0) end
-    love.graphics.print(string.format("Trained: %d Generations  |  Total Duels: %d  |  Press [G] or [ESC] to return to Arena Match Replay", numGens, totalDuels), 38, 38)
+    love.graphics.print(string.format("Trained: %d Generations  |  Total Duels: %d", numGens, totalDuels), 38, 38)
 
     -- 3. Generation Scrubber Bar
     local scrubX = 40
@@ -153,7 +165,7 @@ function graphs.draw()
     love.graphics.circle("fill", scrubX + scrubW * selPct, scrubY + 10, 8)
 
     love.graphics.setColor(0.8, 0.9, 1.0, 1.0)
-    love.graphics.print(string.format("Inspect Gen: %d / %d (Use [←/→] or Click Bar)", selectedGenIdx, numGens), scrubX, scrubY + 22)
+    love.graphics.print(string.format("Inspect Gen: %d / %d (Use [LEFT/RIGHT] or Click Bar)", selectedGenIdx, numGens), scrubX, scrubY + 22)
 
     -- 4. Multi-Panel Layout
     local contentY = 110
@@ -165,7 +177,7 @@ function graphs.draw()
     -- Panel 1: Rating Convergence Curves (Min / Mean / Max / Gauntlet Elo)
     -- -------------------------------------------------------------
     local p1X, p1Y = 20, contentY
-    drawCard(p1X, p1Y, colW, panelH, "📈 ELO RATING & CONVERGENCE DYNAMICS", "Min / Mean / Max Population Elo & Objective Benchmark")
+    drawCard(p1X, p1Y, colW, panelH, "Population Elo", nil)
 
     local chartX = p1X + 48
     local chartY = p1Y + 60
@@ -216,7 +228,7 @@ function graphs.draw()
         love.graphics.line(x1, y1, x2, y2)
     end
 
-    -- Plot Gauntlet Benchmark Points (Gold Diamonds)
+    -- Plot Gauntlet Benchmark Points (Gold Circles)
     for i, m in ipairs(gens) do
         if m.has_gauntlet and m.gauntlet_objective_elo > 0 then
             local gx = chartX + ((i - 1) / math.max(1, numGens - 1)) * chartW
@@ -233,17 +245,17 @@ function graphs.draw()
 
     -- Legend
     love.graphics.setColor(0.2, 0.85, 0.45, 1)
-    love.graphics.print("■ Max Elo", chartX, p1Y + 32)
+    love.graphics.print("[Max] Elo", chartX, p1Y + 32)
     love.graphics.setColor(0.2, 0.65, 1.0, 1)
-    love.graphics.print("■ Mean Elo", chartX + 90, p1Y + 32)
+    love.graphics.print("[Mean] Elo", chartX + 90, p1Y + 32)
     love.graphics.setColor(1.0, 0.85, 0.2, 1)
-    love.graphics.print("◆ Gauntlet Elo", chartX + 180, p1Y + 32)
+    love.graphics.print("[*] Gauntlet", chartX + 180, p1Y + 32)
 
     -- -------------------------------------------------------------
     -- Panel 2: Strategy Shift & Action Breakdown (Stacked Bar / Area)
     -- -------------------------------------------------------------
     local p2X, p2Y = p1X + colW + 16, contentY
-    drawCard(p2X, p2Y, colW, panelH, "🎯 EMERGENT STRATEGY & ACTION DISTRIBUTION", "Action Selection Frequency Shift Across Generations")
+    drawCard(p2X, p2Y, colW, panelH, "Action distribution", nil)
 
     local actChartX = p2X + 48
     local actChartY = p2Y + 60
@@ -284,14 +296,14 @@ function graphs.draw()
         local pct = (cnt / selTotal) * 100
         local name = METRICS_DATA.action_names[actId] or ("Act" .. actId)
         love.graphics.setColor(col[1], col[2], col[3], 1)
-        love.graphics.print(string.format("■ %s: %.0f%%", name, pct), legX + (actId - 1) * 100, legY)
+        love.graphics.print(string.format("[%s: %.0f%%]", name, pct), legX + (actId - 1) * 100, legY)
     end
 
     -- -------------------------------------------------------------
     -- Panel 3: Fitness & Duration Distribution
     -- -------------------------------------------------------------
     local p3X, p3Y = 20, contentY + panelH + 16
-    drawCard(p3X, p3Y, colW, panelH, "⚡ FITNESS CONVERGENCE & COMPUTE EFFICIENCY", "Generational Best/Mean Fitness and Iteration Compute Time")
+    drawCard(p3X, p3Y, colW, panelH, "Fitness & compute time", nil)
 
     local fChartX = p3X + 48
     local fChartY = p3Y + 60
@@ -316,7 +328,7 @@ function graphs.draw()
     end
 
     love.graphics.setColor(1.0, 0.45, 0.2, 1)
-    love.graphics.print("■ Best Fitness", fChartX, p3Y + 32)
+    love.graphics.print("[Best] Fitness", fChartX, p3Y + 32)
     love.graphics.setColor(0.6, 0.7, 0.8, 1)
     love.graphics.print(string.format("Gen %d Step Duration: %.1f ms", selectedGenIdx, selM.duration_ms or 0), fChartX + 130, p3Y + 32)
 
@@ -324,25 +336,25 @@ function graphs.draw()
     -- Panel 4: Selected Generation Deep-Dive Card
     -- -------------------------------------------------------------
     local p4X, p4Y = p1X + colW + 16, contentY + panelH + 16
-    drawCard(p4X, p4Y, colW, panelH, string.format("🔍 GENERATION %d TELEMETRY SUMMARY", selectedGenIdx), "Tournament Statistics & Champion Tactical Biases")
+    drawCard(p4X, p4Y, colW, panelH, string.format("GENERATION %d TELEMETRY SUMMARY", selectedGenIdx), "Tournament Statistics & Champion Tactical Biases")
 
     local textY = p4Y + 60
     love.graphics.setColor(0.9, 0.95, 1.0, 1.0)
-    love.graphics.print(string.format("• Maximum Elo:      %.1f (Mean: %.1f, Min: %.1f, Median: %.1f)", selM.elo_max, selM.elo_mean, selM.elo_min, selM.elo_median), p4X + 24, textY)
+    love.graphics.print(string.format("- Maximum Elo:      %.1f (Mean: %.1f, Min: %.1f, Median: %.1f)", selM.elo_max, selM.elo_mean, selM.elo_min, selM.elo_median), p4X + 24, textY)
     textY = textY + 20
-    love.graphics.print(string.format("• Best Fitness Score:  %.1f (Mean Fitness: %.1f)", selM.fitness_best, selM.fitness_mean), p4X + 24, textY)
+    love.graphics.print(string.format("- Best Fitness Score:  %.1f (Mean Fitness: %.1f)", selM.fitness_best, selM.fitness_mean), p4X + 24, textY)
     textY = textY + 20
     local recordLabel = METRICS_DATA.outcome_scope == "initiating_agent" and "Initiating Agents" or "Champion (legacy)"
-    love.graphics.print(string.format("• %s: %dW / %dL / %dD (%d duels)", recordLabel, selM.wins, selM.losses, selM.draws, selM.total_duels), p4X + 24, textY)
+    love.graphics.print(string.format("- %s: %dW / %dL / %dD (%d duels)", recordLabel, selM.wins, selM.losses, selM.draws, selM.total_duels), p4X + 24, textY)
     textY = textY + 20
 
     if selM.elo_stddev ~= nil then
-        love.graphics.print(string.format("• Elo Standard Deviation: %.1f | Mean Fight: %.2fs", selM.elo_stddev, selM.match_duration_mean_seconds or 0), p4X + 24, textY)
+        love.graphics.print(string.format("- Elo Standard Deviation: %.1f | Mean Fight: %.2fs", selM.elo_stddev, selM.match_duration_mean_seconds or 0), p4X + 24, textY)
         textY = textY + 20
     end
     if selM.match_duration_bins then
         local bins = selM.match_duration_bins
-        love.graphics.print(string.format("• Duration bins (<5/10/20/30/30+s): %d / %d / %d / %d / %d", bins[1], bins[2], bins[3], bins[4], bins[5]), p4X + 24, textY)
+        love.graphics.print(string.format("- Duration bins (<5/10/20/30/30+s): %d / %d / %d / %d / %d", bins[1], bins[2], bins[3], bins[4], bins[5]), p4X + 24, textY)
         textY = textY + 20
     end
 
@@ -353,16 +365,16 @@ function graphs.draw()
     local stndPct = ((selM.movement.stand or 0) / totalMoves) * 100
     local kitePct = ((selM.movement.kite or 0) / totalMoves) * 100
 
-    love.graphics.print(string.format("• Movement Bias:       Advance: %.1f%%  |  Stationary: %.1f%%  |  Kite: %.1f%%", advPct, stndPct, kitePct), p4X + 24, textY)
+    love.graphics.print(string.format("- Movement Bias:       Advance: %.1f%%  |  Stationary: %.1f%%  |  Kite: %.1f%%", advPct, stndPct, kitePct), p4X + 24, textY)
     textY = textY + 20
 
     -- Gauntlet objective
     if selM.has_gauntlet then
         love.graphics.setColor(0.2, 0.9, 0.4, 1.0)
-        love.graphics.print(string.format("• 🎯 Gauntlet Check:   Win Rate: %.1f%%  |  Objective Elo: %.0f", selM.gauntlet_win_rate * 100, selM.gauntlet_objective_elo), p4X + 24, textY)
+        love.graphics.print(string.format("- Gauntlet Check:   Win Rate: %.1f%%  |  Objective Elo: %.0f", selM.gauntlet_win_rate * 100, selM.gauntlet_objective_elo), p4X + 24, textY)
     else
         love.graphics.setColor(0.6, 0.7, 0.8, 1.0)
-        love.graphics.print("• 🎯 Gauntlet Check:   (Not evaluated in this generation snapshot)", p4X + 24, textY)
+        love.graphics.print("- Gauntlet Check:   (Not evaluated in this generation snapshot)", p4X + 24, textY)
     end
 end
 

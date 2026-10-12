@@ -2,6 +2,8 @@ const std = @import("std");
 
 test {
     _ = @import("simd.zig");
+    _ = @import("multi_spec.zig");
+    _ = @import("spec_policy.zig");
     _ = @import("combat_soa.zig");
     _ = @import("combat_spec.zig");
     _ = @import("policy_simd.zig");
@@ -11,4 +13,5 @@ test {
     _ = @import("gauntlet.zig");
     _ = @import("training_logger.zig");
     _ = @import("spec_matrix.zig");
+    _ = @import("spec_status.zig");
 }

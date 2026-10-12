@@ -15,15 +15,15 @@ const ALIGNMENT = simd.SimdConfig.Alignment;
 
 /// Actions available to the Warlock spec (and future caster/hybrid specs)
 pub const WarlockAction = enum(u32) {
-    IdleOrManeuver = 0,    // Move or hold distance without casting
-    Agony = 1,             // Instant DOT, castable while moving
-    Corruption = 2,        // Instant DOT, castable while moving
-    Fear = 3,              // 1.5s Hard cast, stationary only, interrupts & CCs target
-    ShadowBolt = 4,        // 1.8s Hard cast, stationary only, heavy direct damage
-    DrainLife = 5,         // 3.0s Channel, stationary only, siphon damage + self-heal
-    UnendingResolve = 6,   // Instant defensive buff, 45s CD, -40% damage taken for 6s
-    DeathCoil = 7,         // Instant 30m, 45s CD, 180 dmg, 300 heal, 3s Horror CC
-    CancelCast = 8,        // Instant cancel active cast (fake-casting / emergency run)
+    IdleOrManeuver = 0, // Move or hold distance without casting
+    Agony = 1, // Instant DOT, castable while moving
+    Corruption = 2, // Instant DOT, castable while moving
+    Fear = 3, // 1.5s Hard cast, stationary only, interrupts & CCs target
+    ShadowBolt = 4, // 1.8s Hard cast, stationary only, heavy direct damage
+    DrainLife = 5, // 3.0s Channel, stationary only, siphon damage + self-heal
+    UnendingResolve = 6, // Instant defensive buff, 45s CD, -40% damage taken for 6s
+    DeathCoil = 7, // Instant 30m, 45s CD, 180 dmg, 300 heal, 3s Horror CC
+    CancelCast = 8, // Instant cancel active cast (fake-casting / emergency run)
 
     pub const COUNT: usize = 9;
 };
@@ -31,8 +31,8 @@ pub const WarlockAction = enum(u32) {
 /// Movement intention commanded by policy or maneuver
 pub const MoveIntent = enum(i32) {
     Advance = -1, // Close distance towards target (-7.0 m/s)
-    Stand = 0,    // Stand stationary (0.0 m/s)
-    Kite = 1,     // Backpedal/kite away (+4.5 m/s)
+    Stand = 0, // Stand stationary (0.0 m/s)
+    Kite = 1, // Backpedal/kite away (+4.5 m/s)
 };
 
 pub const WarlockConstants = struct {
@@ -40,12 +40,12 @@ pub const WarlockConstants = struct {
     pub const MaxMana: f32 = 1000.0;
     pub const ManaRegenPerSec: f32 = 15.0;
 
-    pub const ForwardSpeed: f32 = 7.0;  // m/s
+    pub const ForwardSpeed: f32 = 7.0; // m/s
     pub const BackpedalSpeed: f32 = 4.5; // m/s
-    pub const MinDistance: f32 = 1.0;   // m (melee point-blank)
-    pub const MaxDistance: f32 = 35.0;  // m (arena boundary)
+    pub const MinDistance: f32 = 0.0; // m (no artificial minimum collision boundary)
+    pub const MaxDistance: f32 = 35.0; // m (arena boundary)
 
-    pub const StandardGcd: f32 = 1.0;   // seconds
+    pub const StandardGcd: f32 = 1.0; // seconds
     pub const ReactionInterval: f32 = 0.100; // 100ms cognitive interval
 
     // Spell Parameters
@@ -95,10 +95,7 @@ pub inline fn getDrMultiplier(tier: f32x16) f32x16 {
     const v_quarter: f32x16 = @splat(0.25);
     const v_one: f32x16 = @splat(1.0);
 
-    return select16(tier < @as(f32x16, @splat(0.5)), v_one,
-           select16(tier < @as(f32x16, @splat(1.5)), v_half,
-           select16(tier < @as(f32x16, @splat(2.5)), v_quarter,
-           v_zeros)));
+    return select16(tier < @as(f32x16, @splat(0.5)), v_one, select16(tier < @as(f32x16, @splat(1.5)), v_half, select16(tier < @as(f32x16, @splat(2.5)), v_quarter, v_zeros)));
 }
 
 /// 64-byte aligned Structure-of-Arrays combat pool for Vectorized Warlock PvP Duels.
@@ -118,9 +115,9 @@ pub const WarlockArenaPool = struct {
     react_timer_a: []align(ALIGNMENT) f32, // seconds until next cognitive decision
     move_intent_a: []align(ALIGNMENT) f32, // -1 (advance), 0 (stationary), +1 (kite)
 
-    cast_id_a: []align(ALIGNMENT) u32,     // 0 = none, 3 = Fear, 4 = ShadowBolt, 5 = DrainLife
-    cast_timer_a: []align(ALIGNMENT) f32,  // remaining seconds on active cast
-    cast_total_a: []align(ALIGNMENT) f32,  // total duration of cast
+    cast_id_a: []align(ALIGNMENT) u32, // 0 = none, 3 = Fear, 4 = ShadowBolt, 5 = DrainLife
+    cast_timer_a: []align(ALIGNMENT) f32, // remaining seconds on active cast
+    cast_total_a: []align(ALIGNMENT) f32, // total duration of cast
 
     // Debuffs on A (inflicted by B)
     agony_timer_a: []align(ALIGNMENT) f32,
@@ -135,8 +132,8 @@ pub const WarlockArenaPool = struct {
     death_coil_cd_a: []align(ALIGNMENT) f32,
 
     // Diminishing Returns tracking on A
-    fear_dr_tier_a: []align(ALIGNMENT) f32,   // 0.0=100%, 1.0=50%, 2.0=25%, 3.0=Immune
-    fear_dr_timer_a: []align(ALIGNMENT) f32,  // countdown from 18s
+    fear_dr_tier_a: []align(ALIGNMENT) f32, // 0.0=100%, 1.0=50%, 2.0=25%, 3.0=Immune
+    fear_dr_timer_a: []align(ALIGNMENT) f32, // countdown from 18s
     horror_dr_tier_a: []align(ALIGNMENT) f32, // 0.0=100%, 1.0=50%, 2.0=25%, 3.0=Immune
     horror_dr_timer_a: []align(ALIGNMENT) f32, // countdown from 18s
 
@@ -416,6 +413,10 @@ pub const WarlockArenaPool = struct {
         @memset(self.horror_dr_timer_b, 0.0);
 
         @memset(self.is_active, 1);
+    }
+
+    pub fn combat(self: *WarlockArenaPool) *WarlockArenaPool {
+        return self;
     }
 
     pub fn resetDuel(self: *WarlockArenaPool, i: usize) void {
@@ -1017,6 +1018,16 @@ pub const WarlockArenaPool = struct {
     /// Vectorized Physics & Combat Tick (dt = 0.010s / 100Hz)
     /// Ticks timers, updates distance, resolves casts, DOTs, CC, and mitigation branchlessly.
     pub fn tickPhysics(self: *WarlockArenaPool, dt: f32) usize {
+        return self.tickPhysicsRange(dt, 0, self.capacity);
+    }
+
+    /// Tick only the requested aligned SIMD batch; other arena lanes stay untouched.
+    pub fn tickPhysics16(self: *WarlockArenaPool, dt: f32, offset: usize) usize {
+        std.debug.assert(offset % VEC_LEN == 0 and offset + VEC_LEN <= self.capacity);
+        return self.tickPhysicsRange(dt, offset, offset + VEC_LEN);
+    }
+
+    fn tickPhysicsRange(self: *WarlockArenaPool, dt: f32, start: usize, end: usize) usize {
         const v_dt: f32x16 = @splat(dt);
         const v_zeros: f32x16 = @splat(0.0);
         const v_zeros_u32: u32x16 = @splat(0);
@@ -1025,9 +1036,9 @@ pub const WarlockArenaPool = struct {
         const v_max_dist: f32x16 = @splat(WarlockConstants.MaxDistance);
 
         var active_duels_sum: usize = 0;
-        var i: usize = 0;
+        var i: usize = start;
 
-        while (i < self.capacity) : (i += VEC_LEN) {
+        while (i < end) : (i += VEC_LEN) {
             const active_mask: bool16 = self.is_active[i..][0..VEC_LEN].* > v_zeros_u32;
             if (!@reduce(.Or, active_mask)) continue;
 
@@ -1303,4 +1314,17 @@ test "WarlockArenaPool initialization and tick" {
     try std.testing.expectEqual(@as(usize, 32), pool.capacity);
     const active = pool.tickPhysics(0.010);
     try std.testing.expectEqual(@as(usize, 32), active);
+}
+
+test "Single SIMD batch physics leaves neighboring duels untouched" {
+    var pool = try WarlockArenaPool.init(std.testing.allocator, 48);
+    defer pool.deinit();
+    for (0..48) |lane| pool.resetDuel(lane);
+    const before_a = pool.mana_a[0];
+    const before_b = pool.mana_a[32];
+    pool.mana_a[16] = 0;
+    _ = pool.tickPhysics16(0.01, 16);
+    try std.testing.expectEqual(before_a, pool.mana_a[0]);
+    try std.testing.expectEqual(before_b, pool.mana_a[32]);
+    try std.testing.expect(pool.mana_a[16] > 0);
 }

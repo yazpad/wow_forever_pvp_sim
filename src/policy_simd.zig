@@ -206,6 +206,7 @@ pub const PolicyGenome = struct {
     pub fn loadFromFile(file_path: []const u8) !PolicyGenome {
         const file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
+        if ((try file.stat()).size != @sizeOf(PolicyGenome)) return error.InvalidModelSize;
         var g: PolicyGenome = undefined;
         const reader = file.reader();
         try reader.readNoEof(mem.asBytes(&g));

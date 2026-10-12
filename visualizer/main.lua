@@ -1,9 +1,16 @@
--- ⚔️ PVP_SIM: 2D NEURAL COMBAT ARENA (Love2D Native Visualizer)
+local ui = require("ui")
+local class_view = require("class_view")
+-- PVP_SIM: 2D NEURAL COMBAT ARENA (Love2D Native Visualizer)
 local json = require("json")
 local graphs = require("graphs")
+local training = require("training")
+local evaluation = require("evaluation")
+local evaluationRevision = 0
+local quitAfterTraining = false
 local matrix_view = require("matrix_view")
 local match_browser = require("match_browser")
 local icons = require("icons_manager")
+local meta_health = require("meta_health")
 
 local MATCH_DATA = nil
 local currentTime = 0.0
@@ -12,13 +19,15 @@ local playbackSpeed = 1.0
 local speeds = { 0.25, 0.5, 1.0, 2.0, 4.0 }
 local speedIdx = 3
 
--- View Tab: "arena" | "graphs" | "fights" | "matrix"
+-- View Tab: "arena" | "graphs" | "fights" | "matrix" | "health" | "training"
 local currentTab = "arena"
 local TABS = {
-    { id = "arena", label = "⚔️ Arena Fight [F1]" },
-    { id = "graphs", label = "📈 Training Progress [F2]" },
-    { id = "fights", label = "📂 Stored Matches [F3]" },
-    { id = "matrix", label = "📊 Spec vs Spec Matrix [F4]" },
+    { id = "arena", label = "Arena [F1]" },
+    { id = "graphs", label = "Graphs [F2]" },
+    { id = "fights", label = "Fights [F3]" },
+    { id = "matrix", label = "Matrix [F4]" },
+    { id = "health", label = "Spec Meta [F5]" },
+    { id = "training", label = "Training [F6]" },
 }
 
 -- Camera state for smooth zoom and pan
@@ -92,6 +101,7 @@ end
 function love.load(arg)
     love.graphics.setBackgroundColor(0.03, 0.05, 0.09)
     icons.load()
+    training.load()
 
     local path = "last_match.lua"
     local metricsPath = "training_metrics.lua"
@@ -99,7 +109,9 @@ function love.load(arg)
 
     if arg then
         for i = 1, #arg do
-            if arg[i] == "--graphs" then
+            if arg[i] == "--training" then
+                currentTab = "training"
+            elseif arg[i] == "--graphs" then
                 currentTab = "graphs"
                 if arg[i + 1] and not arg[i + 1]:match("^%-%-") then
                     metricsPath = arg[i + 1]
@@ -125,6 +137,7 @@ function love.load(arg)
     graphs.loadMetricsFile(metricsPath)
     matrix_view.loadMatrixFile(matrixPath)
     match_browser.scanMatchesDir("matches")
+    meta_health.loadStatusFile("spec_status.lua")
 
     if not loadMatchFile(path) then
         if not loadMatchFile("last_match.json") then
@@ -178,7 +191,7 @@ function love.load(arg)
     if MATCH_DATA and MATCH_DATA.events then
         for i = 1, math.min(#MATCH_DATA.events, 40) do
             local ev = MATCH_DATA.events[i]
-            local spName = SPELL_NAMES[ev.sp] or ("Spell " .. tostring(ev.sp))
+            local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
             local text = string.format("[%.2fs] %s used %s", ev.t, ev.s == 0 and "A" or "B", spName)
             table.insert(activeCombatLog, text)
         end
@@ -249,7 +262,7 @@ local function checkEvents(currT, frame)
         local srcX = ev.s == 0 and worldToArenaX(frame[3]) or worldToArenaX(frame[4])
 
         if ev.k == 4 then -- Direct Hit (Shadow Bolt or Death Coil)
-            local isDc = (ev.sp == 7)
+            local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
             local col = isDc and { 0.2, 0.95, 0.4 } or { 0.95, 0.45, 1.0 }
             local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or string.format("-%d", math.floor(ev.a + 0.5))
             addFCT(targetX, -60, label, col, isDc and 1.6 or 1.4)
@@ -261,7 +274,7 @@ local function checkEvents(currT, frame)
                     tx = targetX, ty = -20,
                     progress = 0.0,
                     duration = 0.22,
-                    color = { 0.85, 0.45, 1.0 },
+                    color = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and {0.3, 0.8, 1} or { 0.85, 0.45, 1.0 },
                 })
             end
         elseif ev.k == 10 then -- Death Coil Launched
@@ -279,22 +292,37 @@ local function checkEvents(currT, frame)
             local label = isDrain and string.format("Siphon -%d", math.floor(ev.a + 0.5)) or string.format("-%d", math.floor(ev.a + 0.5))
             addFCT(targetX, -45, label, col, 1.0)
         elseif ev.k == 6 then -- Siphon / Death Coil Heal
-            local isDc = (ev.sp == 7)
+            local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
             local label = isDc and string.format("+%d Siphon Heal", math.floor(ev.a + 0.5)) or string.format("+%d", math.floor(ev.a + 0.5))
             addFCT(srcX, -70, label, { 0.2, 0.98, 0.4 }, isDc and 1.4 or 1.1)
         elseif ev.k == 3 then -- Interrupt
             addFCT(srcX, -85, "INTERRUPTED!", { 0.98, 0.2, 0.2 }, 1.5)
         elseif ev.k == 7 then -- Feared
-            addFCT(targetX, -85, "FEARED!", { 0.85, 0.55, 1.0 }, 1.4)
+            addFCT(targetX, -85, class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "POLYMORPH!" or "FEARED!", { 0.85, 0.55, 1.0 }, 1.4)
         elseif ev.k == 11 then -- Horror Applied
             addFCT(targetX, -85, "HORRIFIED!", { 0.2, 0.95, 0.5 }, 1.5)
+        elseif ev.k == 12 then
+            addFCT(targetX, -85, "ROOTED!", {0.3, 0.8, 1}, 1.4)
+        elseif ev.k == 13 then
+            addFCT(srcX, -85, "BLINK", {0.3, 0.8, 1}, 1.4)
+        elseif ev.k == 14 then
+            addFCT(targetX, -85, "COUNTERSPELL", {0.3, 0.8, 1}, 1.4)
         elseif ev.k == 9 then -- Defensive
-            addFCT(srcX, -80, "UNENDING RESOLVE (-40%)", { 0.2, 0.85, 1.0 }, 1.3)
+            addFCT(srcX, -80, class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "ICE BARRIER" or "UNENDING RESOLVE (-40%)", { 0.2, 0.85, 1.0 }, 1.3)
         end
     end
 end
 
 function love.update(dt)
+    training.update(dt)
+    meta_health.update(dt, training)
+    if evaluation.getRevision() ~= evaluationRevision then
+        evaluationRevision = evaluation.getRevision()
+        matrix_view.loadMatrixFile("spec_matrix.lua")
+        match_browser.scanMatchesDir("matches")
+    end
+    if quitAfterTraining and not training.isActive() then love.event.quit(); return end
+    if currentTab == "training" then return end
     if currentTab == "graphs" then
         graphs.update(dt)
         return
@@ -419,6 +447,8 @@ local function drawPill(x, y, w, h, text, bgCol, textCol)
 end
 
 local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, unDur, color, isLeft)
+    local side = isLeft and 0 or 1
+    local meta = MATCH_DATA and MATCH_DATA.meta
     -- 1. Unending Resolve Shield Dome (single clean subtle protective glow, no spinning arcs)
     if unDur > 0.0 then
         love.graphics.setColor(0.2, 0.75, 1.0, 0.20)
@@ -433,13 +463,13 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     love.graphics.circle("fill", x, y, 32)
 
     -- Draw Class Icon inside circular token
-    local drawnClass = icons.drawClassIcon("warlock", x, y, 56)
+    local drawnClass = icons.drawClassIcon(class_view.classIcon(meta, side), x, y, 56)
     if not drawnClass then
         love.graphics.setColor(color[1], color[2], color[3], 1.0)
-        local emblem = "W"
-        if horror > 0.0 then emblem = "💀"
+        local emblem = class_view.spec(meta, side) == "frost_mage" and "M" or "W"
+        if horror > 0.0 then emblem = "H"
         elseif fear > 0.0 then emblem = "!"
-        elseif unDur > 0.0 then emblem = "🛡️" end
+        elseif unDur > 0.0 then emblem = "S" end
         love.graphics.printf(emblem, x - 15, y - 8, 30, "center")
     end
 
@@ -447,9 +477,9 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     if horror > 0.0 then
         icons.draw("horror", x, y, 34, 1, 0.3, 0.3, 0.95)
     elseif fear > 0.0 then
-        icons.draw("fear", x, y, 34, 0.9, 0.5, 1, 0.95)
+        icons.draw(class_view.aura(meta, side, "fear"), x, y, 34, 0.9, 0.5, 1, 0.95)
     elseif unDur > 0.0 then
-        icons.draw("unendingresolve", x, y, 34, 0.4, 0.9, 1, 0.95)
+        icons.draw(class_view.aura(meta, side, "unendingresolve"), x, y, 34, 0.4, 0.9, 1, 0.95)
     end
 
     -- Token Team Border
@@ -489,10 +519,10 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     local dbSpacing = 25
     local auras = {}
     if horror > 0.0 then table.insert(auras, { icon = "horror", dur = horror, maxDur = 3.0, border = { 0.3, 0.9, 0.3, 1 } }) end
-    if fear > 0.0 then table.insert(auras, { icon = "fear", dur = fear, maxDur = 6.0, border = { 0.85, 0.4, 1.0, 1 } }) end
-    if agony > 0.0 then table.insert(auras, { icon = "agony", dur = agony, maxDur = 18.0, border = { 0.7, 0.3, 0.9, 1 } }) end
-    if corrup > 0.0 then table.insert(auras, { icon = "corruption", dur = corrup, maxDur = 14.0, border = { 0.95, 0.5, 0.2, 1 } }) end
-    if unDur > 0.0 then table.insert(auras, { icon = "unendingresolve", dur = unDur, maxDur = 6.0, border = { 0.2, 0.85, 1.0, 1 } }) end
+    if fear > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "fear"), dur = fear, maxDur = class_view.auraDuration(meta, side, "fear"), border = { 0.85, 0.4, 1.0, 1 } }) end
+    if agony > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "agony"), dur = agony, maxDur = class_view.auraDuration(meta, side, "agony"), border = { 0.7, 0.3, 0.9, 1 } }) end
+    if corrup > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "corruption"), dur = corrup, maxDur = class_view.auraDuration(meta, side, "corruption"), border = { 0.95, 0.5, 0.2, 1 } }) end
+    if unDur > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "unendingresolve"), dur = unDur, maxDur = class_view.auraDuration(meta, side, "unendingresolve"), border = { 0.2, 0.85, 1.0, 1 } }) end
 
     if #auras > 0 then
         local totalAuraW = #auras * dbSpacing - 3
@@ -517,7 +547,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
             [6] = "unendingresolve",
             [7] = "deathcoil",
         }
-        local cIcon = castIconMap[cid]
+        local cIcon = class_view.icon(meta, side, cid)
 
         local iconSize = 16
         local castBarX = x - halfW + iconSize + 3
@@ -552,53 +582,53 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
         love.graphics.rectangle("line", castBarX, castY, castBarW, iconSize, 3)
 
         love.graphics.setColor(1, 1, 1, 1)
-        local castLabel = SPELL_NAMES[cid] or "Cast"
+        local castLabel = class_view.name(meta, side, cid)
         love.graphics.printf(castLabel, castBarX, castY + 1, castBarW, "center")
     end
 end
 
+local function tabBounds(screenW, index)
+    local startX, gap = 156, 4
+    local width = (screenW - startX - 20 - gap * (#TABS - 1)) / #TABS
+    return startX + (index - 1) * (width + gap), 14, width, 36
+end
+
 local function drawTabBar(screenW)
-    local tabW = 200
-    local totalTabsW = #TABS * (tabW + 8)
-    local startTabX = (screenW - totalTabsW) * 0.5
-    local tabY = 14
-
+    local g = love.graphics
+    g.setColor(0.055, 0.075, 0.11)
+    g.rectangle("fill", 0, 0, screenW, ui.headerHeight)
+    g.setColor(0.15, 0.20, 0.27)
+    g.line(0, ui.headerHeight - 1, screenW, ui.headerHeight - 1)
+    g.setColor(0.9, 0.95, 1)
+    g.print("PVP / SIM", 24, 17)
+    g.setColor(0.49, 0.60, 0.71)
+    g.print("Combat lab", 24, 35)
+    local mx, my = love.mouse.getPosition()
     for idx, tab in ipairs(TABS) do
-        local tx = startTabX + (idx - 1) * (tabW + 8)
-        local isAct = (currentTab == tab.id)
-
-        love.graphics.setColor(isAct and 0.16 or 0.08, isAct and 0.24 or 0.11, isAct and 0.36 or 0.16, 0.95)
-        love.graphics.rectangle("fill", tx, tabY, tabW, 30, 6)
-
-        if isAct then
-            love.graphics.setColor(0.2, 0.75, 1.0, 1.0)
-            love.graphics.rectangle("line", tx, tabY, tabW, 30, 6)
-            love.graphics.setColor(1, 1, 1, 1)
-        else
-            love.graphics.setColor(0.18, 0.22, 0.30, 0.7)
-            love.graphics.rectangle("line", tx, tabY, tabW, 30, 6)
-            love.graphics.setColor(0.65, 0.75, 0.85, 1.0)
-        end
-
-        love.graphics.printf(tab.label, tx, tabY + 7, tabW, "center")
+        local x, y, w, h = tabBounds(screenW, idx)
+        ui.tab(x, y, w, h, tab.label, currentTab == tab.id,
+            mx >= x and mx <= x + w and my >= y and my <= y + h)
     end
 end
 
-function love.draw()
-    local screenW = love.graphics.getWidth()
-    local screenH = love.graphics.getHeight()
+local function drawContent()
+    local screenW = ui.width()
+    local screenH = ui.height()
 
-    if currentTab == "graphs" then
+    if currentTab == "training" then
+        training.draw()
+        return
+    elseif currentTab == "health" then
+        meta_health.draw(training)
+        return
+    elseif currentTab == "graphs" then
         graphs.draw()
-        drawTabBar(screenW)
         return
     elseif currentTab == "matrix" then
         matrix_view.draw()
-        drawTabBar(screenW)
         return
     elseif currentTab == "fights" then
         match_browser.draw()
-        drawTabBar(screenW)
         return
     end
 
@@ -714,7 +744,6 @@ function love.draw()
     love.graphics.setColor(0.2, 0.25, 0.35, 0.8)
     love.graphics.rectangle("line", 16, 12, screenW - 32, 54, 8)
 
-    drawTabBar(screenW)
 
     -- Top left PVP icon and title
     icons.draw("pvp_banner", 32, 28, 24)
@@ -770,6 +799,8 @@ function love.draw()
         local cdW = 22
         local cdH = 22
 
+        local cdY, row4Y, row5Y = 132, 160, 186
+        if class_view.spec(meta, 0) == "warlock" then
         -- Unit Frame A
         love.graphics.setColor(0.08, 0.10, 0.16, 0.94)
         love.graphics.rectangle("fill", 16, 74, 280, 142, 6)
@@ -815,7 +846,7 @@ function love.draw()
 
         -- Death Coil CD
         local dcX = 56
-        local cdY = 132
+        cdY = 132
         icons.drawRect("deathcoil", dcX, cdY, cdW, cdH)
         if frame[29] > 0 then
             icons.drawRadialCooldownMask(dcX, cdY, cdW, cdH, math.min(1.0, frame[29] / 45.0), 0.7)
@@ -842,7 +873,7 @@ function love.draw()
         love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
         love.graphics.print("BUFF:", 26, 162)
         local bX = 64
-        local row4Y = 160
+        row4Y = 160
         if frame[25] > 0 then -- Unending Resolve buff
             icons.drawAuraBadge("unendingresolve", bX, row4Y, 20, frame[25], 6.0, { 0.2, 0.85, 1.0, 1 })
             bX = bX + 24
@@ -852,26 +883,30 @@ function love.draw()
         love.graphics.setColor(0.95, 0.45, 0.35, 1.0)
         love.graphics.print("DEBUFF:", 26, 188)
         local debX = 80
-        local row5Y = 186
+        row5Y = 186
         if frame[23] > 0 then
             icons.drawAuraBadge("horror", debX, row5Y, 20, frame[23], 3.0, { 0.3, 0.9, 0.3, 1 })
             debX = debX + 24
         end
         if frame[21] > 0 then
-            icons.drawAuraBadge("fear", debX, row5Y, 20, frame[21], 6.0, { 0.85, 0.4, 1.0, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 0, "fear"), debX, row5Y, 20, frame[21], 6.0, { 0.85, 0.4, 1.0, 1 })
             debX = debX + 24
         end
         if frame[17] > 0 then
-            icons.drawAuraBadge("agony", debX, row5Y, 20, frame[17], 18.0, { 0.7, 0.3, 0.9, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 0, "agony"), debX, row5Y, 20, frame[17], 18.0, { 0.7, 0.3, 0.9, 1 })
             debX = debX + 24
         end
         if frame[19] > 0 then
-            icons.drawAuraBadge("corruption", debX, row5Y, 20, frame[19], 14.0, { 0.95, 0.5, 0.2, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 0, "corruption"), debX, row5Y, 20, frame[19], 14.0, { 0.95, 0.5, 0.2, 1 })
             debX = debX + 24
         end
 
+        else
+            class_view.drawMagePanel(meta, frame, 0, 16, icons)
+        end
         -- Unit Frame B
         local cardBx = screenW - 296
+        if class_view.spec(meta, 1) == "warlock" then
         love.graphics.setColor(0.08, 0.10, 0.16, 0.94)
         love.graphics.rectangle("fill", cardBx, 74, 280, 142, 6)
         love.graphics.setColor(0.10, 0.82, 0.55, 0.8)
@@ -954,16 +989,19 @@ function love.draw()
             debXB = debXB + 24
         end
         if frame[22] > 0 then
-            icons.drawAuraBadge("fear", debXB, row5Y, 20, frame[22], 6.0, { 0.85, 0.4, 1.0, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 1, "fear"), debXB, row5Y, 20, frame[22], 6.0, { 0.85, 0.4, 1.0, 1 })
             debXB = debXB + 24
         end
         if frame[18] > 0 then
-            icons.drawAuraBadge("agony", debXB, row5Y, 20, frame[18], 18.0, { 0.7, 0.3, 0.9, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 1, "agony"), debXB, row5Y, 20, frame[18], 18.0, { 0.7, 0.3, 0.9, 1 })
             debXB = debXB + 24
         end
         if frame[20] > 0 then
-            icons.drawAuraBadge("corruption", debXB, row5Y, 20, frame[20], 14.0, { 0.95, 0.5, 0.2, 1 })
+            icons.drawAuraBadge(class_view.aura(meta, 1, "corruption"), debXB, row5Y, 20, frame[20], 14.0, { 0.95, 0.5, 0.2, 1 })
             debXB = debXB + 24
+        end
+        else
+            class_view.drawMagePanel(meta, frame, 1, cardBx, icons)
         end
     end
 
@@ -988,9 +1026,9 @@ function love.draw()
 
     -- Instructions & Shortcuts
     love.graphics.setColor(0.85, 0.9, 0.98, 1.0)
-    love.graphics.print(isPlaying and "⏸ [SPACE] Pause" or "▶ [SPACE] Play", 36, ctrlY + 42)
+    ui.tab(36, ctrlY + 36, 132, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", true, false)
     love.graphics.setColor(0.6, 0.7, 0.8, 1.0)
-    love.graphics.print("[← / →] Step 10ms  |  [+/-] Zoom  |  [0] Reset Cam  |  [R] Reload  |  [1-5] Speed: " .. tostring(playbackSpeed) .. "x  |  [G] Training Graphs", 180, ctrlY + 42)
+    love.graphics.print("Arrows  Step    +/-  Zoom    0  Reset    R  Reload    1–5  Speed: " .. tostring(playbackSpeed) .. "x", 180, ctrlY + 42)
 
     -- Combat Summary / Live Log
     if MATCH_DATA and MATCH_DATA.events then
@@ -999,7 +1037,7 @@ function love.draw()
         for i = #MATCH_DATA.events, 1, -1 do
             local ev = MATCH_DATA.events[i]
             if ev.t <= currentTime then
-                local spName = SPELL_NAMES[ev.sp] or ("Spell " .. tostring(ev.sp))
+                local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
                 latestEvText = string.format("Latest Event: [%.2fs] Unit %s -> %s (Amount: %.0f)", ev.t, ev.s == 0 and "A" or "B", spName, ev.a)
                 break
             end
@@ -1008,8 +1046,17 @@ function love.draw()
     end
 end
 
+function love.draw()
+    love.graphics.push("all")
+    love.graphics.translate(0, ui.headerHeight)
+    love.graphics.scale(ui.scale())
+    drawContent()
+    love.graphics.pop()
+    drawTabBar(love.graphics.getWidth())
+end
+
 function love.wheelmoved(x, y)
-    if currentViewMode == "graphs" then return end
+    if currentTab ~= "arena" then return end
     local oldZoom = camera.zoom
     if y > 0 then
         camera.zoom = math.min(camera.maxZoom, camera.zoom * 1.15)
@@ -1023,22 +1070,38 @@ function love.keypressed(key)
     if key == "f1" or key == "1" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = "arena"
         return
-    elseif key == "f2" or key == "g" or key == "2" and love.keyboard.isDown("lctrl", "rctrl") then
+    elseif key == "f2" or key == "g" and currentTab ~= "training" and currentTab ~= "health" or key == "2" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = (currentTab == "graphs") and "arena" or "graphs"
         return
     elseif key == "f3" or key == "3" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = (currentTab == "fights") and "arena" or "fights"
         return
-    elseif key == "f4" or key == "m" or key == "4" and love.keyboard.isDown("lctrl", "rctrl") then
+    elseif key == "f4" or key == "m" and currentTab ~= "training" and currentTab ~= "health" or key == "4" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = (currentTab == "matrix") and "arena" or "matrix"
         return
-    elseif key == "tab" then
-        local nextTab = { arena = "graphs", graphs = "fights", fights = "matrix", matrix = "arena" }
+    elseif key == "f5" then
+        currentTab = (currentTab == "health") and "arena" or "health"
+        return
+    elseif key == "f6" then
+        currentTab = "training"
+        return
+    elseif key == "tab" and not (currentTab == "training" and training.hasFocus()) and currentTab ~= "health" then
+        local nextTab = { arena = "graphs", graphs = "fights", fights = "matrix", matrix = "health", health = "training", training = "arena" }
         currentTab = nextTab[currentTab] or "arena"
         return
     end
 
-    if currentTab == "graphs" then
+    if currentTab == "training" then
+        training.keypressed(key)
+        return
+    elseif currentTab == "health" then
+        if key == "escape" then
+            currentTab = "arena"
+            return
+        end
+        meta_health.keypressed(key)
+        return
+    elseif currentTab == "graphs" then
         if key == "escape" then
             currentTab = "arena"
             return
@@ -1109,25 +1172,29 @@ function love.keypressed(key)
 end
 
 function love.mousepressed(x, y, button)
-    local screenW = love.graphics.getWidth()
+    local screenW = ui.width()
 
-    -- Check Top Tab Bar click
-    local tabW = 200
-    local totalTabsW = #TABS * (tabW + 8)
-    local startTabX = (screenW - totalTabsW) * 0.5
-    local tabY = 14
-
-    if y >= tabY and y <= tabY + 30 then
+    if button == 1 then
         for idx, tab in ipairs(TABS) do
-            local tx = startTabX + (idx - 1) * (tabW + 8)
-            if x >= tx and x <= tx + tabW then
+            local tx, ty, tw, th = tabBounds(love.graphics.getWidth(), idx)
+            if x >= tx and x <= tx + tw and y >= ty and y <= ty + th then
                 currentTab = tab.id
                 return
             end
         end
     end
+    if y < ui.headerHeight then return end
+    x, y = ui.contentPoint(x, y)
 
-    if currentTab == "graphs" then
+    if currentTab == "training" then
+        local tab = training.mousepressed(x, y, button)
+        if tab then currentTab = tab end
+        return
+    elseif currentTab == "health" then
+        local tab = meta_health.mousepressed(x, y, button)
+        if tab then currentTab = tab end
+        return
+    elseif currentTab == "graphs" then
         graphs.mousepressed(x, y, button)
         return
     elseif currentTab == "matrix" then
@@ -1150,12 +1217,16 @@ function love.mousepressed(x, y, button)
         return
     end
 
-    local screenH = love.graphics.getHeight()
+    local screenH = ui.height()
     local ctrlY = screenH - 120
     local scrubX = 36
     local scrubW = screenW - 72
 
     if button == 1 then
+        if x >= 36 and x <= 168 and y >= ctrlY + 36 and y <= ctrlY + 64 then
+            isPlaying = not isPlaying
+            return
+        end
         if y >= ctrlY + 10 and y <= ctrlY + 34 and x >= scrubX and x <= scrubX + scrubW then
             if MATCH_DATA then
                 local pct = (x - scrubX) / scrubW
@@ -1180,8 +1251,22 @@ function love.mousereleased(x, y, button)
 end
 
 function love.mousemoved(x, y, dx, dy)
+    x, y = ui.contentPoint(x, y)
     if camera.isDragging then
         camera.x = camera.origPanX + (x - camera.dragStartX)
         camera.y = camera.origPanY + (y - camera.dragStartY)
+    end
+end
+
+function love.textinput(text)
+    if currentTab == "training" then training.textinput(text) end
+end
+
+function love.quit()
+    if training.isActive() then
+        training.stop()
+        quitAfterTraining = true
+        currentTab = "training"
+        return true
     end
 end

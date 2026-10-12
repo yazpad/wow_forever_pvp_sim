@@ -8,6 +8,8 @@ const WarlockArenaPool = combat_spec.WarlockArenaPool;
 const WarlockAction = combat_spec.WarlockAction;
 const WarlockConstants = combat_spec.WarlockConstants;
 const PolicyGenome = policy_simd.PolicyGenome;
+const Spec = @import("spec.zig").Spec;
+const multi_spec = @import("multi_spec.zig");
 
 pub const EventKind = enum(u8) {
     ActionUsed = 0,
@@ -22,6 +24,9 @@ pub const EventKind = enum(u8) {
     DefensiveActivated = 9,
     DeathCoil = 10,
     HorrorApplied = 11,
+    RootApplied = 12,
+    Blink = 13,
+    Counterspell = 14,
 };
 
 pub const RecordedEvent = struct {
@@ -34,6 +39,8 @@ pub const RecordedEvent = struct {
 };
 
 pub const RecordedFrame = struct {
+    // Appended replay columns: Blink/Nova cooldown, shield, lockout, per side.
+    frost: [8]f32 = [_]f32{0} ** 8,
     time_s: f32,
     dist: f32,
     pos_a: f32,
@@ -77,6 +84,8 @@ pub const RecordedFrame = struct {
 };
 
 pub const MatchTrajectory = struct {
+    spec_a: Spec = .warlock,
+    spec_b: Spec = .warlock,
     allocator: mem.Allocator,
     name_a: []const u8,
     name_b: []const u8,
@@ -128,6 +137,7 @@ pub const MatchTrajectory = struct {
         const writer = buf_writer.writer();
 
         try writer.print("{{\n  \"meta\": {{\n", .{});
+        try writer.print("    \"spec_a\": \"{s}\", \"spec_b\": \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
         try writer.print("    \"name_a\": \"{s}\", \"elo_a\": {d:0.1},\n", .{ self.name_a, self.elo_a });
         try writer.print("    \"name_b\": \"{s}\", \"elo_b\": {d:0.1},\n", .{ self.name_b, self.elo_b });
         try writer.print("    \"victor\": {d}, \"total_time\": {d:0.3},\n", .{ self.victor, self.total_time_s });
@@ -137,7 +147,7 @@ pub const MatchTrajectory = struct {
         try writer.print("  \"events\": [\n", .{});
         for (self.events.items, 0..) |ev, idx| {
             try writer.print("    {{\"t\": {d:0.3}, \"src\": {d}, \"tgt\": {d}, \"kind\": {d}, \"spell\": {d}, \"amt\": {d:0.1}}}{s}\n", .{
-                ev.time_s, ev.source, ev.target, @intFromEnum(ev.kind), ev.spell_id, ev.amount,
+                ev.time_s,                                        ev.source, ev.target, @intFromEnum(ev.kind), ev.spell_id, ev.amount,
                 if (idx + 1 < self.events.items.len) "," else "",
             });
         }
@@ -145,21 +155,21 @@ pub const MatchTrajectory = struct {
 
         for (self.frames.items, 0..) |f, idx| {
             try writer.print("    [{d:0.3},{d:0.2},{d:0.2},{d:0.2},{d:0.1},{d:0.1},{d:0.1},{d:0.1},{d:0.2},{d:0.2},{d},{d},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{
-                f.time_s, f.dist, f.pos_a, f.pos_b,
-                f.hp_a, f.hp_b, f.mana_a, f.mana_b,
-                f.speed_a, f.speed_b,
-                f.cast_id_a, f.cast_id_b, f.cast_timer_a, f.cast_timer_b, f.cast_total_a, f.cast_total_b,
-                f.agony_a, f.agony_b, f.corruption_a, f.corruption_b,
+                f.time_s,       f.dist,         f.pos_a,        f.pos_b,
+                f.hp_a,         f.hp_b,         f.mana_a,       f.mana_b,
+                f.speed_a,      f.speed_b,      f.cast_id_a,    f.cast_id_b,
+                f.cast_timer_a, f.cast_timer_b, f.cast_total_a, f.cast_total_b,
+                f.agony_a,      f.agony_b,      f.corruption_a, f.corruption_b,
             });
-            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d}]{s}\n", .{
-                f.fear_a, f.fear_b, f.horror_a, f.horror_b,
-                f.unending_dur_a, f.unending_dur_b, f.unending_cd_a, f.unending_cd_b,
-                f.death_coil_cd_a, f.death_coil_cd_b,
-                f.fear_dr_a, f.fear_dr_b, f.fear_dr_timer_a, f.fear_dr_timer_b,
-                f.horror_dr_a, f.horror_dr_b, f.horror_dr_timer_a, f.horror_dr_timer_b,
-                f.action_a, f.action_b,
-                if (idx + 1 < self.frames.items.len) "," else "",
+            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d}", .{
+                f.fear_a,            f.fear_b,            f.horror_a,      f.horror_b,
+                f.unending_dur_a,    f.unending_dur_b,    f.unending_cd_a, f.unending_cd_b,
+                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,     f.fear_dr_b,
+                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,   f.horror_dr_b,
+                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,      f.action_b,
             });
+            for (f.frost) |value| try writer.print(",{d:0.3}", .{value});
+            try writer.print("]{s}\n", .{if (idx + 1 < self.frames.items.len) "," else ""});
         }
         try writer.print("  ]\n}}\n", .{});
         try buf_writer.flush();
@@ -172,6 +182,7 @@ pub const MatchTrajectory = struct {
         const writer = buf_writer.writer();
 
         try writer.print("return {{\n  meta = {{\n", .{});
+        try writer.print("    spec_a = \"{s}\", spec_b = \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
         try writer.print("    name_a = \"{s}\", elo_a = {d:0.1},\n", .{ self.name_a, self.elo_a });
         try writer.print("    name_b = \"{s}\", elo_b = {d:0.1},\n", .{ self.name_b, self.elo_b });
         try writer.print("    victor = {d}, total_time = {d:0.3},\n", .{ self.victor, self.total_time_s });
@@ -188,20 +199,21 @@ pub const MatchTrajectory = struct {
 
         for (self.frames.items) |f| {
             try writer.print("    {{ {d:0.3},{d:0.2},{d:0.2},{d:0.2},{d:0.1},{d:0.1},{d:0.1},{d:0.1},{d:0.2},{d:0.2},{d},{d},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{
-                f.time_s, f.dist, f.pos_a, f.pos_b,
-                f.hp_a, f.hp_b, f.mana_a, f.mana_b,
-                f.speed_a, f.speed_b,
-                f.cast_id_a, f.cast_id_b, f.cast_timer_a, f.cast_timer_b, f.cast_total_a, f.cast_total_b,
-                f.agony_a, f.agony_b, f.corruption_a, f.corruption_b,
+                f.time_s,       f.dist,         f.pos_a,        f.pos_b,
+                f.hp_a,         f.hp_b,         f.mana_a,       f.mana_b,
+                f.speed_a,      f.speed_b,      f.cast_id_a,    f.cast_id_b,
+                f.cast_timer_a, f.cast_timer_b, f.cast_total_a, f.cast_total_b,
+                f.agony_a,      f.agony_b,      f.corruption_a, f.corruption_b,
             });
-            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d} }},\n", .{
-                f.fear_a, f.fear_b, f.horror_a, f.horror_b,
-                f.unending_dur_a, f.unending_dur_b, f.unending_cd_a, f.unending_cd_b,
-                f.death_coil_cd_a, f.death_coil_cd_b,
-                f.fear_dr_a, f.fear_dr_b, f.fear_dr_timer_a, f.fear_dr_timer_b,
-                f.horror_dr_a, f.horror_dr_b, f.horror_dr_timer_a, f.horror_dr_timer_b,
-                f.action_a, f.action_b,
+            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d}", .{
+                f.fear_a,            f.fear_b,            f.horror_a,      f.horror_b,
+                f.unending_dur_a,    f.unending_dur_b,    f.unending_cd_a, f.unending_cd_b,
+                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,     f.fear_dr_b,
+                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,   f.horror_dr_b,
+                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,      f.action_b,
             });
+            for (f.frost) |value| try writer.print(",{d:0.3}", .{value});
+            try writer.writeAll(" },\n");
         }
         try writer.print("  }}\n}}\n", .{});
         try buf_writer.flush();
@@ -210,6 +222,165 @@ pub const MatchTrajectory = struct {
 
 /// High-fidelity Duel Recorder
 pub const MatchRecorder = struct {
+    fn recordedSpeed(comptime side_a: bool, comptime source_class: Spec, state: *const WarlockArenaPool, dt: f32) f32 {
+        const suffix = if (side_a) "_a" else "_b";
+        const move = @field(state, "move_intent" ++ suffix)[0];
+        var speed: f32 = if (move < 0) -WarlockConstants.ForwardSpeed else if (move > 0) WarlockConstants.BackpedalSpeed else 0;
+        if (@field(state, "fear_timer" ++ suffix)[0] > dt or @field(state, "horror_timer" ++ suffix)[0] > dt)
+            speed = if (source_class == .frost_mage) 0 else WarlockConstants.ForwardSpeed;
+        if (source_class == .frost_mage) {
+            if (@field(state, "agony_timer" ++ suffix)[0] > 0) speed = 0;
+            if (@field(state, "corruption_timer" ++ suffix)[0] > 0) speed *= @import("spec.zig").Frost.SlowMultiplier;
+        }
+        return if (side_a) -speed else speed;
+    }
+
+    /// Evaluation-only recorder shared by every pairing containing a Mage.
+    /// B can be a neural policy or a fixed Warlock gauntlet bot.
+    pub fn recordPair(comptime a: Spec, comptime b: Spec, allocator: mem.Allocator, p_a: *const PolicyGenome, p_b: anytype, elo_b: f32, name_a: []const u8, name_b: []const u8, max_seconds: f32, dt: f32) !MatchTrajectory {
+        if (a == .warlock and b == .warlock) return recordDuel(allocator, p_a, p_b, name_a, name_b, max_seconds, dt);
+        var arena = try multi_spec.ArenaPool(a, b).init(allocator, 16);
+        defer arena.deinit();
+        for (0..16) |lane| arena.resetDuel(lane);
+        const state = arena.combat();
+        var traj = try MatchTrajectory.init(allocator, name_a, name_b, p_a.elo, elo_b);
+        errdefer traj.deinit();
+        traj.spec_a = a;
+        traj.spec_b = b;
+        var pos_a: f32 = -12.5;
+        var pos_b: f32 = 12.5;
+        const ticks: usize = @intFromFloat(max_seconds / dt);
+        for (0..ticks) |tick| {
+            if (state.is_active[0] == 0) break;
+            const time_s = @as(f32, @floatFromInt(tick + 1)) * dt;
+            const old_cast_a = state.cast_id_a[0];
+            const old_cast_b = state.cast_id_b[0];
+            const old_defensive_a = state.unending_dur_a[0];
+            const old_defensive_b = state.unending_dur_b[0];
+            const old_hp_a = state.hp_a[0];
+            const old_hp_b = state.hp_b[0];
+            const old_fear_a = state.fear_timer_a[0];
+            const old_fear_b = state.fear_timer_b[0];
+            const old_root_a = state.agony_timer_a[0];
+            const old_root_b = state.agony_timer_b[0];
+            var action_a: u32 = 0;
+            var action_b: u32 = 0;
+            const distance_before_a = state.distance[0];
+            if (arena.needsDecisionA(0)[0]) {
+                const out = p_a.forward16(arena.getObservationsA(0), arena.getActionMaskA(0));
+                action_a = out.actions[0];
+                arena.applyActionA(0, out.actions, out.move_intents);
+            }
+            pos_a -= state.distance[0] - distance_before_a;
+            const distance_before_b = state.distance[0];
+            if (arena.needsDecisionB(0)[0]) {
+                const out = p_b.forward16(arena.getObservationsB(0), arena.getActionMaskB(0));
+                action_b = out.actions[0];
+                arena.applyActionB(0, out.actions, out.move_intents);
+            }
+            pos_b += state.distance[0] - distance_before_b;
+            const cast_a = state.cast_id_a[0];
+            const cast_b = state.cast_id_b[0];
+            const remaining_a = state.cast_timer_a[0];
+            const remaining_b = state.cast_timer_b[0];
+            const speed_a = recordedSpeed(true, b, state, dt);
+            const speed_b = recordedSpeed(false, a, state, dt);
+            _ = arena.tickPhysics16(dt, 0);
+            const half_distance = state.distance[0] * 0.5;
+            const center = std.math.clamp((pos_a + pos_b + (speed_a + speed_b) * dt) * 0.5, -17.5 + half_distance, 17.5 - half_distance);
+            pos_a = center - half_distance;
+            pos_b = center + half_distance;
+            inline for (.{ true, false }) |side| {
+                const source: u8 = if (side) 0 else 1;
+                const target: u8 = 1 - source;
+                const actor = if (side) a else b;
+                const action = if (side) action_a else action_b;
+                const old_hp = if (side) old_hp_b else old_hp_a;
+                const new_hp = if (side) state.hp_b[0] else state.hp_a[0];
+                const own_old_hp = if (side) old_hp_a else old_hp_b;
+                const own_hp = if (side) state.hp_a[0] else state.hp_b[0];
+                const cast = if (side) cast_a else cast_b;
+                const old_cast = if (side) old_cast_a else old_cast_b;
+                const current_cast = if (side) state.cast_id_a[0] else state.cast_id_b[0];
+                const remaining = if (side) remaining_a else remaining_b;
+                if (action != 0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = .ActionUsed, .spell_id = action, .amount = 0 });
+                    if (actor == .frost_mage and (action == 5 or action == 7))
+                        try traj.events.append(.{ .time_s = time_s, .source = source, .target = if (action == 5) source else target, .kind = if (action == 5) .Blink else .Counterspell, .spell_id = action, .amount = 0 });
+                }
+                if (old_cast != 0 and cast == 0)
+                    try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = .CastInterrupt, .spell_id = old_cast, .amount = 0 });
+                if (old_cast == 0 and cast != 0)
+                    try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = .CastStart, .spell_id = cast, .amount = if (side) state.cast_total_a[0] else state.cast_total_b[0] });
+                const old_defensive = if (side) old_defensive_a else old_defensive_b;
+                const defensive = if (side) state.unending_dur_a[0] else state.unending_dur_b[0];
+                if (defensive > old_defensive) try traj.events.append(.{ .time_s = time_s, .source = source, .target = source, .kind = .DefensiveActivated, .spell_id = 6, .amount = defensive });
+                if (cast != 0 and current_cast == 0)
+                    try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = if (remaining <= dt) .CastComplete else .CastInterrupt, .spell_id = cast, .amount = 0 });
+                const damage = @max(0, old_hp - new_hp);
+                if (side) traj.total_dmg_a += damage else traj.total_dmg_b += damage;
+                if (damage > 0) try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = if (actor == .frost_mage or (cast == 4 and current_cast == 0) or action == 7) .DamageHit else .DamageDot, .spell_id = if (cast == 4 and current_cast == 0) 4 else if (action != 0) action else 1, .amount = damage });
+                const heal = @max(0, own_hp - own_old_hp);
+                if (side) traj.total_heal_a += heal else traj.total_heal_b += heal;
+                if (heal > 0) try traj.events.append(.{ .time_s = time_s, .source = source, .target = source, .kind = .Heal, .spell_id = if (action == 7) 7 else 5, .amount = heal });
+                const fear = if (side) state.fear_timer_b[0] else state.fear_timer_a[0];
+                const old_fear = if (side) old_fear_b else old_fear_a;
+                if (fear > old_fear) try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = .FearApplied, .spell_id = 3, .amount = fear });
+                const root = if (side) state.agony_timer_b[0] else state.agony_timer_a[0];
+                const old_root = if (side) old_root_b else old_root_a;
+                if (actor == .frost_mage and root > old_root) try traj.events.append(.{ .time_s = time_s, .source = source, .target = target, .kind = .RootApplied, .spell_id = 2, .amount = root });
+            }
+            const fa = arena.frostTelemetry(true, 0);
+            const fb = arena.frostTelemetry(false, 0);
+            try traj.frames.append(.{
+                .frost = .{ fa[0], fb[0], fa[1], fb[1], fa[2], fb[2], fa[3], fb[3] },
+                .time_s = time_s,
+                .dist = state.distance[0],
+                .pos_a = pos_a,
+                .pos_b = pos_b,
+                .hp_a = state.hp_a[0],
+                .hp_b = state.hp_b[0],
+                .mana_a = state.mana_a[0],
+                .mana_b = state.mana_b[0],
+                .speed_a = speed_a,
+                .speed_b = speed_b,
+                .cast_id_a = state.cast_id_a[0],
+                .cast_id_b = state.cast_id_b[0],
+                .cast_timer_a = state.cast_timer_a[0],
+                .cast_timer_b = state.cast_timer_b[0],
+                .cast_total_a = state.cast_total_a[0],
+                .cast_total_b = state.cast_total_b[0],
+                .agony_a = state.agony_timer_a[0],
+                .agony_b = state.agony_timer_b[0],
+                .corruption_a = state.corruption_timer_a[0],
+                .corruption_b = state.corruption_timer_b[0],
+                .fear_a = state.fear_timer_a[0],
+                .fear_b = state.fear_timer_b[0],
+                .horror_a = state.horror_timer_a[0],
+                .horror_b = state.horror_timer_b[0],
+                .unending_dur_a = state.unending_dur_a[0],
+                .unending_dur_b = state.unending_dur_b[0],
+                .unending_cd_a = state.unending_cd_a[0],
+                .unending_cd_b = state.unending_cd_b[0],
+                .death_coil_cd_a = state.death_coil_cd_a[0],
+                .death_coil_cd_b = state.death_coil_cd_b[0],
+                .fear_dr_a = state.fear_dr_tier_a[0],
+                .fear_dr_b = state.fear_dr_tier_b[0],
+                .fear_dr_timer_a = state.fear_dr_timer_a[0],
+                .fear_dr_timer_b = state.fear_dr_timer_b[0],
+                .horror_dr_a = state.horror_dr_tier_a[0],
+                .horror_dr_b = state.horror_dr_tier_b[0],
+                .horror_dr_timer_a = state.horror_dr_timer_a[0],
+                .horror_dr_timer_b = state.horror_dr_timer_b[0],
+                .action_a = action_a,
+                .action_b = action_b,
+            });
+        }
+        if (traj.frames.items.len > 0) traj.total_time_s = traj.frames.items[traj.frames.items.len - 1].time_s;
+        traj.victor = if (state.hp_b[0] <= 0 and state.hp_a[0] > 0) 0 else if (state.hp_a[0] <= 0 and state.hp_b[0] > 0) 1 else 2;
+        return traj;
+    }
+
     pub fn recordDuel(
         allocator: mem.Allocator,
         p_a: *const PolicyGenome,
@@ -355,13 +526,6 @@ pub const MatchRecorder = struct {
 
             pos_a = std.math.clamp(pos_a + spd_a * dt, -17.5, 17.5);
             pos_b = std.math.clamp(pos_b + spd_b * dt, -17.5, 17.5);
-
-            // Enforce minimum distance
-            if (pos_b - pos_a < WarlockConstants.MinDistance) {
-                const center = (pos_a + pos_b) * 0.5;
-                pos_a = center - WarlockConstants.MinDistance * 0.5;
-                pos_b = center + WarlockConstants.MinDistance * 0.5;
-            }
 
             // 4. Detect Events
             // Cast start for A
@@ -757,4 +921,44 @@ test "MatchRecorder produces valid trajectory" {
     const lua_path = "tmp_test_match.lua";
     try traj.exportLua(lua_path);
     defer std.fs.cwd().deleteFile(lua_path) catch {};
+}
+
+test "Mage recording matches SIMD combat and exports tagged Lua and JSON" {
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(88);
+    const genome = PolicyGenome.initRandom(prng.random());
+    inline for (.{ Spec.warlock, Spec.frost_mage }) |opponent| {
+        var traj = try MatchRecorder.recordPair(.frost_mage, opponent, allocator, &genome, &genome, genome.elo, "Mage", "Opponent", 3, 0.01);
+        defer traj.deinit();
+        var arena = try multi_spec.ArenaPool(.frost_mage, opponent).init(allocator, 16);
+        defer arena.deinit();
+        for (0..16) |lane| arena.resetDuel(lane);
+        for (traj.frames.items) |frame| {
+            if (arena.needsDecisionA(0)[0]) {
+                const out = genome.forward16(arena.getObservationsA(0), arena.getActionMaskA(0));
+                arena.applyActionA(0, out.actions, out.move_intents);
+            }
+            if (arena.needsDecisionB(0)[0]) {
+                const out = genome.forward16(arena.getObservationsB(0), arena.getActionMaskB(0));
+                arena.applyActionB(0, out.actions, out.move_intents);
+            }
+            _ = arena.tickPhysics16(0.01, 0);
+            try std.testing.expectEqual(arena.combat().hp_a[0], frame.hp_a);
+            try std.testing.expectEqual(arena.combat().hp_b[0], frame.hp_b);
+            try std.testing.expectEqual(arena.combat().distance[0], frame.dist);
+        }
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        const dir = try tmp.dir.realpathAlloc(allocator, ".");
+        defer allocator.free(dir);
+        const path = try std.fs.path.join(allocator, &.{ dir, "match.json" });
+        defer allocator.free(path);
+        try traj.exportJson(path);
+        const bytes = try tmp.dir.readFileAlloc(allocator, "match.json", 1024 * 1024);
+        defer allocator.free(bytes);
+        const parsed = try std.json.parseFromSlice(std.json.Value, allocator, bytes, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqualStrings("frost_mage", parsed.value.object.get("meta").?.object.get("spec_a").?.string);
+        try std.testing.expectEqual(@as(usize, 48), parsed.value.object.get("frames").?.array.items[0].array.items.len);
+    }
 }

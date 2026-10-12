@@ -1,6 +1,6 @@
 function love.conf(t)
     t.identity = "pvp_sim_visualizer"
-    t.window.title = "⚔️ PVP_SIM: 2D Neural Combat Arena"
+    t.window.title = "PVP_SIM: 2D Neural Combat Arena"
     t.window.width = 1280
     t.window.height = 720
     t.window.minwidth = 960

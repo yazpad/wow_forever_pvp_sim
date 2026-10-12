@@ -110,7 +110,7 @@ zig build test
 
 ## Training and evaluation
 
-See [CLI_REFERENCE.md](CLI_REFERENCE.md) for training, resume, sparring, recording, and Love2D playback commands, and [RL_PVP_DESIGN.md](RL_PVP_DESIGN.md) for roadmap status. The current engine supports Warlock combat with 24 observations, 24 hidden units, 9 actions, and a separate movement head. Models named after other Warlock specs currently share this kit.
+See [CLI_REFERENCE.md](CLI_REFERENCE.md) for training, resume, sparring, recording, and Love2D playback commands, and [RL_PVP_DESIGN.md](RL_PVP_DESIGN.md) for roadmap status. The engine supports Warlock and Frost Mage with 24 observations, 24 hidden units, 9 actions, and a separate movement head. See [Frost Mage mechanics, commands, and performance checks](FROST_MAGE.md). Models named after other Warlock specs currently share this kit.
 
 Run the performance regression floors on the benchmark host:
 
@@ -121,3 +121,13 @@ zig build test -Doptimize=ReleaseFast
 Generation metrics describe the evaluated population before breeding. `wins`, `losses`, and `draws` count each scheduled duel once from its initiating agent's perspective, including external and historical opponents. `elo_stddev` is the population standard deviation. `match_duration_bins` counts durations in `[0,5)`, `[5,10)`, `[10,20)`, `[20,30)`, and `[30,infinity)` seconds. Action and movement counts profile the champion against an idle target. New exports identify this interpretation with `outcome_scope = "initiating_agent"`; older metrics retain their original champion-only W/L/D interpretation and are labeled as legacy in the viewer.
 
 Source, documentation, scripts, and visualizer assets belong in version control. Generated models (`*.bin`), population checkpoints (`*.pop`), match recordings, matrices, and training metrics are ignored and can be regenerated with the CLI. The headless engine needs Zig only; graphical playback additionally needs Love2D.
+
+Start training from the desktop app with `love visualizer --training` after building. The Training Controls tab (F5) launches the native trainer, supports resume and graceful stop/save, and feeds live graphs (F2). Training defaults to one CPU thread with 16-wide SIMD; `--threads N` enables persistent workers across CPU cores. See [CLI_REFERENCE.md](CLI_REFERENCE.md) for settings and run artifacts.
+
+F5 opens the training pipeline dashboard. Warlock and Frost Mage are the two supported simulator kits. Train each base kit with self-play, then train Warlock vs Frost Mage and Frost Mage vs Warlock using the base champions as seeds and external sparring opponents. **Run remaining pipeline** runs these stages sequentially; **Stop & save** pauses the current stage and cancels the remaining queue. Individual stages can be continued from their saved population. Use **Settings / manual training** to set generations, population, duel batches, checkpoints, and CPU threads before launching the pipeline.
+
+Pipeline runs record their stage and completion state beside their artifacts in `training_runs`, so the dashboard restores saved progress on restart. Completed means the requested generations finished; it does not certify model quality. Older runs are counted by kit but have unknown pipeline stages and are not automatically promoted to completed stages. Other classes and distinct Warlock specs still require simulator implementation. Matchup training retains league self-play alongside external sparring.
+
+Successful individual or manual training runs, and the end of the full pipeline, automatically evaluate saved champions and record replays. **Evaluate + replays** on F5 also runs this step independently. Evaluation snapshots models from `models/`, saved pipeline stages, and the latest legacy champion per kit when no base stage exists, without moving source checkpoints. It writes `spec_matrix.lua` and recordings in `matches/`, then refreshes F4 and F3. Evaluation snapshots and logs live in `evaluation_runs/`. F3 shows class icons from replay metadata; use arrows or Page Up/Page Down to browse all recordings.
+
+Training supports `--threads N` and the Love2D **CPU training threads** setting (default: 1). See [multithreading performance and design](MULTITHREADING.md).

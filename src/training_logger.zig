@@ -7,7 +7,7 @@ const action_names = [_][]const u8{
     "Idle", "Agony", "Corruption", "Fear", "Shadow Bolt", "Drain Life", "Unending Resolve", "Death Coil", "Cancel Cast",
 };
 
-test "JSON telemetry exports empty history and preserves generation metrics" {
+test "atomic JSON snapshots replace empty history and preserve generation metrics" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -18,7 +18,7 @@ test "JSON telemetry exports empty history and preserves generation metrics" {
 
     var logger = TrainingLogger.init(allocator);
     defer logger.deinit();
-    try logger.exportJson(path);
+    try logger.exportAtomic(path);
     {
         const bytes = try tmp.dir.readFileAlloc(allocator, "metrics.json", 4096);
         defer allocator.free(bytes);
@@ -53,7 +53,7 @@ test "JSON telemetry exports empty history and preserves generation metrics" {
     };
     try logger.record(metrics);
     try logger.record(metrics);
-    try logger.exportJson(path);
+    try logger.exportAtomic(path);
     const bytes = try tmp.dir.readFileAlloc(allocator, "metrics.json", 8192);
     defer allocator.free(bytes);
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, bytes, .{});
@@ -117,6 +117,7 @@ pub const GenerationMetrics = struct {
 };
 
 pub const TrainingLogger = struct {
+    spec: @import("spec.zig").Spec = .warlock,
     allocator: mem.Allocator,
     history: std.ArrayList(GenerationMetrics),
 
@@ -135,6 +136,19 @@ pub const TrainingLogger = struct {
         try self.history.append(metrics);
     }
 
+    /// Readers see a complete snapshot; the temporary file stays on the same filesystem.
+    pub fn exportAtomic(self: *const TrainingLogger, file_path: []const u8) !void {
+        const temp_path = try std.fmt.allocPrint(self.allocator, "{s}.tmp", .{file_path});
+        defer self.allocator.free(temp_path);
+        errdefer std.fs.cwd().deleteFile(temp_path) catch {};
+        if (std.mem.endsWith(u8, file_path, ".json")) {
+            try self.exportJson(temp_path);
+        } else {
+            try self.exportLua(temp_path);
+        }
+        try std.fs.cwd().rename(temp_path, file_path);
+    }
+
     /// JSON uses zero-based action IDs as array offsets; Lua uses explicit IDs.
     pub fn exportJson(self: *const TrainingLogger, file_path: []const u8) !void {
         const file = try std.fs.cwd().createFile(file_path, .{});
@@ -142,7 +156,7 @@ pub const TrainingLogger = struct {
         var buffered = std.io.bufferedWriter(file.writer());
         const w = buffered.writer();
         try w.print("{{\"total_generations\":{d},\"action_names\":", .{self.history.items.len});
-        try std.json.stringify(action_names, .{}, w);
+        try std.json.stringify(if (self.spec == .warlock) action_names else self.spec.actionNames(), .{}, w);
         try w.writeAll(",\"outcome_scope\":\"initiating_agent\",\"generations\":[");
         for (self.history.items, 0..) |m, i| {
             if (i != 0) try w.writeByte(',');
@@ -183,7 +197,7 @@ pub const TrainingLogger = struct {
         try w.writeAll("return {\n  outcome_scope = \"initiating_agent\",\n");
         try w.print("  total_generations = {d},\n", .{self.history.items.len});
         try w.writeAll("  action_names = {\n");
-        for (action_names, 0..) |name, idx| {
+        for (if (self.spec == .warlock) action_names else self.spec.actionNames(), 0..) |name, idx| {
             try w.print("    [{d}] = \"{s}\",\n", .{ idx, name });
         }
         try w.writeAll("  },\n");
