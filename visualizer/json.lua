@@ -127,4 +127,49 @@ function json.decode(str)
     return res
 end
 
+local function escape_str(s)
+    local replacements = {
+        ['\\'] = '\\\\',
+        ['"'] = '\\"',
+        ['\b'] = '\\b',
+        ['\f'] = '\\f',
+        ['\n'] = '\\n',
+        ['\r'] = '\\r',
+        ['\t'] = '\\t',
+    }
+    return '"' .. s:gsub('[\\"\b\f\n\r\t]', replacements) .. '"'
+end
+
+function json.encode(val)
+    local t = type(val)
+    if t == "nil" then
+        return "null"
+    elseif t == "boolean" then
+        return val and "true" or "false"
+    elseif t == "number" then
+        if val ~= val then return "null" end -- NaN
+        if val >= math.huge or val <= -math.huge then return "null" end
+        return tostring(val)
+    elseif t == "string" then
+        return escape_str(val)
+    elseif t == "table" then
+        local kind = kind_of(val)
+        if kind == "array" then
+            local items = {}
+            for i = 1, #val do
+                table.insert(items, json.encode(val[i]))
+            end
+            return "[" .. table.concat(items, ",") .. "]"
+        else
+            local pairsList = {}
+            for k, v in pairs(val) do
+                table.insert(pairsList, escape_str(tostring(k)) .. ":" .. json.encode(v))
+            end
+            return "{" .. table.concat(pairsList, ",") .. "}"
+        end
+    else
+        return "null"
+    end
+end
+
 return json

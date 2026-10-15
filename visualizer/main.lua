@@ -1,16 +1,15 @@
 local ui = require("ui")
 local class_view = require("class_view")
--- PVP_SIM: 2D NEURAL COMBAT ARENA (Love2D Native Visualizer)
+-- PVP_SIM: 2D COMBAT ARENA & MCTS VISUALIZER (Love2D Native Visualizer)
 local json = require("json")
-local graphs = require("graphs")
-local training = require("training")
-local evaluation = require("evaluation")
-local evaluationRevision = 0
-local quitAfterTraining = false
-local matrix_view = require("matrix_view")
 local match_browser = require("match_browser")
 local icons = require("icons_manager")
-local meta_health = require("meta_health")
+local mcts_overlay = require("mcts_overlay")
+local spec_editor = require("spec_editor")
+local matrix_view = require("matrix_view")
+local petNames = { "Imp", "Succubus", "Felhunter", "Voidwalker" }
+local petMaxHp = { 500, 700, 900, 1200 }
+local petIcons = { "pet_imp", "pet_succubus", "pet_felhunter", "pet_voidwalker" }
 
 local MATCH_DATA = nil
 local currentTime = 0.0
@@ -19,15 +18,13 @@ local playbackSpeed = 1.0
 local speeds = { 0.25, 0.5, 1.0, 2.0, 4.0 }
 local speedIdx = 3
 
--- View Tab: "arena" | "graphs" | "fights" | "matrix" | "health" | "training"
+-- View Tab: "arena" | "fights" | "specs" | "matrix"
 local currentTab = "arena"
 local TABS = {
     { id = "arena", label = "Arena [F1]" },
-    { id = "graphs", label = "Graphs [F2]" },
-    { id = "fights", label = "Fights [F3]" },
+    { id = "fights", label = "Fights [F2]" },
+    { id = "specs", label = "Specs [F3]" },
     { id = "matrix", label = "Matrix [F4]" },
-    { id = "health", label = "Spec Meta [F5]" },
-    { id = "training", label = "Training [F6]" },
 }
 
 -- Camera state for smooth zoom and pan
@@ -50,18 +47,6 @@ local projectiles = {}
 local particles = {}
 local activeCombatLog = {}
 
-local SPELL_NAMES = {
-    [0] = "Idle",
-    [1] = "Agony",
-    [2] = "Corruption",
-    [3] = "Fear",
-    [4] = "Shadow Bolt",
-    [5] = "Drain Life",
-    [6] = "Unending Resolve",
-    [7] = "Death Coil",
-    [8] = "Cancel Cast",
-}
-
 local currentMatchPath = "last_match.lua"
 
 local function loadMatchFile(path)
@@ -83,6 +68,7 @@ local function loadMatchFile(path)
         if fn then
             MATCH_DATA = fn()
             print("Loaded match from Lua: " .. path)
+            mcts_overlay.loadSearchData(path)
             return true
         else
             print("Error parsing Lua match: " .. tostring(loadErr))
@@ -93,40 +79,28 @@ local function loadMatchFile(path)
         f:close()
         MATCH_DATA = json.decode(content)
         print("Loaded match from JSON: " .. path)
+        mcts_overlay.loadSearchData(path)
         return true
     end
     return false
 end
 
 function love.load(arg)
-    love.graphics.setBackgroundColor(0.03, 0.05, 0.09)
+    love.graphics.setBackgroundColor(0.04, 0.06, 0.10)
+    ui.initFonts()
+    ui.resetFont()
     icons.load()
-    training.load()
 
     local path = "last_match.lua"
-    local metricsPath = "training_metrics.lua"
-    local matrixPath = "spec_matrix.lua"
 
     if arg then
         for i = 1, #arg do
-            if arg[i] == "--training" then
-                currentTab = "training"
-            elseif arg[i] == "--graphs" then
-                currentTab = "graphs"
-                if arg[i + 1] and not arg[i + 1]:match("^%-%-") then
-                    metricsPath = arg[i + 1]
-                end
+            if arg[i] == "--fights" then
+                currentTab = "fights"
+            elseif arg[i] == "--specs" then
+                currentTab = "specs"
             elseif arg[i] == "--matrix" then
                 currentTab = "matrix"
-                if arg[i + 1] and not arg[i + 1]:match("^%-%-") then
-                    matrixPath = arg[i + 1]
-                end
-            elseif arg[i] == "--fights" then
-                currentTab = "fights"
-            elseif arg[i]:match("metrics") then
-                metricsPath = arg[i]
-            elseif arg[i]:match("matrix") then
-                matrixPath = arg[i]
             elseif not arg[i]:match("^%-%-") then
                 path = arg[i]
             end
@@ -134,10 +108,8 @@ function love.load(arg)
     end
 
     -- Load sub-modules
-    graphs.loadMetricsFile(metricsPath)
-    matrix_view.loadMatrixFile(matrixPath)
     match_browser.scanMatchesDir("matches")
-    meta_health.loadStatusFile("spec_status.lua")
+    matrix_view.init()
 
     if not loadMatchFile(path) then
         if not loadMatchFile("last_match.json") then
@@ -209,6 +181,25 @@ local function getFrameAtTime(t)
     return MATCH_DATA.frames[idx]
 end
 
+local function siphonRemaining(targetSide, t, frameTimer)
+    if frameTimer and frameTimer > 0 then return frameTimer end
+    if not MATCH_DATA or not MATCH_DATA.events then return 0 end
+    -- Older replays lack the appended frame columns. Reconstruct the aura
+    -- from the latest Siphon Life action aimed at this target.
+    for i = #MATCH_DATA.events, 1, -1 do
+        local ev = MATCH_DATA.events[i]
+        local kind = ev.k or ev.kind
+        local spell = ev.sp or ev.spell_id
+        local target = ev.tg or ev.target
+        local eventTime = ev.t or ev.time_s
+        if kind == 0 and spell == 8 and target == targetSide then
+            local remaining = 30.0 - (t - eventTime)
+            return math.max(0, remaining)
+        end
+    end
+    return 0
+end
+
 local nextEventIdx = 1
 
 local function resetEventsToTime(t)
@@ -239,18 +230,63 @@ local function addFCT(x, y, text, color, scale)
     })
 end
 
--- Convert simulation world position (-20m to +20m) to arena coordinate space
-local function worldToArenaX(wX)
-    local arenaSpan = 1000.0
-    local norm = (wX + 20.0) / 40.0
-    return (norm - 0.5) * arenaSpan
+-- Both ground-plane axes use the same scale: grid cells are square meters.
+local WORLD_SCALE = 25.0
+local function worldToArenaX(x)
+    return x * WORLD_SCALE
+end
+
+local function worldToArenaY(y)
+    return y * WORLD_SCALE
+end
+
+local function drawWorldGrid(screenW, screenH, centerY)
+    local g = love.graphics
+    local zoom = camera.zoom
+    local left = (-screenW * 0.5 - camera.x) / zoom
+    local right = (screenW * 0.5 - camera.x) / zoom
+    local top = (-centerY - camera.y) / zoom
+    local bottom = (screenH - centerY - camera.y) / zoom
+    g.setColor(0.055, 0.075, 0.115, 1)
+    g.rectangle("fill", left, top, right - left, bottom - top)
+
+    -- Only draw visible lines; reduce density when zoomed out.
+    local step = WORLD_SCALE * zoom >= 12 and 1 or 5
+    if WORLD_SCALE * zoom * step < 12 then step = 10 end
+    g.setLineWidth(1 / zoom)
+    for meter = math.ceil(left / WORLD_SCALE / step) * step, math.floor(right / WORLD_SCALE), step do
+        local major = meter % 5 == 0
+        g.setColor(0.20, 0.29, 0.40, major and 0.65 or 0.25)
+        local x = worldToArenaX(meter)
+        g.line(x, top, x, bottom)
+    end
+    for meter = math.ceil(top / WORLD_SCALE / step) * step, math.floor(bottom / WORLD_SCALE), step do
+        local major = meter % 5 == 0
+        g.setColor(0.20, 0.29, 0.40, major and 0.65 or 0.25)
+        local y = worldToArenaY(meter)
+        g.line(left, y, right, y)
+    end
+
+    g.setColor(0.32, 0.54, 0.70, 0.75)
+    g.setLineWidth(2 / zoom)
+    g.line(left, 0, right, 0)
+    g.line(0, top, 0, bottom)
+    g.setColor(0.55, 0.67, 0.78, 0.8)
+    for meter = math.ceil(left / WORLD_SCALE / 10) * 10, math.floor(right / WORLD_SCALE), 10 do
+        g.print(string.format("%dm", meter), worldToArenaX(meter) + 5 / zoom, 5 / zoom)
+    end
+    for meter = math.ceil(top / WORLD_SCALE / 10) * 10, math.floor(bottom / WORLD_SCALE), 10 do
+        if meter ~= 0 then
+            g.print(string.format("%dm", meter), 5 / zoom, worldToArenaY(meter) + 5 / zoom)
+        end
+    end
 end
 
 local function checkEvents(currT, frame)
     if not MATCH_DATA or not MATCH_DATA.events then return end
     local events = MATCH_DATA.events
-
-    if nextEventIdx > 1 and nextEventIdx <= #events and events[nextEventIdx].t > currT + 0.1 then
+    -- Only reset events when seeking backwards in time
+    if nextEventIdx > 1 and events[nextEventIdx - 1] and events[nextEventIdx - 1].t > currT then
         resetEventsToTime(currT)
     end
 
@@ -259,79 +295,148 @@ local function checkEvents(currT, frame)
         nextEventIdx = nextEventIdx + 1
 
         local targetX = ev.tg == 0 and worldToArenaX(frame[3]) or worldToArenaX(frame[4])
+        local targetY = worldToArenaY(frame[ev.tg == 0 and 49 or 50] or 0)
+        local srcY = worldToArenaY(frame[ev.s == 0 and 49 or 50] or 0)
         local srcX = ev.s == 0 and worldToArenaX(frame[3]) or worldToArenaX(frame[4])
 
-        if ev.k == 4 then -- Direct Hit (Shadow Bolt or Death Coil)
+        if ev.k == 4 then -- Direct Hit (Shadow Bolt, Frostbolt, Ice Lance, etc.)
             local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
-            local col = isDc and { 0.2, 0.95, 0.4 } or { 0.95, 0.45, 1.0 }
-            local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or string.format("-%d", math.floor(ev.a + 0.5))
-            addFCT(targetX, -60, label, col, isDc and 1.6 or 1.4)
+            local isMage = (class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage")
+            local col = isDc and { 0.2, 0.95, 0.4 } or (isMage and { 0.3, 0.85, 1.0 } or { 0.95, 0.45, 1.0 })
+            local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
+            local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or ((spName ~= "Idle" and (spName .. " -") or "-") .. string.format("%d", math.floor(ev.a + 0.5)))
+            addFCT(targetX, targetY + -60, label, col, isDc and 1.6 or 1.4)
 
-            if not isDc then
+            if not isDc and not frame[51] then
                 table.insert(projectiles, {
                     kind = "shadowbolt",
-                    sx = srcX, sy = -20,
-                    tx = targetX, ty = -20,
+                    sx = srcX, sy = srcY - 20,
+                    tx = targetX, ty = targetY - 20,
                     progress = 0.0,
                     duration = 0.22,
-                    color = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and {0.3, 0.8, 1} or { 0.85, 0.45, 1.0 },
+                    color = isMage and {0.3, 0.8, 1} or { 0.85, 0.45, 1.0 },
                 })
             end
-        elseif ev.k == 10 then -- Death Coil Launched
+        elseif ev.k == 10 and not frame[51] then -- Legacy Death Coil visual
             table.insert(projectiles, {
                 kind = "deathcoil",
-                sx = srcX, sy = -20,
-                tx = targetX, ty = -20,
+                sx = srcX, sy = srcY - 20,
+                tx = targetX, ty = targetY - 20,
                 progress = 0.0,
                 duration = 0.28,
                 color = { 0.1, 0.95, 0.35 },
             })
+        elseif ev.k == 15 then -- Simulation projectile arrival, including absorbed hits
+            local mage = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage"
+            local color = ev.sp == 7 and {0.15, 0.95, 0.35}
+                or (mage and {0.3, 0.8, 1.0} or {0.85, 0.4, 1.0})
+            for _ = 1, 12 do
+                local angle = math.random() * math.pi * 2
+                local speed = 60 + math.random() * 90
+                table.insert(particles, {
+                    x = targetX, y = targetY - 20,
+                    vx = math.cos(angle) * speed, vy = math.sin(angle) * speed,
+                    alpha = 1, color = color, size = 3,
+                })
+            end
+        elseif ev.k == 16 then -- Autonomous pet damage; spell ID is pet kind.
+            addFCT(targetX, targetY - 72,
+                string.format("%s -%d", petNames[ev.sp] or "Pet", math.floor(ev.a + 0.5)),
+                { 1.0, 0.65, 0.3 }, 1.0)
+
+            -- If pet is an Imp (kind == 1), spawn Firebolt projectile from Imp to target
+            if ev.sp == 1 then
+                local side = ev.s
+                local petIdx = 83 + side * 5
+                local petX = frame[petIdx + 2] and worldToArenaX(frame[petIdx + 2]) or srcX
+                local petY = frame[petIdx + 3] and worldToArenaY(frame[petIdx + 3]) or srcY
+                local dx = targetX - petX
+                local dy = (targetY - 20) - petY
+                local distPixels = math.sqrt(dx * dx + dy * dy)
+                local distMeters = distPixels / WORLD_SCALE
+                -- Distinct, clearly trackable visual travel speed (~16 m/s, duration between 0.75s and 1.8s)
+                local flightDuration = math.max(0.75, math.min(1.80, distMeters / 16.0))
+
+                table.insert(projectiles, {
+                    kind = "firebolt",
+                    sx = petX, sy = petY,
+                    tx = targetX, ty = targetY - 20,
+                    progress = 0.0,
+                    duration = flightDuration,
+                    color = { 1.0, 0.55, 0.15 },
+                })
+            else
+                -- Melee hit sparks
+                for _ = 1, 8 do
+                    local angle = math.random() * math.pi * 2
+                    local speed = 40 + math.random() * 60
+                    table.insert(particles, {
+                        x = targetX, y = targetY - 20,
+                        vx = math.cos(angle) * speed, vy = math.sin(angle) * speed,
+                        alpha = 1.0, color = { 0.9, 0.4, 0.7 }, size = 2.5,
+                    })
+                end
+            end
         elseif ev.k == 5 then -- Periodic DOT or Siphon Pulse
             local isDrain = (ev.sp == 5)
             local col = isDrain and { 0.25, 0.9, 0.55 } or { 0.85, 0.45, 0.95 }
-            local label = isDrain and string.format("Siphon -%d", math.floor(ev.a + 0.5)) or string.format("-%d", math.floor(ev.a + 0.5))
-            addFCT(targetX, -45, label, col, 1.0)
+            local label = isDrain and string.format("Siphon -%d", math.floor(ev.a + 0.5)) or string.format("DoT -%d", math.floor(ev.a + 0.5))
+            addFCT(targetX, targetY + -45, label, col, 1.0)
         elseif ev.k == 6 then -- Siphon / Death Coil Heal
             local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
-            local label = isDc and string.format("+%d Siphon Heal", math.floor(ev.a + 0.5)) or string.format("+%d", math.floor(ev.a + 0.5))
-            addFCT(srcX, -70, label, { 0.2, 0.98, 0.4 }, isDc and 1.4 or 1.1)
+            local isDrain = (ev.sp == 5)
+            local isSiphonLife = (ev.sp == 8)
+            local isHealthstone = (ev.sp == 6)
+            local label = isDc and string.format("+%d Death Coil", math.floor(ev.a + 0.5))
+                or (isDrain and string.format("+%d Drain", math.floor(ev.a + 0.5))
+                or (isSiphonLife and string.format("+%d Siphon Life", math.floor(ev.a + 0.5))
+                or (isHealthstone and string.format("+%d Healthstone", math.floor(ev.a + 0.5)) or string.format("+%d", math.floor(ev.a + 0.5)))))
+            addFCT(srcX, srcY + -70, label, { 0.2, 0.98, 0.4 }, (isDc or isDrain or isSiphonLife or isHealthstone) and 1.4 or 1.1)
         elseif ev.k == 3 then -- Interrupt
-            addFCT(srcX, -85, "INTERRUPTED!", { 0.98, 0.2, 0.2 }, 1.5)
+            addFCT(srcX, srcY + -85, "INTERRUPTED!", { 0.98, 0.2, 0.2 }, 1.5)
         elseif ev.k == 7 then -- Feared
-            addFCT(targetX, -85, class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "POLYMORPH!" or "FEARED!", { 0.85, 0.55, 1.0 }, 1.4)
+            addFCT(targetX, targetY + -85, class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "POLYMORPH!" or "FEARED!", { 0.85, 0.55, 1.0 }, 1.4)
         elseif ev.k == 11 then -- Horror Applied
-            addFCT(targetX, -85, "HORRIFIED!", { 0.2, 0.95, 0.5 }, 1.5)
+            addFCT(targetX, targetY + -85, "HORRIFIED!", { 0.2, 0.95, 0.5 }, 1.5)
         elseif ev.k == 12 then
-            addFCT(targetX, -85, "ROOTED!", {0.3, 0.8, 1}, 1.4)
+            addFCT(targetX, targetY + -85, "ROOTED!", {0.3, 0.8, 1}, 1.4)
         elseif ev.k == 13 then
-            addFCT(srcX, -85, "BLINK", {0.3, 0.8, 1}, 1.4)
+            addFCT(srcX, srcY + -85, "BLINK", {0.3, 0.8, 1}, 1.4)
         elseif ev.k == 14 then
-            addFCT(targetX, -85, "COUNTERSPELL", {0.3, 0.8, 1}, 1.4)
+            addFCT(targetX, targetY + -85, "COUNTERSPELL", {0.3, 0.8, 1}, 1.4)
         elseif ev.k == 9 then -- Defensive
-            addFCT(srcX, -80, class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "ICE BARRIER" or "UNENDING RESOLVE (-40%)", { 0.2, 0.85, 1.0 }, 1.3)
+            local isMage = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage"
+            addFCT(srcX, srcY + -80, isMage and "ICE BARRIER" or "HEALTHSTONE", isMage and { 0.2, 0.85, 1.0 } or { 0.2, 0.98, 0.4 }, 1.3)
         end
     end
 end
 
 function love.update(dt)
-    training.update(dt)
-    meta_health.update(dt, training)
-    if evaluation.getRevision() ~= evaluationRevision then
-        evaluationRevision = evaluation.getRevision()
-        matrix_view.loadMatrixFile("spec_matrix.lua")
-        match_browser.scanMatchesDir("matches")
-    end
-    if quitAfterTraining and not training.isActive() then love.event.quit(); return end
-    if currentTab == "training" then return end
-    if currentTab == "graphs" then
-        graphs.update(dt)
-        return
-    elseif currentTab == "matrix" then
-        matrix_view.update(dt)
+    matrix_view.update(dt)
+
+    if currentTab == "specs" then
+        spec_editor.update(dt)
         return
     elseif currentTab == "fights" then
-        match_browser.update(dt)
+        local matchToLoad = match_browser.update(dt)
+        if matchToLoad then
+            loadMatchFile(matchToLoad)
+            currentTime = 0.0
+            isPlaying = true
+            currentTab = "arena"
+        end
         return
+    elseif currentTab == "matrix" then
+        return
+    end
+
+    local match_generator = require("match_generator")
+    match_generator.update(dt)
+    local reSimMatch = match_generator.pollCompleted()
+    if reSimMatch then
+        loadMatchFile(reSimMatch)
+        currentTime = 0.0
+        isPlaying = true
     end
 
     if not MATCH_DATA then return end
@@ -363,19 +468,22 @@ function love.update(dt)
     -- Update Projectiles
     for i = #projectiles, 1, -1 do
         local p = projectiles[i]
-        p.progress = p.progress + dt / p.duration
+        p.progress = p.progress + (dt * playbackSpeed) / p.duration
 
         -- Emit trailing particles
-        if math.random() < 0.6 then
+        local isFire = (p.kind == "firebolt")
+        local emitChance = isFire and 0.95 or 0.6
+        if math.random() < emitChance then
             local curX = p.sx + (p.tx - p.sx) * p.progress
             local curY = p.sy + (p.ty - p.sy) * p.progress
             table.insert(particles, {
-                x = curX, y = curY + (math.random() - 0.5) * 8,
-                vx = (math.random() - 0.5) * 20,
-                vy = (math.random() - 0.5) * 20,
-                alpha = 0.8,
-                color = p.color,
-                size = 3.0,
+                x = curX + (math.random() - 0.5) * (isFire and 6 or 0),
+                y = curY + (math.random() - 0.5) * (isFire and 6 or 8),
+                vx = (math.random() - 0.5) * (isFire and 35 or 20),
+                vy = (math.random() - 0.5) * (isFire and 35 or 20) - (isFire and 15 or 0),
+                alpha = 0.9,
+                color = isFire and (math.random() < 0.5 and {1.0, 0.8, 0.2} or {1.0, 0.35, 0.05}) or p.color,
+                size = isFire and (math.random() * 3 + 2.5) or 3.0,
             })
         end
 
@@ -446,11 +554,11 @@ local function drawPill(x, y, w, h, text, bgCol, textCol)
     love.graphics.printf(text, x, y + 2, w, "center")
 end
 
-local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, unDur, color, isLeft)
+local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, unDur, siphon, immolate, color, isLeft)
     local side = isLeft and 0 or 1
     local meta = MATCH_DATA and MATCH_DATA.meta
-    -- 1. Unending Resolve Shield Dome (single clean subtle protective glow, no spinning arcs)
-    if unDur > 0.0 then
+    -- 1. Ice Barrier Shield Dome
+    if unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then
         love.graphics.setColor(0.2, 0.75, 1.0, 0.20)
         love.graphics.circle("fill", x, y, 42)
         love.graphics.setColor(0.3, 0.85, 1.0, 0.85)
@@ -469,7 +577,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
         local emblem = class_view.spec(meta, side) == "frost_mage" and "M" or "W"
         if horror > 0.0 then emblem = "H"
         elseif fear > 0.0 then emblem = "!"
-        elseif unDur > 0.0 then emblem = "S" end
+        elseif unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then emblem = "S" end
         love.graphics.printf(emblem, x - 15, y - 8, 30, "center")
     end
 
@@ -478,8 +586,8 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
         icons.draw("horror", x, y, 34, 1, 0.3, 0.3, 0.95)
     elseif fear > 0.0 then
         icons.draw(class_view.aura(meta, side, "fear"), x, y, 34, 0.9, 0.5, 1, 0.95)
-    elseif unDur > 0.0 then
-        icons.draw(class_view.aura(meta, side, "unendingresolve"), x, y, 34, 0.4, 0.9, 1, 0.95)
+    elseif unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then
+        icons.draw(class_view.aura(meta, side, "icebarrier"), x, y, 34, 0.4, 0.9, 1, 0.95)
     end
 
     -- Token Team Border
@@ -522,7 +630,9 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     if fear > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "fear"), dur = fear, maxDur = class_view.auraDuration(meta, side, "fear"), border = { 0.85, 0.4, 1.0, 1 } }) end
     if agony > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "agony"), dur = agony, maxDur = class_view.auraDuration(meta, side, "agony"), border = { 0.7, 0.3, 0.9, 1 } }) end
     if corrup > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "corruption"), dur = corrup, maxDur = class_view.auraDuration(meta, side, "corruption"), border = { 0.95, 0.5, 0.2, 1 } }) end
-    if unDur > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "unendingresolve"), dur = unDur, maxDur = class_view.auraDuration(meta, side, "unendingresolve"), border = { 0.2, 0.85, 1.0, 1 } }) end
+    if siphon > 0.0 then table.insert(auras, { icon = "siphonlife", dur = siphon, maxDur = 30.0, border = { 0.3, 0.9, 0.65, 1 } }) end
+    if immolate > 0.0 then table.insert(auras, { icon = "immolate", dur = immolate, maxDur = 15.0, border = { 1.0, 0.35, 0.1, 1 } }) end
+    if unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then table.insert(auras, { icon = "icebarrier", dur = unDur, maxDur = 20.0, border = { 0.2, 0.85, 1.0, 1 } }) end
 
     if #auras > 0 then
         local totalAuraW = #auras * dbSpacing - 3
@@ -544,7 +654,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
             [3] = "fear",
             [4] = "shadowbolt",
             [5] = "drainlife",
-            [6] = "unendingresolve",
+            [6] = "healthstone",
             [7] = "deathcoil",
         }
         local cIcon = class_view.icon(meta, side, cid)
@@ -595,14 +705,20 @@ end
 
 local function drawTabBar(screenW)
     local g = love.graphics
-    g.setColor(0.055, 0.075, 0.11)
+    g.setColor(0.045, 0.065, 0.105, 0.98)
     g.rectangle("fill", 0, 0, screenW, ui.headerHeight)
-    g.setColor(0.15, 0.20, 0.27)
+    g.setColor(0.16, 0.22, 0.32, 0.9)
     g.line(0, ui.headerHeight - 1, screenW, ui.headerHeight - 1)
-    g.setColor(0.9, 0.95, 1)
-    g.print("PVP / SIM", 24, 17)
-    g.setColor(0.49, 0.60, 0.71)
-    g.print("Combat lab", 24, 35)
+
+    icons.draw("pvp_banner", 30, ui.headerHeight * 0.5, 26)
+    ui.setFont("bold")
+    g.setColor(0.96, 0.98, 1.0, 1.0)
+    g.print("PVP_SIM", 50, 15)
+    ui.setFont("small")
+    g.setColor(0.40, 0.65, 0.90, 0.85)
+    g.print("Combat Arena & MCTS", 50, 35)
+    ui.resetFont()
+
     local mx, my = love.mouse.getPosition()
     for idx, tab in ipairs(TABS) do
         local x, y, w, h = tabBounds(screenW, idx)
@@ -615,20 +731,14 @@ local function drawContent()
     local screenW = ui.width()
     local screenH = ui.height()
 
-    if currentTab == "training" then
-        training.draw()
-        return
-    elseif currentTab == "health" then
-        meta_health.draw(training)
-        return
-    elseif currentTab == "graphs" then
-        graphs.draw()
-        return
-    elseif currentTab == "matrix" then
-        matrix_view.draw()
+    if currentTab == "specs" then
+        spec_editor.draw()
         return
     elseif currentTab == "fights" then
         match_browser.draw()
+        return
+    elseif currentTab == "matrix" then
+        matrix_view.draw()
         return
     end
 
@@ -641,48 +751,136 @@ local function drawContent()
     love.graphics.translate(screenW * 0.5 + camera.x, arenaCenterY + camera.y)
     love.graphics.scale(camera.zoom, camera.zoom)
 
-    -- Arena Oval Floor
-    love.graphics.setColor(0.08, 0.11, 0.18, 1.0)
-    love.graphics.ellipse("fill", 0, 0, 520, 190)
-
-    love.graphics.setColor(0.18, 0.22, 0.32, 0.8)
-    love.graphics.setLineWidth(3)
-    love.graphics.ellipse("line", 0, 0, 520, 190)
-
-    -- Yard markings & Ranges
-    love.graphics.setColor(0.3, 0.38, 0.5, 0.3)
-    love.graphics.setLineWidth(1)
-    love.graphics.ellipse("line", 0, 0, 300, 110) -- Fear Range (20m)
-    love.graphics.line(0, -180, 0, 180)
-
-    love.graphics.setColor(0.5, 0.6, 0.7, 0.5)
-    love.graphics.printf("-15m", worldToArenaX(-15) - 30, 155, 60, "center")
-    love.graphics.printf("0m", worldToArenaX(0) - 30, 155, 60, "center")
-    love.graphics.printf("+15m", worldToArenaX(15) - 30, 155, 60, "center")
+    drawWorldGrid(screenW, screenH, arenaCenterY)
 
     local frame = getFrameAtTime(currentTime)
+    local siphonOnA = frame and siphonRemaining(0, currentTime, frame[93]) or 0
+    local siphonOnB = frame and siphonRemaining(1, currentTime, frame[94]) or 0
+    local immolateOnA = frame and (frame[95] or 0) or 0
+    local immolateOnB = frame and (frame[96] or 0) or 0
     if frame then
         local ax = worldToArenaX(frame[3])
         local bx = worldToArenaX(frame[4])
+        local ay = worldToArenaY(frame[49] or 0)
+        local by = worldToArenaY(frame[50] or 0)
+
+        -- Pet columns are appended after player missiles. Old replays omit them.
+        for side = 0, 1 do
+            local idx = 83 + side * 5
+            local kind = frame[idx] or 0
+            if petNames[kind] then
+                local hp = frame[idx + 1] or 0
+                local px = worldToArenaX(frame[idx + 2] or 0)
+                local py = worldToArenaY(frame[idx + 3] or 0)
+                local pTimer = frame[idx + 4] or 0
+                local alive = hp > 0
+                local r, g, b = side == 0 and 0.75 or 0.3, side == 0 and 0.45 or 0.9, 0.65
+
+                -- 1. Pet Icon & Circular Badge (size 24x24)
+                local iconSize = 22
+                local halfIcon = iconSize * 0.5
+                -- Dark background backing
+                love.graphics.setColor(0.04, 0.05, 0.08, alive and 0.95 or 0.4)
+                love.graphics.circle("fill", px, py, halfIcon + 3)
+                -- Team border ring
+                love.graphics.setColor(r, g, b, alive and 1.0 or 0.4)
+                love.graphics.setLineWidth(2)
+                love.graphics.circle("line", px, py, halfIcon + 2)
+
+                -- Draw actual pet icon texture
+                local iconName = petIcons[kind]
+                if iconName then
+                    icons.draw(iconName, px, py, iconSize, 1, 1, 1, alive and 1.0 or 0.4)
+                else
+                    love.graphics.setColor(r, g, b, alive and 0.95 or 0.3)
+                    love.graphics.circle("fill", px, py, 10)
+                end
+
+                -- 2. HP Bar
+                local barW = 44
+                local barH = 4
+                local barX = px - barW * 0.5
+                local hpY = py + halfIcon + 4
+                love.graphics.setColor(0.02, 0.03, 0.04, 0.9)
+                love.graphics.rectangle("fill", barX, hpY, barW, barH, 2)
+                love.graphics.setColor(r, g, b, alive and 1 or 0.4)
+                love.graphics.rectangle("fill", barX, hpY, barW * math.max(0, math.min(1, hp / petMaxHp[kind])), barH, 2)
+
+                -- 3. Imp Firebolt Cast Bar (if kind == 1 and pet is casting)
+                local textY = hpY + barH + 2
+                if kind == 1 and alive and pTimer > 0 and pTimer < 2.0 then
+                    local castBarY = textY
+                    local castProg = math.max(0, math.min(1, (2.0 - pTimer) / 2.0))
+                    local cIconSize = 10
+                    local cBarX = barX + cIconSize + 2
+                    local cBarW = barW - cIconSize - 2
+
+                    -- Mini Firebolt icon
+                    icons.draw("firebolt", barX + cIconSize * 0.5, castBarY + cIconSize * 0.5, cIconSize)
+
+                    -- Cast bar track
+                    love.graphics.setColor(0.08, 0.10, 0.15, 0.9)
+                    love.graphics.rectangle("fill", cBarX, castBarY, cBarW, cIconSize, 2)
+                    -- Cast bar fill (fire color)
+                    love.graphics.setColor(1.0, 0.55, 0.1, 1.0)
+                    love.graphics.rectangle("fill", cBarX, castBarY, cBarW * castProg, cIconSize, 2)
+                    -- Border
+                    love.graphics.setColor(0.3, 0.35, 0.45, 0.8)
+                    love.graphics.setLineWidth(1)
+                    love.graphics.rectangle("line", cBarX, castBarY, cBarW, cIconSize, 2)
+
+                    textY = castBarY + cIconSize + 2
+                end
+
+                -- 4. Pet Name & HP Text
+                love.graphics.setColor(0.9, 0.9, 0.95, 0.9)
+                love.graphics.printf(string.format("%s %d HP", petNames[kind], math.floor(hp)), px - 65, textY, 130, "center")
+            end
+        end
 
         -- Distance connector line
         love.graphics.setColor(0.2, 0.6, 0.9, 0.25)
         love.graphics.setLineWidth(2)
-        love.graphics.line(ax, 0, bx, 0)
+        love.graphics.line(ax, ay, bx, by)
 
         -- Distance indicator badge
         local midX = (ax + bx) * 0.5
+        local midY = (ay + by) * 0.5
         love.graphics.setColor(0.1, 0.14, 0.22, 0.9)
-        love.graphics.rectangle("fill", midX - 35, 14, 70, 22, 5)
+        love.graphics.rectangle("fill", midX - 35, midY + 14, 70, 22, 5)
         love.graphics.setColor(0.3, 0.7, 1.0, 1.0)
-        love.graphics.printf(string.format("%.1fm", frame[2]), midX - 35, 18, 70, "center")
+        love.graphics.printf(string.format("%.1fm", frame[2]), midX - 35, midY + 18, 70, "center")
 
         -- Drain Life beam if active
         if frame[11] == 5 then -- Unit A casting Drain Life
-            drawDrainLifeBeam(ax, 0, bx, 0, { 0.7, 0.35, 1.0 }, { 0.2, 0.9, 0.5 })
+            drawDrainLifeBeam(ax, ay, bx, by, { 0.7, 0.35, 1.0 }, { 0.2, 0.9, 0.5 })
         end
         if frame[12] == 5 then -- Unit B casting Drain Life
-            drawDrainLifeBeam(bx, 0, ax, 0, { 0.2, 0.9, 0.5 }, { 0.7, 0.35, 1.0 })
+            drawDrainLifeBeam(bx, by, ax, ay, { 0.2, 0.9, 0.5 }, { 0.7, 0.35, 1.0 })
+        end
+
+        -- Recorded simulation missiles: four slots per side, spell/damage/x/y.
+        if frame[51] then
+            for side = 0, 1 do
+                for slot = 0, 3 do
+                    local idx = 51 + side * 16 + slot * 4
+                    local spell = frame[idx]
+                    if spell and spell > 0 then
+                        local x = worldToArenaX(frame[idx + 2])
+                        local y = worldToArenaY(frame[idx + 3]) - 20
+                        local mage = class_view.spec(MATCH_DATA.meta, side) == "frost_mage"
+                        local color = spell == 7 and {0.15, 0.95, 0.35}
+                            or (mage and {0.3, 0.8, 1.0} or {0.85, 0.4, 1.0})
+                        local size = spell == 7 and 10 or (spell == 1 and 5 or 8)
+                        love.graphics.setColor(color[1], color[2], color[3], 0.2)
+                        love.graphics.circle("fill", x, y, size * 2)
+                        love.graphics.setColor(color[1], color[2], color[3], 1)
+                        love.graphics.circle("fill", x, y, size)
+                        love.graphics.setColor(1, 1, 1, 0.9)
+                        love.graphics.circle("fill", x, y, size * 0.4)
+                    end
+                end
+            end
         end
 
         -- Projectiles in-flight
@@ -694,6 +892,13 @@ local function drawContent()
                 love.graphics.circle("fill", curX, curY, 11)
                 love.graphics.setColor(0.9, 1.0, 0.9, 0.8)
                 love.graphics.circle("fill", curX, curY, 6)
+            elseif p.kind == "firebolt" then
+                love.graphics.setColor(1.0, 0.35, 0.05, 0.4)
+                love.graphics.circle("fill", curX, curY, 12)
+                love.graphics.setColor(1.0, 0.65, 0.15, 1.0)
+                love.graphics.circle("fill", curX, curY, 7)
+                love.graphics.setColor(1.0, 0.95, 0.7, 0.9)
+                love.graphics.circle("fill", curX, curY, 3.5)
             else
                 love.graphics.circle("fill", curX, curY, 8)
             end
@@ -708,20 +913,24 @@ local function drawContent()
         -- Draw combatants with full 40-column telemetry
         local meta = MATCH_DATA.meta
         drawCombatant(
-            ax, 0,
+            ax, ay,
             frame[5], frame[7],                                    -- hp_a, mana_a
             frame[11], frame[13], frame[15],                       -- cast_id_a, cast_timer_a, cast_total_a
             frame[17], frame[19], frame[21], frame[23],            -- agony_a, corruption_a, fear_a, horror_a
-            frame[25],                                             -- unending_dur_a
+            frame[25],                                             -- action6_dur_a
+            siphonOnA,                                               -- Siphon Life debuff on A
+            immolateOnA,                                             -- Immolate debuff on A
             { 0.68, 0.35, 0.98 }, true
         )
 
         drawCombatant(
-            bx, 0,
+            bx, by,
             frame[6], frame[8],                                    -- hp_b, mana_b
             frame[12], frame[14], frame[16],                       -- cast_id_b, cast_timer_b, cast_total_b
             frame[18], frame[20], frame[22], frame[24],            -- agony_b, corruption_b, fear_b, horror_b
-            frame[26],                                             -- unending_dur_b
+            frame[26],                                             -- action6_dur_b
+            siphonOnB,                                               -- Siphon Life debuff on B
+            immolateOnB,                                             -- Immolate debuff on B
             { 0.10, 0.82, 0.55 }, false
         )
 
@@ -739,46 +948,49 @@ local function drawContent()
     -- ==========================================
 
     -- 2.1 Top Header Bar
-    love.graphics.setColor(0.08, 0.10, 0.16, 0.95)
-    love.graphics.rectangle("fill", 16, 12, screenW - 32, 54, 8)
-    love.graphics.setColor(0.2, 0.25, 0.35, 0.8)
-    love.graphics.rectangle("line", 16, 12, screenW - 32, 54, 8)
-
+    ui.drawCard(16, 12, screenW - 32, 54, false, false, 8)
 
     -- Top left PVP icon and title
-    icons.draw("pvp_banner", 32, 28, 24)
-    love.graphics.setColor(0.95, 0.95, 1.0, 1.0)
-    love.graphics.print("PVP_SIM", 48, 20)
-    love.graphics.setColor(0.4, 0.7, 1.0, 1.0)
-    love.graphics.print(string.format("Zoom: %d%%", math.floor(camera.zoom * 100 + 0.5)), 48, 38)
+    icons.draw("pvp_banner", 34, 38, 26)
+    ui.setFont("bold")
+    love.graphics.setColor(0.96, 0.98, 1.0, 1.0)
+    love.graphics.print("PVP ARENA", 54, 20)
+    ui.setFont("small")
+    love.graphics.setColor(0.40, 0.72, 1.0, 0.9)
+    love.graphics.print(string.format("Camera: %d%%", math.floor(camera.zoom * 100 + 0.5)), 54, 39)
+    ui.resetFont()
 
     if MATCH_DATA then
         local meta = MATCH_DATA.meta
-        local victorStr = "DRAW"
-        local vColor = { 0.6, 0.7, 0.8 }
+        local victorStr = "IN PROGRESS"
+        local vColor = { 0.7, 0.78, 0.9 }
         local showCrown = false
         if meta.victor == 0 then
             victorStr = string.format("%s VICTORIOUS", meta.name_a)
-            vColor = { 0.7, 0.4, 1.0 }
+            vColor = { 0.78, 0.45, 1.0 }
             showCrown = true
         elseif meta.victor == 1 then
             victorStr = string.format("%s VICTORIOUS", meta.name_b)
-            vColor = { 0.2, 0.85, 0.5 }
+            vColor = { 0.25, 0.88, 0.55 }
             showCrown = true
         end
 
-        local centerBoxX = screenW * 0.35
-        local centerBoxW = screenW * 0.3
+        local centerBoxX = screenW * 0.32
+        local centerBoxW = screenW * 0.36
         if showCrown then
-            icons.draw("crown", centerBoxX + centerBoxW * 0.5 - 90, 36, 20)
+            icons.draw("crown", centerBoxX + centerBoxW * 0.5 - 100, 38, 22)
         end
+        ui.setFont("bold")
         love.graphics.setColor(vColor[1], vColor[2], vColor[3], 1.0)
         love.graphics.printf(victorStr, centerBoxX, 28, centerBoxW, "center")
+        ui.resetFont()
 
         -- Time clock with clock icon
-        icons.draw("clock", screenW - 250, 38, 18)
-        love.graphics.setColor(0.7, 0.8, 0.9, 1.0)
-        love.graphics.printf(string.format("%.2fs / %.2fs", currentTime, meta.total_time), screenW - 235, 30, 195, "right")
+        icons.draw("clock", screenW - 250, 38, 20)
+        ui.setFont("semibold")
+        love.graphics.setColor(0.85, 0.92, 1.0, 0.95)
+        love.graphics.printf(string.format("%.2fs / %.2fs", currentTime, meta.total_time), screenW - 225, 29, 185, "right")
+        ui.resetFont()
     end
 
     -- Helper spell icon lookup
@@ -789,13 +1001,16 @@ local function drawContent()
         [3] = "fear",
         [4] = "shadowbolt",
         [5] = "drainlife",
-        [6] = "unendingresolve",
+        [6] = "healthstone",
         [7] = "deathcoil",
     }
 
     -- 2.2 Telemetry Unit Frames (Top-left & Top-right)
     if frame and MATCH_DATA then
         local meta = MATCH_DATA.meta
+        -- Use frame timers, with event reconstruction for older replays.
+        local siphonA = siphonOnA
+        local siphonB = siphonOnB
         local cdW = 22
         local cdH = 22
 
@@ -857,11 +1072,11 @@ local function drawContent()
             love.graphics.rectangle("line", dcX, cdY, cdW, cdH, 2)
         end
 
-        -- Unending Resolve CD
+        -- Healthstone / Ice Barrier cooldown
         local urX = 84
-        icons.drawRect("unendingresolve", urX, cdY, cdW, cdH)
+        icons.drawRect(class_view.icon(meta, 0, 6), urX, cdY, cdW, cdH)
         if frame[27] > 0 then
-            icons.drawRadialCooldownMask(urX, cdY, cdW, cdH, math.min(1.0, frame[27] / 45.0), 0.7)
+            icons.drawRadialCooldownMask(urX, cdY, cdW, cdH, math.min(1.0, frame[27] / (class_view.spec(meta, 0) == "frost_mage" and 24.0 or 120.0)), 0.7)
             love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
             love.graphics.rectangle("line", urX, cdY, cdW, cdH, 2)
         else
@@ -874,8 +1089,8 @@ local function drawContent()
         love.graphics.print("BUFF:", 26, 162)
         local bX = 64
         row4Y = 160
-        if frame[25] > 0 then -- Unending Resolve buff
-            icons.drawAuraBadge("unendingresolve", bX, row4Y, 20, frame[25], 6.0, { 0.2, 0.85, 1.0, 1 })
+        if frame[25] > 0 and class_view.spec(meta, 0) == "frost_mage" then
+            icons.drawAuraBadge("icebarrier", bX, row4Y, 20, frame[25], 20.0, { 0.2, 0.85, 1.0, 1 })
             bX = bX + 24
         end
 
@@ -898,6 +1113,14 @@ local function drawContent()
         end
         if frame[19] > 0 then
             icons.drawAuraBadge(class_view.aura(meta, 0, "corruption"), debX, row5Y, 20, frame[19], 14.0, { 0.95, 0.5, 0.2, 1 })
+            debX = debX + 24
+        end
+        if siphonA > 0 then
+            icons.drawAuraBadge("siphonlife", debX, row5Y, 20, siphonA, 30.0, { 0.3, 0.9, 0.65, 1 })
+            debX = debX + 24
+        end
+        if immolateOnA > 0 then
+            icons.drawAuraBadge("immolate", debX, row5Y, 20, immolateOnA, 15.0, { 1.0, 0.35, 0.1, 1 })
             debX = debX + 24
         end
 
@@ -961,9 +1184,9 @@ local function drawContent()
         end
 
         local urXB = cardBx + 68
-        icons.drawRect("unendingresolve", urXB, cdY, cdW, cdH)
+        icons.drawRect(class_view.icon(meta, 1, 6), urXB, cdY, cdW, cdH)
         if frame[28] > 0 then
-            icons.drawRadialCooldownMask(urXB, cdY, cdW, cdH, math.min(1.0, frame[28] / 45.0), 0.7)
+            icons.drawRadialCooldownMask(urXB, cdY, cdW, cdH, math.min(1.0, frame[28] / (class_view.spec(meta, 1) == "frost_mage" and 24.0 or 120.0)), 0.7)
             love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
             love.graphics.rectangle("line", urXB, cdY, cdW, cdH, 2)
         else
@@ -975,8 +1198,8 @@ local function drawContent()
         love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
         love.graphics.print("BUFF:", cardBx + 10, 162)
         local bXB = cardBx + 48
-        if frame[26] > 0 then -- Unending Resolve buff
-            icons.drawAuraBadge("unendingresolve", bXB, row4Y, 20, frame[26], 6.0, { 0.2, 0.85, 1.0, 1 })
+        if frame[26] > 0 and class_view.spec(meta, 1) == "frost_mage" then
+            icons.drawAuraBadge("icebarrier", bXB, row4Y, 20, frame[26], 20.0, { 0.2, 0.85, 1.0, 1 })
             bXB = bXB + 24
         end
 
@@ -1000,6 +1223,14 @@ local function drawContent()
             icons.drawAuraBadge(class_view.aura(meta, 1, "corruption"), debXB, row5Y, 20, frame[20], 14.0, { 0.95, 0.5, 0.2, 1 })
             debXB = debXB + 24
         end
+        if siphonB > 0 then
+            icons.drawAuraBadge("siphonlife", debXB, row5Y, 20, siphonB, 30.0, { 0.3, 0.9, 0.65, 1 })
+            debXB = debXB + 24
+        end
+        if immolateOnB > 0 then
+            icons.drawAuraBadge("immolate", debXB, row5Y, 20, immolateOnB, 15.0, { 1.0, 0.35, 0.1, 1 })
+            debXB = debXB + 24
+        end
         else
             class_view.drawMagePanel(meta, frame, 1, cardBx, icons)
         end
@@ -1007,10 +1238,7 @@ local function drawContent()
 
     -- 2.3 Bottom Controls & Scrubber Panel
     local ctrlY = screenH - 120
-    love.graphics.setColor(0.08, 0.10, 0.16, 0.95)
-    love.graphics.rectangle("fill", 16, ctrlY, screenW - 32, 106, 8)
-    love.graphics.setColor(0.2, 0.25, 0.35, 0.8)
-    love.graphics.rectangle("line", 16, ctrlY, screenW - 32, 106, 8)
+    ui.drawCard(16, ctrlY, screenW - 32, 106, false, false, 8)
 
     -- Scrubber Track
     local scrubX = 36
@@ -1018,31 +1246,84 @@ local function drawContent()
     local totalT = (MATCH_DATA and MATCH_DATA.meta.total_time) or 1.0
     local scrubPct = math.max(0, math.min(1.0, currentTime / totalT))
 
-    love.graphics.setColor(0.18, 0.22, 0.32, 1.0)
+    -- Track groove background
+    love.graphics.setColor(0.12, 0.16, 0.24, 1.0)
     love.graphics.rectangle("fill", scrubX, ctrlY + 18, scrubW, 8, 4)
-    love.graphics.setColor(0.2, 0.7, 1.0, 1.0)
+    -- Fill highlight with gradient look
+    love.graphics.setColor(0.25, 0.70, 0.98, 1.0)
     love.graphics.rectangle("fill", scrubX, ctrlY + 18, scrubW * scrubPct, 8, 4)
-    love.graphics.circle("fill", scrubX + scrubW * scrubPct, ctrlY + 22, 9)
+    -- Glow scrubber knob
+    love.graphics.setColor(0.55, 0.85, 1.0, 0.4)
+    love.graphics.circle("fill", scrubX + scrubW * scrubPct, ctrlY + 22, 12)
+    love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
+    love.graphics.circle("fill", scrubX + scrubW * scrubPct, ctrlY + 22, 7)
+
+    -- Play/Pause Button
+    local mx, my = love.mouse.getPosition()
+    local btnHover = (mx >= 36 and mx <= 36 + 140 and my >= ctrlY + 36 and my <= ctrlY + 36 + 28)
+    ui.button(36, ctrlY + 36, 140, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", btnHover, isPlaying)
 
     -- Instructions & Shortcuts
-    love.graphics.setColor(0.85, 0.9, 0.98, 1.0)
-    ui.tab(36, ctrlY + 36, 132, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", true, false)
-    love.graphics.setColor(0.6, 0.7, 0.8, 1.0)
-    love.graphics.print("Arrows  Step    +/-  Zoom    0  Reset    R  Reload    1–5  Speed: " .. tostring(playbackSpeed) .. "x", 180, ctrlY + 42)
+    ui.setFont("small")
+    love.graphics.setColor(0.65, 0.75, 0.88, 0.9)
+    love.graphics.print("Arrows  Step    +/-  Zoom    0  Reset    R  Reload    1–5  Speed: " .. tostring(playbackSpeed) .. "x", 190, ctrlY + 42)
+    ui.resetFont()
 
     -- Combat Summary / Live Log
     if MATCH_DATA and MATCH_DATA.events then
-        love.graphics.setColor(0.5, 0.65, 0.8, 1.0)
         local latestEvText = "No events yet"
         for i = #MATCH_DATA.events, 1, -1 do
             local ev = MATCH_DATA.events[i]
             if ev.t <= currentTime then
                 local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
-                latestEvText = string.format("Latest Event: [%.2fs] Unit %s -> %s (Amount: %.0f)", ev.t, ev.s == 0 and "A" or "B", spName, ev.a)
+                local srcName = ev.s == 0 and (MATCH_DATA.meta and MATCH_DATA.meta.name_a or "Unit A") or (MATCH_DATA.meta and MATCH_DATA.meta.name_b or "Unit B")
+                local desc = ""
+                if ev.k == 0 then
+                    desc = string.format("used %s", spName)
+                elseif ev.k == 1 then
+                    desc = string.format("began casting %s", spName)
+                elseif ev.k == 2 then
+                    desc = string.format("completed %s", spName)
+                elseif ev.k == 3 then
+                    desc = string.format("%s was interrupted!", spName)
+                elseif ev.k == 4 then
+                    desc = string.format("%s hit for -%.0f HP", spName, ev.a)
+                elseif ev.k == 5 then
+                    desc = string.format("%s tick (-%.0f HP)", ev.sp == 5 and "Siphon" or "DoT", ev.a)
+                elseif ev.k == 6 then
+                    local healName = ({[5]="Drain Life", [6]="Healthstone", [7]="Death Coil", [8]="Siphon Life"})[ev.sp] or "Heal"
+                    desc = string.format("%s heal (+%.0f HP)", healName, ev.a)
+                elseif ev.k == 7 then
+                    desc = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "applied Polymorph" or "applied Fear"
+                elseif ev.k == 8 then
+                    desc = "Fear broke"
+                elseif ev.k == 9 then
+                    desc = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "activated Ice Barrier" or "used Healthstone"
+                elseif ev.k == 10 then
+                    desc = string.format("Death Coil hit (-%.0f HP)", ev.a)
+                elseif ev.k == 11 then
+                    desc = "applied Death Coil Horror"
+                elseif ev.k == 12 then
+                    desc = "applied Frost Nova Root"
+                elseif ev.k == 13 then
+                    desc = "cast Blink"
+                elseif ev.k == 14 then
+                    desc = "cast Counterspell"
+                elseif ev.k == 16 then
+                    desc = string.format("%s hit for -%.0f HP", petNames[ev.sp] or "Pet", ev.a)
+                else
+                    desc = string.format("%s (%.0f)", spName, ev.a)
+                end
+                latestEvText = string.format("Latest Event: [%.2fs] %s %s", ev.t, srcName, desc)
                 break
             end
         end
         love.graphics.print(latestEvText, 36, ctrlY + 70)
+    end
+
+    -- 2.4 Interactive MCTS / PUCT Overlay (Visit distributions & win odds)
+    if MATCH_DATA and MATCH_DATA.meta then
+        mcts_overlay.draw(currentTime, MATCH_DATA.meta)
     end
 end
 
@@ -1070,56 +1351,27 @@ function love.keypressed(key)
     if key == "f1" or key == "1" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = "arena"
         return
-    elseif key == "f2" or key == "g" and currentTab ~= "training" and currentTab ~= "health" or key == "2" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = (currentTab == "graphs") and "arena" or "graphs"
-        return
-    elseif key == "f3" or key == "3" and love.keyboard.isDown("lctrl", "rctrl") then
+    elseif key == "f2" or key == "2" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = (currentTab == "fights") and "arena" or "fights"
         return
-    elseif key == "f4" or key == "m" and currentTab ~= "training" and currentTab ~= "health" or key == "4" and love.keyboard.isDown("lctrl", "rctrl") then
+    elseif key == "f3" or key == "3" and love.keyboard.isDown("lctrl", "rctrl") then
+        currentTab = (currentTab == "specs") and "arena" or "specs"
+        return
+    elseif key == "f4" or key == "4" and love.keyboard.isDown("lctrl", "rctrl") then
         currentTab = (currentTab == "matrix") and "arena" or "matrix"
         return
-    elseif key == "f5" then
-        currentTab = (currentTab == "health") and "arena" or "health"
-        return
-    elseif key == "f6" then
-        currentTab = "training"
-        return
-    elseif key == "tab" and not (currentTab == "training" and training.hasFocus()) and currentTab ~= "health" then
-        local nextTab = { arena = "graphs", graphs = "fights", fights = "matrix", matrix = "health", health = "training", training = "arena" }
+    elseif key == "tab" and currentTab ~= "specs" then
+        local nextTab = { arena = "fights", fights = "specs", specs = "matrix", matrix = "arena" }
         currentTab = nextTab[currentTab] or "arena"
         return
     end
 
-    if currentTab == "training" then
-        training.keypressed(key)
-        return
-    elseif currentTab == "health" then
+    if currentTab == "specs" then
         if key == "escape" then
             currentTab = "arena"
             return
         end
-        meta_health.keypressed(key)
-        return
-    elseif currentTab == "graphs" then
-        if key == "escape" then
-            currentTab = "arena"
-            return
-        end
-        graphs.keypressed(key)
-        return
-    elseif currentTab == "matrix" then
-        if key == "escape" then
-            currentTab = "arena"
-            return
-        end
-        local matchToLoad = matrix_view.keypressed(key)
-        if matchToLoad then
-            loadMatchFile(matchToLoad)
-            currentTime = 0.0
-            isPlaying = true
-            currentTab = "arena"
-        end
+        spec_editor.keypressed(key)
         return
     elseif currentTab == "fights" then
         if key == "escape" then
@@ -1127,6 +1379,19 @@ function love.keypressed(key)
             return
         end
         local matchToLoad = match_browser.keypressed(key)
+        if matchToLoad then
+            loadMatchFile(matchToLoad)
+            currentTime = 0.0
+            isPlaying = true
+            currentTab = "arena"
+        end
+        return
+    elseif currentTab == "matrix" then
+        if key == "escape" then
+            currentTab = "arena"
+            return
+        end
+        local matchToLoad = matrix_view.keypressed(key)
         if matchToLoad then
             loadMatchFile(matchToLoad)
             currentTime = 0.0
@@ -1153,6 +1418,10 @@ function love.keypressed(key)
         currentTime = 0.0
         isPlaying = true
         resetEventsToTime(0.0)
+    elseif key == "o" then
+        mcts_overlay.toggle()
+    elseif key == "t" then
+        mcts_overlay.toggleTuning()
     elseif key == "=" or key == "+" or key == "kp+" then
         camera.zoom = math.min(camera.maxZoom, camera.zoom * 1.2)
     elseif key == "-" or key == "_" or key == "kp-" then
@@ -1186,25 +1455,8 @@ function love.mousepressed(x, y, button)
     if y < ui.headerHeight then return end
     x, y = ui.contentPoint(x, y)
 
-    if currentTab == "training" then
-        local tab = training.mousepressed(x, y, button)
-        if tab then currentTab = tab end
-        return
-    elseif currentTab == "health" then
-        local tab = meta_health.mousepressed(x, y, button)
-        if tab then currentTab = tab end
-        return
-    elseif currentTab == "graphs" then
-        graphs.mousepressed(x, y, button)
-        return
-    elseif currentTab == "matrix" then
-        local matchToLoad = matrix_view.mousepressed(x, y, button)
-        if matchToLoad then
-            loadMatchFile(matchToLoad)
-            currentTime = 0.0
-            isPlaying = true
-            currentTab = "arena"
-        end
+    if currentTab == "specs" then
+        spec_editor.mousepressed(x, y, button)
         return
     elseif currentTab == "fights" then
         local matchToLoad = match_browser.mousepressed(x, y, button)
@@ -1215,6 +1467,21 @@ function love.mousepressed(x, y, button)
             currentTab = "arena"
         end
         return
+    elseif currentTab == "matrix" then
+        local matchToLoad = matrix_view.mousepressed(x, y, button)
+        if matchToLoad and type(matchToLoad) == "string" then
+            loadMatchFile(matchToLoad)
+            currentTime = 0.0
+            isPlaying = true
+            currentTab = "arena"
+        end
+        return
+    end
+
+    if currentTab == "arena" then
+        if mcts_overlay.mousepressed(x, y, button) then
+            return
+        end
     end
 
     local screenH = ui.height()
@@ -1259,14 +1526,11 @@ function love.mousemoved(x, y, dx, dy)
 end
 
 function love.textinput(text)
-    if currentTab == "training" then training.textinput(text) end
+    if currentTab == "specs" then
+        spec_editor.textinput(text)
+    end
 end
 
 function love.quit()
-    if training.isActive() then
-        training.stop()
-        quitAfterTraining = true
-        currentTab = "training"
-        return true
-    end
+    return false
 end

@@ -1,0 +1,292 @@
+--- a/src/mcts.zig
++++ b/src/mcts.zig
+@@ -179,71 +179,69 @@
+                         if (alive == 0) break;
+                         const ra = if (config.boundary == .event) w.duel.readyTactical(true) else w.duel.ready(true);
+                         const rb = if (config.boundary == .event) w.duel.readyTactical(false) else w.duel.ready(false);
+-                        const masks_a = w.duel.arena.getActionMaskA(0);
+-                        const masks_b = w.duel.arena.getActionMaskB(0);
+-                        var aa: [16]sim.Action = @splat(.{});
+-                        var bb: [16]sim.Action = @splat(.{});
+-                        var has_decision = false;
+-                        for (0..count) |i| {
+-                            if (state.is_active[i] == 0 or (!ra[i] and !rb[i])) continue;
+-                            has_decision = true;
+-                            if (leaf[i]) {
+-                                aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
+-                                bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
+-                                continue;
++                        if (@reduce(.Or, ra) or @reduce(.Or, rb)) {
++                            const masks_a = w.duel.arena.getActionMaskA(0);
++                            const masks_b = w.duel.arena.getActionMaskB(0);
++                            var aa: [16]sim.Action = @splat(.{});
++                            var bb: [16]sim.Action = @splat(.{});
++                            for (0..count) |i| {
++                                if (state.is_active[i] == 0 or (!ra[i] and !rb[i])) continue;
++                                if (leaf[i]) {
++                                    aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
++                                    bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
++                                    continue;
++                                }
++                                const ca = if (config.boundary == .event) w.duel.choicesTactical(true, i, masks_a) else w.duel.choices(true, i, masks_a);
++                                const cb = if (config.boundary == .event) w.duel.choicesTactical(false, i, masks_b) else w.duel.choices(false, i, masks_b);
++                                if (!leaf[i] and lens[i] > 0) {
++                                    const parent = current[i];
++                                    var child = w.nodes[parent].first;
++                                    while (child != none and w.nodes[child].joint != pending[i]) child = w.nodes[child].next;
++                                    if (child == none) {
++                                        if (w.used < w.nodes.len) {
++                                            child = w.used;
++                                            w.used += 1;
++                                            var new_node: Node = .{ .choices = .{ ca, cb }, .joint = pending[i], .next = w.nodes[parent].first };
++                                            if (config.algorithm == .puct) {
++                                                new_node.bandits[0].initPriors(ca.len, computePriors(a, true, &w.duel, i, ca));
++                                                new_node.bandits[1].initPriors(cb.len, computePriors(b, false, &w.duel, i, cb));
++                                            }
++                                            w.nodes[child] = new_node;
++                                            w.nodes[parent].first = child;
++                                        }
++                                        leaf[i] = true;
++                                        if (config.evaluator == .heuristic and config.truncation_ticks == 0) {
++                                            leaf_evaluated[i] = true;
++                                            leaf_values[i] = evaluateHeuristic(a, b, &w.duel, i);
++                                        }
++                                    } else current[i] = child;
++                                }
++                                if (!leaf[i] and lens[i] < config.depth) {
++                                    const node = &w.nodes[current[i]];
++                                    const pa = node.bandits[0].distribution(ca.len, config.algorithm, config.c_puct);
++                                    const pb = node.bandits[1].distribution(cb.len, config.algorithm, config.c_puct);
++                                    const ia = sample(pa, ca.len, random);
++                                    const ib = sample(pb, cb.len, random);
++                                    // Reserve visits until this batch completes so UCT / PUCT does not
++                                    // select the same unvisited action in all sixteen lanes.
++                                    if (config.algorithm == .uct or config.algorithm == .puct) {
++                                        node.bandits[0].visits[ia] += 1;
++                                        node.bandits[0].total += 1;
++                                        node.bandits[1].visits[ib] += 1;
++                                        node.bandits[1].total += 1;
++                                    }
++                                    aa[i] = ca.items[ia];
++                                    bb[i] = cb.items[ib];
++                                    w.paths[i * config.depth + lens[i]] = .{ .node = current[i], .actions = .{ ia, ib }, .probabilities = .{ pa, pb } };
++                                    lens[i] += 1;
++                                    pending[i] = @as(u16, ia) * 27 + ib;
++                                } else {
++                                    if (!leaf[i]) leaf[i] = true;
++                                    aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
++                                    bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
++                                }
+                             }
+-                            const ca = if (config.boundary == .event) w.duel.choicesTactical(true, i, masks_a) else w.duel.choices(true, i, masks_a);
+-                            const cb = if (config.boundary == .event) w.duel.choicesTactical(false, i, masks_b) else w.duel.choices(false, i, masks_b);
+-                            if (!leaf[i] and lens[i] > 0) {
+-                                const parent = current[i];
+-                                var child = w.nodes[parent].first;
+-                                while (child != none and w.nodes[child].joint != pending[i]) child = w.nodes[child].next;
+-                                if (child == none) {
+-                                    if (w.used < w.nodes.len) {
+-                                        child = w.used;
+-                                        w.used += 1;
+-                                        var new_node: Node = .{ .choices = .{ ca, cb }, .joint = pending[i], .next = w.nodes[parent].first };
+-                                        if (config.algorithm == .puct) {
+-                                            new_node.bandits[0].initPriors(ca.len, computePriors(a, true, &w.duel, i, ca));
+-                                            new_node.bandits[1].initPriors(cb.len, computePriors(b, false, &w.duel, i, cb));
+-                                        }
+-                                        w.nodes[child] = new_node;
+-                                        w.nodes[parent].first = child;
+-                                    }
+-                                    leaf[i] = true;
+-                                    if (config.evaluator == .heuristic and config.truncation_ticks == 0) {
+-                                        leaf_evaluated[i] = true;
+-                                        leaf_values[i] = evaluateHeuristic(a, b, &w.duel, i);
+-                                    }
+-                                } else current[i] = child;
+-                            }
+-                            if (!leaf[i] and lens[i] < config.depth) {
+-                                const node = &w.nodes[current[i]];
+-                                const pa = node.bandits[0].distribution(ca.len, config.algorithm, config.c_puct);
+-                                const pb = node.bandits[1].distribution(cb.len, config.algorithm, config.c_puct);
+-                                const ia = sample(pa, ca.len, random);
+-                                const ib = sample(pb, cb.len, random);
+-                                // Reserve visits until this batch completes so UCT / PUCT does not
+-                                // select the same unvisited action in all sixteen lanes.
+-                                if (config.algorithm == .uct or config.algorithm == .puct) {
+-                                    node.bandits[0].visits[ia] += 1;
+-                                    node.bandits[0].total += 1;
+-                                    node.bandits[1].visits[ib] += 1;
+-                                    node.bandits[1].total += 1;
+-                                }
+-                                aa[i] = ca.items[ia];
+-                                bb[i] = cb.items[ib];
+-                                w.paths[i * config.depth + lens[i]] = .{ .node = current[i], .actions = .{ ia, ib }, .probabilities = .{ pa, pb } };
+-                                lens[i] += 1;
+-                                pending[i] = @as(u16, ia) * 27 + ib;
+-                            } else {
+-                                if (!leaf[i]) leaf[i] = true;
+-                                aa[i] = rollout(a, true, &w.duel, i, ca, random, config.random_rollout);
+-                                bb[i] = rollout(b, false, &w.duel, i, cb, random, config.random_rollout);
+-                            }
+-                        }
+-                        if (has_decision) {
+-                            if (config.boundary == .event) w.duel.applyMasked(aa, bb, ra, rb) else w.duel.apply(aa, bb);
++                            w.duel.applyMaskedWithMasks(aa, bb, ra, rb, masks_a, masks_b);
+                         }
+                         w.duel.tick(config.max_ticks);
+                         w.stats.ticks += alive;
+--- a/src/search_sim.zig
++++ b/src/search_sim.zig
+@@ -27,6 +27,7 @@
+     return @select(bool, ready, actions == @as(@Vector(16, u32), @splat(5)), @as(@Vector(16, bool), @splat(false)));
+ }
+ pub const Action = struct { ability: u32 = 0, movement: f32 = 0 };
++pub const ActionMasks = [9]@Vector(16, bool);
+ pub const Choices = struct {
+     items: [27]Action = @splat(.{}),
+     len: u8 = 0,
+@@ -139,21 +140,29 @@
+             // Bypass staging only when an entire side of the batch is idle.
+             const any_a = @reduce(.Or, ra);
+             const any_b = @reduce(.Or, rb);
+-            if (any_a and !any_b) return self.applyOneSided(true, aa, ra);
+-            if (any_b and !any_a) return self.applyOneSided(false, bb, rb);
++            if (any_a and !any_b) return self.applyOneSided(true, aa, ra, false, self.arena.getActionMaskA(0));
++            if (any_b and !any_a) return self.applyOneSided(false, bb, rb, false, self.arena.getActionMaskB(0));
+             self.applyMaskedStagingBaseline(aa, bb, ra, rb);
++        }
++        /// Reuse masks computed from this exact pre-action state. Never retain
++        /// them across an action or physics tick. Both staged sides see it.
++        pub fn applyMaskedWithMasks(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool), legal_a: ActionMasks, legal_b: ActionMasks) void {
++            const any_a = @reduce(.Or, ra);
++            const any_b = @reduce(.Or, rb);
++            if (any_a and !any_b) return self.applyOneSided(true, aa, ra, true, legal_a);
++            if (any_b and !any_a) return self.applyOneSided(false, bb, rb, true, legal_b);
++            self.applyMaskedImpl(aa, bb, ra, rb, true, true, legal_a, legal_b);
+         }
+         /// Suggestion 1 baseline, without the one-sided dispatch.
+         pub fn applyMaskedStagingBaseline(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool)) void {
+-            self.applyMaskedImpl(aa, bb, ra, rb, true);
++            self.applyMaskedImpl(aa, bb, ra, rb, true, false, undefined, undefined);
+         }
+         // Retain the full merge as a correctness oracle and timing baseline.
+         pub fn applyMaskedReference(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool)) void {
+-            self.applyMaskedImpl(aa, bb, ra, rb, false);
+-        }
+-        fn applyOneSided(self: *Self, comptime side_a: bool, requested: [16]Action, ready_mask: @Vector(16, bool)) void {
++            self.applyMaskedImpl(aa, bb, ra, rb, false, false, undefined, undefined);
++        }
++        fn applyOneSided(self: *Self, comptime side_a: bool, requested: [16]Action, ready_mask: @Vector(16, bool), comptime reuse_masks: bool, legal: ActionMasks) void {
+             @setEvalBranchQuota(10000);
+-            const legal = if (side_a) self.arena.getActionMaskA(0) else self.arena.getActionMaskB(0);
+             var actions: @Vector(16, u32) = undefined;
+             var movement: @Vector(16, f32) = undefined;
+             for (0..16) |lane| {
+@@ -168,7 +177,11 @@
+                 @memcpy(@field(self.original.combat(), f.name), @field(self.arena.combat(), f.name));
+             }
+             if (@hasField(Arena, "extras")) @memcpy(self.original.extras, self.arena.extras);
+-            if (side_a) self.arena.stageActionA(0, actions, movement) else self.arena.stageActionB(0, actions, movement);
++            if (reuse_masks and @hasField(Arena, "extras")) {
++                if (side_a) self.arena.stageActionAWithMasks(0, actions, movement, legal) else self.arena.stageActionBWithMasks(0, actions, movement, legal);
++            } else {
++                if (side_a) self.arena.stageActionA(0, actions, movement) else self.arena.stageActionB(0, actions, movement);
++            }
+             inline for (fields[3..]) |f| {
+                 if (comptime actionWrite(f.name) == .unchanged or
+                     (actionWrite(f.name) == .owner and std.mem.endsWith(u8, f.name, "_a") != side_a)) continue;
+@@ -198,12 +211,12 @@
+                 self.arena.extras[j * 16 ..][0..16].* = value;
+             };
+         }
+-        fn applyMaskedImpl(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool), comptime optimized: bool) void {
++        fn applyMaskedImpl(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool), comptime optimized: bool, comptime reuse_masks: bool, supplied_a: ActionMasks, supplied_b: ActionMasks) void {
+             @setEvalBranchQuota(10000);
+             const cast_before_a = self.arena.combat().cast_id_a[0..16].*;
+             const cast_before_b = self.arena.combat().cast_id_b[0..16].*;
+-            const legal_a = self.arena.getActionMaskA(0);
+-            const legal_b = self.arena.getActionMaskB(0);
++            const legal_a = if (reuse_masks) supplied_a else self.arena.getActionMaskA(0);
++            const legal_b = if (reuse_masks) supplied_b else self.arena.getActionMaskB(0);
+             var va: @Vector(16, u32) = undefined;
+             var vb: @Vector(16, u32) = undefined;
+             var ma: @Vector(16, f32) = undefined;
+@@ -224,8 +237,13 @@
+                 ma[i] = aa[i].movement;
+                 mb[i] = bb[i].movement;
+             }
+-            self.arena.stageActionA(0, va, ma);
+-            self.scratch.stageActionB(0, vb, mb);
++            if (reuse_masks and @hasField(Arena, "extras")) {
++                self.arena.stageActionAWithMasks(0, va, ma, legal_a);
++                self.scratch.stageActionBWithMasks(0, vb, mb, legal_b);
++            } else {
++                self.arena.stageActionA(0, va, ma);
++                self.scratch.stageActionB(0, vb, mb);
++            }
+             inline for (fields[3..]) |f| {
+                 if (comptime optimized and actionWrite(f.name) == .unchanged) continue;
+                 const T = std.meta.Child(f.type);
+@@ -312,7 +330,7 @@
+             }
+             const ra = if (side_a) ready_mask else @as(@Vector(16, bool), @splat(false));
+             const rb = if (side_a) @as(@Vector(16, bool), @splat(false)) else ready_mask;
+-            fast.applyMasked(actions, actions, ra, rb);
++            fast.applyMaskedWithMasks(actions, actions, ra, rb, fast.arena.getActionMaskA(0), fast.arena.getActionMaskB(0));
+             reference.applyMaskedReference(actions, actions, ra, rb);
+             for (0..16) |lane| try std.testing.expectEqualDeep(reference.snapshot(lane), fast.snapshot(lane));
+             for (0..20) |_| {
+@@ -323,7 +341,7 @@
+         };
+     };
+ }
+-test "narrow action staging matches full staging across kits and divergent lanes" {
++test "cached masks and narrow staging match full staging across kits and divergent lanes" {
+     inline for (.{ Spec.warlock, Spec.frost_mage }) |a| inline for (.{ Spec.warlock, Spec.frost_mage }) |b| {
+         var fast = try Duel(a, b).init(std.testing.allocator);
+         defer fast.deinit();
+@@ -352,7 +370,7 @@
+                 aa[lane] = ca.items[random.uintLessThan(u8, ca.len)];
+                 bb[lane] = cb.items[random.uintLessThan(u8, cb.len)];
+             }
+-            fast.applyMasked(aa, bb, ra, rb);
++            fast.applyMaskedWithMasks(aa, bb, ra, rb, masks_a, masks_b);
+             reference.applyMaskedReference(aa, bb, ra, rb);
+             for (0..16) |lane| try std.testing.expectEqualDeep(reference.snapshot(lane), fast.snapshot(lane));
+             fast.tick(6000);
+--- a/src/multi_spec.zig
++++ b/src/multi_spec.zig
+@@ -156,6 +156,13 @@
+         pub fn stageActionB(self: *Self, i: usize, actions: u32x16, movement: f32x16) void {
+             self.apply(false, i, actions, movement, true);
+         }
++        /// Masks must describe the same immutable pre-action state.
++        pub fn stageActionAWithMasks(self: *Self, i: usize, actions: u32x16, movement: f32x16, legal: [9]bool16) void {
++            self.applyWithMasks(true, i, actions, movement, true, legal);
++        }
++        pub fn stageActionBWithMasks(self: *Self, i: usize, actions: u32x16, movement: f32x16, legal: [9]bool16) void {
++            self.applyWithMasks(false, i, actions, movement, true, legal);
++        }
+         fn damage(self: *Self, comptime target_a: bool, i: usize, amount: f32x16, comptime staged: bool) void {
+             const target = if (target_a) spec_a else spec_b;
+             var dmg = amount;
+@@ -184,9 +191,11 @@
+             }
+         }
+         fn apply(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16, comptime staged: bool) void {
++            self.applyWithMasks(side_a, i, requested, movement, staged, self.masks(side_a, i));
++        }
++        fn applyWithMasks(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16, comptime staged: bool, legal: [9]bool16) void {
+             const actor = if (side_a) spec_a else spec_b;
+             if (actor == .warlock) {
+-                const legal = self.masks(side_a, i);
+                 var actions = ids(0);
+                 const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
+                 inline for (1..9) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+@@ -197,7 +206,6 @@
+                 }
+                 return;
+             }
+-            const legal = self.masks(side_a, i);
+             const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
+             var actions = ids(0);
+             inline for (1..9) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);

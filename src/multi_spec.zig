@@ -4,6 +4,7 @@ const combat_spec = @import("combat_spec.zig");
 const Spec = @import("spec.zig").Spec;
 const Frost = @import("spec.zig").Frost;
 const WarlockConstants = combat_spec.WarlockConstants;
+const warlock_talents = @import("warlock_talents.zig");
 const f32x16 = simd.f32x16;
 const u32x16 = simd.u32x16;
 const bool16 = simd.bool16;
@@ -64,13 +65,23 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             return @ptrCast(@alignCast(@field(self.state, "cast_id" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN]));
         }
         pub fn frostTelemetry(self: *const Self, comptime side_a: bool, i: usize) [5]f32 {
-            return .{ self.extra(.blink, side_a, i).*[0], self.extra(.nova, side_a, i).*[0], self.extra(.shield, side_a, i).*[0], self.extra(.lockout, side_a, i).*[0], self.extra(.root_damage, side_a, i).*[0] };
+            // Telemetry accepts an individual lane, unlike the aligned SIMD
+            // kernels. MCTS evaluates leaves in lanes 0 through 15.
+            var result: [5]f32 = undefined;
+            inline for (0..5) |j| result[j] = self.extras[((if (side_a) @as(usize, 0) else 5) + j) * self.state.capacity + i];
+            return result;
         }
         pub fn needsDecisionA(self: *const Self, i: usize) bool16 {
             return self.state.needsDecisionA(i);
         }
+        pub fn needsTacticalDecisionA(self: *const Self, i: usize) bool16 {
+            return self.state.needsTacticalDecisionA(i);
+        }
         pub fn needsDecisionB(self: *const Self, i: usize) bool16 {
             return self.state.needsDecisionB(i);
+        }
+        pub fn needsTacticalDecisionB(self: *const Self, i: usize) bool16 {
+            return self.state.needsTacticalDecisionB(i);
         }
         pub fn getObservationsA(self: *const Self, i: usize) [24]f32x16 {
             return self.observations(true, i);
@@ -89,7 +100,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 obs[11] = self.column("agony_timer", !side_a, i).* * splat(1 / Frost.NovaDuration);
                 obs[12] = self.column("corruption_timer", !side_a, i).* * splat(1 / Frost.SlowDuration);
                 obs[14] = self.extra(.lockout, side_a, i).* * splat(1 / Frost.LockoutDuration);
-                obs[15] = self.column("unending_cd", side_a, i).* * splat(1 / Frost.BarrierCooldown);
+                obs[15] = self.column("action6_cd", side_a, i).* * splat(1 / Frost.BarrierCooldown);
                 obs[16] = self.extra(.shield, side_a, i).* * splat(1 / Frost.BarrierAbsorb);
                 obs[18] = self.extra(.blink, side_a, i).* * splat(1 / Frost.BlinkCooldown);
                 obs[20] = self.column("death_coil_cd", side_a, i).* * splat(1 / Frost.CounterspellCooldown);
@@ -101,20 +112,22 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             }
             return obs;
         }
-        pub fn getActionMaskA(self: *const Self, i: usize) [9]bool16 {
+        pub fn getActionMaskA(self: *const Self, i: usize) [combat_spec.WarlockAction.COUNT]bool16 {
             return self.masks(true, i);
         }
-        pub fn getActionMaskB(self: *const Self, i: usize) [9]bool16 {
+        pub fn getActionMaskB(self: *const Self, i: usize) [combat_spec.WarlockAction.COUNT]bool16 {
             return self.masks(false, i);
         }
-        fn masks(self: *const Self, comptime side_a: bool, i: usize) [9]bool16 {
+        fn masks(self: *const Self, comptime side_a: bool, i: usize) [combat_spec.WarlockAction.COUNT]bool16 {
             const actor = if (side_a) spec_a else spec_b;
             const alive = vAnd16(self.state.is_active[i..][0..VEC_LEN].* != ids(0), vAnd16(self.column("hp", side_a, i).* > splat(0), self.column("hp", !side_a, i).* > splat(0)));
             const unlocked = self.extra(.lockout, side_a, i).* <= splat(0);
             if (actor == .warlock) {
                 var result = if (side_a) self.state.getActionMaskA(i) else self.state.getActionMaskB(i);
-                inline for (1..9) |slot| result[slot] = vAnd16(result[slot], alive);
-                inline for (.{ 1, 2, 3, 4, 5, 7 }) |action| result[action] = vAnd16(result[action], unlocked);
+                inline for (1..combat_spec.WarlockAction.COUNT) |slot| result[slot] = vAnd16(result[slot], alive);
+                inline for (1..combat_spec.WarlockAction.COUNT) |action| {
+                    if (action != 6 and action != 10) result[action] = vAnd16(result[action], unlocked);
+                }
                 return result;
             }
             const mana = self.column("mana", side_a, i).*;
@@ -124,26 +137,35 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             const free = vAnd16(vNot16(cc), vNot16(casting));
             const spell = vAnd16(free, vAnd16(free_gcd, unlocked));
             const distance: f32x16 = self.state.distance[i..][0..VEC_LEN].*;
-            return .{
-                @splat(true), // Always allow idle, including under CC.
-                vAnd16(spell, mana >= splat(Frost.LanceMana)),
-                vAnd16(spell, vAnd16(mana >= splat(Frost.NovaMana), vAnd16(distance <= splat(Frost.NovaRange), self.extra(.nova, side_a, i).* <= splat(0)))),
-                vAnd16(spell, vAnd16(mana >= splat(Frost.PolymorphMana), distance <= splat(Frost.PolymorphRange))),
-                vAnd16(spell, mana >= splat(Frost.BoltMana)),
-                vAnd16(vNot16(cc), vAnd16(mana >= splat(Frost.BlinkMana), self.extra(.blink, side_a, i).* <= splat(0))),
-                vAnd16(vNot16(cc), vAnd16(unlocked, vAnd16(mana >= splat(Frost.BarrierMana), self.column("unending_cd", side_a, i).* <= splat(0)))),
-                vAnd16(vNot16(cc), vAnd16(distance <= splat(Frost.CounterspellRange), self.column("death_coil_cd", side_a, i).* <= splat(0))),
-                vAnd16(casting, alive),
-            };
+            const room = @import("projectiles.zig").available(&self.state, side_a, i);
+            var result: [combat_spec.WarlockAction.COUNT]bool16 = @splat(@as(bool16, @splat(false)));
+            result[0] = @splat(true); // Always allow idle, including under CC.
+            result[1] = vAnd16(room, vAnd16(spell, mana >= splat(Frost.LanceMana)));
+            result[2] = vAnd16(spell, vAnd16(mana >= splat(Frost.NovaMana), vAnd16(distance <= splat(Frost.NovaRange), self.extra(.nova, side_a, i).* <= splat(0))));
+            result[3] = vAnd16(spell, vAnd16(mana >= splat(Frost.PolymorphMana), distance <= splat(Frost.PolymorphRange)));
+            result[4] = vAnd16(room, vAnd16(spell, mana >= splat(Frost.BoltMana)));
+            result[5] = vAnd16(vNot16(cc), vAnd16(mana >= splat(Frost.BlinkMana), self.extra(.blink, side_a, i).* <= splat(0)));
+            result[6] = vAnd16(vNot16(cc), vAnd16(unlocked, vAnd16(mana >= splat(Frost.BarrierMana), self.column("action6_cd", side_a, i).* <= splat(0))));
+            result[7] = vAnd16(vNot16(cc), vAnd16(distance <= splat(Frost.CounterspellRange), self.column("death_coil_cd", side_a, i).* <= splat(0)));
+            result[8] = @splat(false);
+            result[9] = @splat(false);
+            result[10] = vAnd16(casting, alive);
+            return result;
         }
         pub fn applyActionA(self: *Self, i: usize, actions: u32x16, movement: f32x16) void {
-            self.apply(true, i, actions, movement);
+            self.apply(true, i, actions, movement, false);
         }
         pub fn applyActionB(self: *Self, i: usize, actions: u32x16, movement: f32x16) void {
-            self.apply(false, i, actions, movement);
+            self.apply(false, i, actions, movement, false);
         }
 
-        fn damage(self: *Self, comptime target_a: bool, i: usize, amount: f32x16) void {
+        pub fn stageActionA(self: *Self, i: usize, actions: u32x16, movement: f32x16) void {
+            self.apply(true, i, actions, movement, true);
+        }
+        pub fn stageActionB(self: *Self, i: usize, actions: u32x16, movement: f32x16) void {
+            self.apply(false, i, actions, movement, true);
+        }
+        fn damage(self: *Self, comptime target_a: bool, i: usize, amount: f32x16, comptime staged: bool) void {
             const target = if (target_a) spec_a else spec_b;
             var dmg = amount;
             if (target == .frost_mage) {
@@ -151,13 +173,11 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const absorbed = @min(shield.*, dmg);
                 shield.* = shield.* - absorbed;
                 dmg -= absorbed;
-                const dur = self.column("unending_dur", target_a, i);
+                const dur = self.column("action6_dur", target_a, i);
                 dur.* = select16(shield.* <= splat(0), splat(0), dur.*);
-            } else {
-                dmg *= select16(self.column("unending_dur", target_a, i).* > splat(0), splat(0.6), splat(1));
             }
             const hp = self.column("hp", target_a, i);
-            hp.* = @max(splat(0), hp.* - dmg);
+            hp.* = if (staged) hp.* - dmg else @max(splat(0), hp.* - dmg);
             const source = if (target_a) spec_b else spec_a;
             const fear = self.column("fear_timer", target_a, i);
             const accum = self.column("fear_accum_dmg", target_a, i);
@@ -170,36 +190,27 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 root.* = select16(root_dmg.* >= splat(250), splat(0), root.*);
             }
         }
-        fn apply(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16) void {
+        fn apply(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16, comptime staged: bool) void {
             const actor = if (side_a) spec_a else spec_b;
             if (actor == .warlock) {
-                const old_hp = self.column("hp", !side_a, i).*;
                 const legal = self.masks(side_a, i);
                 var actions = ids(0);
                 const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
-                inline for (1..9) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
-                const defensive = self.column("unending_dur", !side_a, i);
-                const saved_defensive = defensive.*;
-                // Legacy instant damage uses reduction; a Mage uses absorption.
-                if ((if (side_a) spec_b else spec_a) == .frost_mage) defensive.* = splat(0);
-                if (side_a) self.state.applyActionA(i, actions, movement) else self.state.applyActionB(i, actions, movement);
-                if ((if (side_a) spec_b else spec_a) == .frost_mage) defensive.* = saved_defensive;
-                // Warlock's direct damage needs Mage absorption/break rules.
-                if ((if (side_a) spec_b else spec_a) == .frost_mage) {
-                    const hp = self.column("hp", !side_a, i);
-                    const dmg = select16(actions == ids(7), splat(WarlockConstants.DeathCoilDamage), splat(0));
-                    hp.* = old_hp;
-                    self.damage(!side_a, i, dmg);
+                inline for (1..combat_spec.WarlockAction.COUNT) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+                if (staged) {
+                    if (side_a) self.state.stageActionA(i, actions, movement) else self.state.stageActionB(i, actions, movement);
+                } else {
+                    if (side_a) self.state.applyActionA(i, actions, movement) else self.state.applyActionB(i, actions, movement);
                 }
                 return;
             }
             const legal = self.masks(side_a, i);
             const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
             var actions = ids(0);
-            inline for (1..9) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+            inline for (1..11) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
             const cc = vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0));
             const cast = self.castIds(side_a, i);
-            const cancel = vOr16(actions == ids(8), actions == ids(5));
+            const cancel = vOr16(actions == ids(10), actions == ids(5));
             cast.* = @select(u32, cancel, ids(0), cast.*);
             const timer = self.column("cast_timer", side_a, i);
             const total = self.column("cast_total", side_a, i);
@@ -217,7 +228,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             }
             const lance = actions == ids(1);
             const frozen = self.column("agony_timer", !side_a, i).* > splat(0);
-            self.damage(!side_a, i, select16(lance, select16(frozen, splat(Frost.FrozenLanceDamage), splat(Frost.LanceDamage)), splat(0)));
+            @import("projectiles.zig").launch(&self.state, side_a, i, 1, select16(frozen, splat(Frost.FrozenLanceDamage), splat(Frost.LanceDamage)), lance);
             const nova = actions == ids(2);
             const dr = self.column("horror_dr_tier", !side_a, i);
             const root = self.column("agony_timer", !side_a, i);
@@ -240,9 +251,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 move.* = select16(used, splat(0), move.*);
             }
             const blink = actions == ids(5);
-            const distance: f32x16 = self.state.distance[i..][0..VEC_LEN].*;
-            // Advance blinks toward the opponent; stand/kite blinks away.
-            self.state.distance[i..][0..VEC_LEN].* = simd.clamp16(distance + select16(blink, select16(movement < splat(0), splat(-Frost.BlinkDistance), splat(Frost.BlinkDistance)), splat(0)), splat(1), splat(35));
+            @import("movement_2d.zig").blink(&self.state, side_a, i, select16(movement < splat(0), splat(-Frost.BlinkDistance), splat(Frost.BlinkDistance)), blink, staged);
             const blink_cd = self.extra(.blink, side_a, i);
             blink_cd.* = select16(blink, splat(Frost.BlinkCooldown), blink_cd.*);
             // Blink removes roots inflicted by a Mage, without clearing Warlock DOTs.
@@ -253,9 +262,9 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             const barrier = actions == ids(6);
             const shield = self.extra(.shield, side_a, i);
             shield.* = select16(barrier, splat(Frost.BarrierAbsorb), shield.*);
-            const barrier_dur = self.column("unending_dur", side_a, i);
+            const barrier_dur = self.column("action6_dur", side_a, i);
             barrier_dur.* = select16(barrier, splat(Frost.BarrierDuration), barrier_dur.*);
-            const barrier_cd = self.column("unending_cd", side_a, i);
+            const barrier_cd = self.column("action6_cd", side_a, i);
             barrier_cd.* = select16(barrier, splat(Frost.BarrierCooldown), barrier_cd.*);
             const cs = actions == ids(7);
             const cs_cd = self.column("death_coil_cd", side_a, i);
@@ -280,12 +289,18 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             std.debug.assert(i % VEC_LEN == 0 and i + VEC_LEN <= self.state.capacity);
             return self.tickPhysicsRange(dt, i, i + VEC_LEN);
         }
+        pub fn tickPhysics16WithEffects(self: *Self, dt: f32, i: usize, effects_a: *const warlock_talents.Effects, effects_b: *const warlock_talents.Effects) usize {
+            std.debug.assert(i % VEC_LEN == 0 and i + VEC_LEN <= self.state.capacity);
+            return self.tickPhysicsRangeWithEffects(dt, i, i + VEC_LEN, effects_a, effects_b);
+        }
         fn tickPhysicsRange(self: *Self, dt: f32, start: usize, end: usize) usize {
+            return self.tickPhysicsRangeWithEffects(dt, start, end, null, null);
+        }
+        fn tickPhysicsRangeWithEffects(self: *Self, dt: f32, start: usize, end: usize, provided_a: ?*const warlock_talents.Effects, provided_b: ?*const warlock_talents.Effects) usize {
             const v_dt: f32x16 = @splat(dt);
             const v_zeros: f32x16 = @splat(0.0);
             const v_zeros_u32: u32x16 = @splat(0);
             const v_ones_u32: u32x16 = @splat(1);
-            const v_min_dist: f32x16 = @splat(WarlockConstants.MinDistance);
             const v_max_dist: f32x16 = @splat(WarlockConstants.MaxDistance);
 
             var active_duels_sum: usize = 0;
@@ -294,6 +309,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             while (i < end) : (i += VEC_LEN) {
                 const active_mask: bool16 = self.state.is_active[i..][0..VEC_LEN].* > v_zeros_u32;
                 if (!@reduce(.Or, active_mask)) continue;
+                const effects_a = if (provided_a) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_a[i..][0..VEC_LEN].*);
+                const effects_b = if (provided_b) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_b[i..][0..VEC_LEN].*);
 
                 // Load State
                 var dist = self.state.distance[i..][0..VEC_LEN].*;
@@ -317,27 +334,31 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var c_tot_b = self.state.cast_total_b[i..][0..VEC_LEN].*;
 
                 var ago_a = self.state.agony_timer_a[i..][0..VEC_LEN].*;
+                var immolate_a = self.state.immolate_timer_a[i..][0..VEC_LEN].*;
                 var crp_a = self.state.corruption_timer_a[i..][0..VEC_LEN].*;
+                var siph_a = self.state.siphon_timer_a[i..][0..VEC_LEN].*;
                 var fear_a = self.state.fear_timer_a[i..][0..VEC_LEN].*;
                 var fear_dmg_a = self.state.fear_accum_dmg_a[i..][0..VEC_LEN].*;
                 var horror_a = self.state.horror_timer_a[i..][0..VEC_LEN].*;
 
                 var ago_b = self.state.agony_timer_b[i..][0..VEC_LEN].*;
+                var immolate_b = self.state.immolate_timer_b[i..][0..VEC_LEN].*;
                 var crp_b = self.state.corruption_timer_b[i..][0..VEC_LEN].*;
+                var siph_b = self.state.siphon_timer_b[i..][0..VEC_LEN].*;
                 var fear_b = self.state.fear_timer_b[i..][0..VEC_LEN].*;
                 var fear_dmg_b = self.state.fear_accum_dmg_b[i..][0..VEC_LEN].*;
                 var horror_b = self.state.horror_timer_b[i..][0..VEC_LEN].*;
 
-                var un_cd_a = self.state.unending_cd_a[i..][0..VEC_LEN].*;
-                var un_dur_a = self.state.unending_dur_a[i..][0..VEC_LEN].*;
+                var un_cd_a = self.state.action6_cd_a[i..][0..VEC_LEN].*;
+                var un_dur_a = self.state.action6_dur_a[i..][0..VEC_LEN].*;
                 var dc_cd_a = self.state.death_coil_cd_a[i..][0..VEC_LEN].*;
                 var fear_dr_t_a = self.state.fear_dr_tier_a[i..][0..VEC_LEN].*;
                 var fear_dr_tmr_a = self.state.fear_dr_timer_a[i..][0..VEC_LEN].*;
                 var horror_dr_t_a = self.state.horror_dr_tier_a[i..][0..VEC_LEN].*;
                 var horror_dr_tmr_a = self.state.horror_dr_timer_a[i..][0..VEC_LEN].*;
 
-                var un_cd_b = self.state.unending_cd_b[i..][0..VEC_LEN].*;
-                var un_dur_b = self.state.unending_dur_b[i..][0..VEC_LEN].*;
+                var un_cd_b = self.state.action6_cd_b[i..][0..VEC_LEN].*;
+                var un_dur_b = self.state.action6_dur_b[i..][0..VEC_LEN].*;
                 var dc_cd_b = self.state.death_coil_cd_b[i..][0..VEC_LEN].*;
                 var fear_dr_t_b = self.state.fear_dr_tier_b[i..][0..VEC_LEN].*;
                 var fear_dr_tmr_b = self.state.fear_dr_timer_b[i..][0..VEC_LEN].*;
@@ -363,6 +384,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 dc_cd_b = @max(v_zeros, dc_cd_b - v_dt);
                 fear_a = @max(v_zeros, fear_a - v_dt);
                 fear_b = @max(v_zeros, fear_b - v_dt);
+                immolate_a = @max(v_zeros, immolate_a - v_dt);
+                immolate_b = @max(v_zeros, immolate_b - v_dt);
                 horror_a = @max(v_zeros, horror_a - v_dt);
                 horror_b = @max(v_zeros, horror_b - v_dt);
 
@@ -399,18 +422,16 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 // While feared or horrified, unit runs away involuntarily!
                 const cc_a = vOr16(fear_a > v_zeros, horror_a > v_zeros);
                 const cc_b = vOr16(fear_b > v_zeros, horror_b > v_zeros);
-                const controlled_speed_a = select16(cc_a, @as(f32x16, @splat(if (spec_b == .frost_mage) @as(f32, 0) else WarlockConstants.ForwardSpeed)), speed_a);
+                const controlled_speed_a = select16(cc_a, @as(f32x16, @splat(if (spec_b == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_a);
                 const effective_speed_a = if (spec_b == .frost_mage)
                     select16(ago_a > v_zeros, v_zeros, controlled_speed_a * select16(crp_a > v_zeros, splat(Frost.SlowMultiplier), splat(1)))
                 else
                     controlled_speed_a;
-                const controlled_speed_b = select16(cc_b, @as(f32x16, @splat(if (spec_a == .frost_mage) @as(f32, 0) else WarlockConstants.ForwardSpeed)), speed_b);
+                const controlled_speed_b = select16(cc_b, @as(f32x16, @splat(if (spec_a == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_b);
                 const effective_speed_b = if (spec_a == .frost_mage)
                     select16(ago_b > v_zeros, v_zeros, controlled_speed_b * select16(crp_b > v_zeros, splat(Frost.SlowMultiplier), splat(1)))
                 else
                     controlled_speed_b;
-
-                dist = simd.clamp16(dist + (effective_speed_a + effective_speed_b) * v_dt, v_min_dist, v_max_dist);
 
                 // 3. Movement cast cancel check:
                 const a_is_stationary_casting = vAnd16(c_id_a > v_zeros_u32, c_id_a <= @as(u32x16, @splat(5)));
@@ -427,26 +448,72 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 c_tmr_b = select16(cancel_b, v_zeros, c_tmr_b);
                 c_tot_b = select16(cancel_b, v_zeros, c_tot_b);
 
+                dist = @import("movement_2d.zig").tick(&self.state, i, dt, effective_speed_a, effective_speed_b, cc_a, cc_b, @max(@as(f32x16, fear_a), @as(f32x16, horror_a)), @max(@as(f32x16, fear_b), @as(f32x16, horror_b)));
+
+                const hits_a = @import("projectiles.zig").tick(&self.state, true, i, dt);
+                const hits_b = @import("projectiles.zig").tick(&self.state, false, i, dt);
+
                 // 4. Damage Mitigation Factor:
-                const mit_a = if (spec_a == .frost_mage) splat(1) else select16(un_dur_a > v_zeros, @as(f32x16, @splat(1.0 - WarlockConstants.UnendingResolveDamageReduction)), @as(f32x16, @splat(1.0)));
-                const mit_b = if (spec_b == .frost_mage) splat(1) else select16(un_dur_b > v_zeros, @as(f32x16, @splat(1.0 - WarlockConstants.UnendingResolveDamageReduction)), @as(f32x16, @splat(1.0)));
+                const mit_a = if (spec_a == .warlock) effects_a.damage_taken else splat(1);
+                const mit_b = if (spec_b == .warlock) effects_b.damage_taken else splat(1);
+
+                if (@reduce(.Or, hits_a.coil > v_zeros)) {
+                    const coil_hit_a = hits_a.coil > v_zeros;
+                    hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + select16(coil_hit_a, @as(f32x16, @splat(WarlockConstants.DeathCoilHeal)), v_zeros));
+                    const coil_dur_a = @as(f32x16, @splat(WarlockConstants.DeathCoilDuration)) * getDrMultiplier(horror_dr_t_b);
+                    horror_b = select16(vAnd16(coil_hit_a, coil_dur_a > v_zeros), coil_dur_a, horror_b);
+                    horror_dr_t_b = select16(coil_hit_a, @min(@as(f32x16, @splat(3)), horror_dr_t_b + @as(f32x16, @splat(1))), horror_dr_t_b);
+                    horror_dr_tmr_b = select16(coil_hit_a, @as(f32x16, @splat(WarlockConstants.DrResetDuration)), horror_dr_tmr_b);
+                    const coil_cancel_b = vAnd16(coil_hit_a, coil_dur_a > v_zeros);
+                    c_id_b = @select(u32, coil_cancel_b, v_zeros_u32, c_id_b);
+                    c_tmr_b = select16(coil_cancel_b, v_zeros, c_tmr_b);
+                    c_tot_b = select16(coil_cancel_b, v_zeros, c_tot_b);
+                    r_tmr_b = select16(coil_cancel_b, v_zeros, r_tmr_b);
+                }
+                if (@reduce(.Or, hits_b.coil > v_zeros)) {
+                    const coil_hit_b = hits_b.coil > v_zeros;
+                    hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + select16(coil_hit_b, @as(f32x16, @splat(WarlockConstants.DeathCoilHeal)), v_zeros));
+                    const coil_dur_b = @as(f32x16, @splat(WarlockConstants.DeathCoilDuration)) * getDrMultiplier(horror_dr_t_a);
+                    horror_a = select16(vAnd16(coil_hit_b, coil_dur_b > v_zeros), coil_dur_b, horror_a);
+                    horror_dr_t_a = select16(coil_hit_b, @min(@as(f32x16, @splat(3)), horror_dr_t_a + @as(f32x16, @splat(1))), horror_dr_t_a);
+                    horror_dr_tmr_a = select16(coil_hit_b, @as(f32x16, @splat(WarlockConstants.DrResetDuration)), horror_dr_tmr_a);
+                    const coil_cancel_a = vAnd16(coil_hit_b, coil_dur_b > v_zeros);
+                    c_id_a = @select(u32, coil_cancel_a, v_zeros_u32, c_id_a);
+                    c_tmr_a = select16(coil_cancel_a, v_zeros, c_tmr_a);
+                    c_tot_a = select16(coil_cancel_a, v_zeros, c_tot_a);
+                    r_tmr_a = select16(coil_cancel_a, v_zeros, r_tmr_a);
+                }
 
                 // 5. DOT Ticking:
                 const has_ago_a = ago_a > v_zeros;
                 ago_a = @max(v_zeros, ago_a - v_dt);
-                const dmg_ago_a = if (spec_b == .frost_mage) v_zeros else select16(has_ago_a, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * mit_a, v_zeros);
+                const dmg_ago_a = if (spec_b == .frost_mage) v_zeros else select16(has_ago_a, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * effects_b.agony_damage * mit_a, v_zeros);
 
                 const has_crp_a = crp_a > v_zeros;
                 crp_a = @max(v_zeros, crp_a - v_dt);
-                const dmg_crp_a = if (spec_b == .frost_mage) v_zeros else select16(has_crp_a, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * mit_a, v_zeros);
+                const dmg_crp_a = if (spec_b == .frost_mage) v_zeros else select16(has_crp_a, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_b.corruption_damage * mit_a, v_zeros);
+                const dmg_immolate_a = if (spec_b == .frost_mage) v_zeros else select16(immolate_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_b.periodic_damage * mit_a, v_zeros);
+
+                const has_siph_a = siph_a > v_zeros;
+                siph_a = @max(v_zeros, siph_a - v_dt);
+                const dmg_siph_a = if (spec_b == .frost_mage) v_zeros else select16(has_siph_a, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps * dt)) * effects_b.siphon_life_damage * mit_a, v_zeros);
+                const heal_siph_b = if (spec_b == .frost_mage) v_zeros else select16(has_siph_a, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps * dt)) * effects_b.siphon_life_healing, v_zeros);
+                hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + heal_siph_b);
 
                 const has_ago_b = ago_b > v_zeros;
                 ago_b = @max(v_zeros, ago_b - v_dt);
-                const dmg_ago_b = if (spec_a == .frost_mage) v_zeros else select16(has_ago_b, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * mit_b, v_zeros);
+                const dmg_ago_b = if (spec_a == .frost_mage) v_zeros else select16(has_ago_b, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * effects_a.agony_damage * mit_b, v_zeros);
 
                 const has_crp_b = crp_b > v_zeros;
                 crp_b = @max(v_zeros, crp_b - v_dt);
-                const dmg_crp_b = if (spec_a == .frost_mage) v_zeros else select16(has_crp_b, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * mit_b, v_zeros);
+                const dmg_crp_b = if (spec_a == .frost_mage) v_zeros else select16(has_crp_b, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_a.corruption_damage * mit_b, v_zeros);
+                const dmg_immolate_b = if (spec_a == .frost_mage) v_zeros else select16(immolate_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_a.periodic_damage * mit_b, v_zeros);
+
+                const has_siph_b = siph_b > v_zeros;
+                siph_b = @max(v_zeros, siph_b - v_dt);
+                const dmg_siph_b = if (spec_a == .frost_mage) v_zeros else select16(has_siph_b, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps * dt)) * effects_a.siphon_life_damage * mit_b, v_zeros);
+                const heal_siph_a = if (spec_a == .frost_mage) v_zeros else select16(has_siph_b, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps * dt)) * effects_a.siphon_life_healing, v_zeros);
+                hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + heal_siph_a);
 
                 // 6. Cast Execution & Drain Life Channeling:
                 // --- Unit A Cast Progress ---
@@ -455,13 +522,21 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const a_cast_finished = vAnd16(a_casting, c_tmr_a <= v_zeros);
 
                 const a_drain_active = if (spec_a == .frost_mage) @as(bool16, @splat(false)) else vAnd16(a_casting, c_id_a == @as(u32x16, @splat(5)));
-                const a_drain_dmg = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * mit_b, v_zeros);
-                const a_drain_heal = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)), v_zeros);
+                const a_drain_dmg = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * effects_a.drain_life_damage * mit_b, v_zeros);
+                const a_drain_heal = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)) * effects_a.drain_life_healing, v_zeros);
                 hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + a_drain_heal);
 
                 const a_sb_hit = vAnd16(vAnd16(a_cast_finished, dist <= v_max_dist), c_id_a == @as(u32x16, @splat(4)));
-                const a_sb_dmg = select16(a_sb_hit, @as(f32x16, @splat(if (spec_a == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * mit_b, v_zeros);
-                if (spec_a == .frost_mage) crp_b = select16(a_sb_hit, splat(Frost.SlowDuration), crp_b);
+                @import("projectiles.zig").launch(&self.state, true, i, 4, @as(f32x16, @splat(if (spec_a == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * (if (spec_a == .warlock) effects_a.shadow_damage else splat(1)), a_sb_hit);
+                const a_sp_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(11)) else @as(bool16, @splat(false));
+                @import("projectiles.zig").launch(&self.state, true, i, 11, splat(WarlockConstants.SearingPainDamage), a_sp_hit);
+                const a_inc_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(12)) else @as(bool16, @splat(false));
+                const a_inc_bonus = select16(immolate_b > v_zeros, splat(1.25), splat(1.0));
+                @import("projectiles.zig").launch(&self.state, true, i, 12, splat(WarlockConstants.IncinerateDamage) * a_inc_bonus, a_inc_hit);
+                const a_immolate_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(13)) else @as(bool16, @splat(false));
+                @import("projectiles.zig").launch(&self.state, true, i, 13, splat(WarlockConstants.ImmolateInitialDamage), a_immolate_hit);
+                const a_sb_dmg = (hits_a.bolt + hits_a.lance + hits_a.coil) * mit_b;
+                if (spec_a == .frost_mage) crp_b = select16(hits_a.bolt > v_zeros, splat(Frost.SlowDuration), crp_b);
 
                 const a_fear_hit = vAnd16(vAnd16(a_cast_finished, dist <= splat(if (spec_a == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_a == @as(u32x16, @splat(3)));
                 const a_fear_dr_mult = getDrMultiplier(fear_dr_t_b);
@@ -487,13 +562,21 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const b_cast_finished = vAnd16(b_casting, c_tmr_b <= v_zeros);
 
                 const b_drain_active = if (spec_b == .frost_mage) @as(bool16, @splat(false)) else vAnd16(b_casting, c_id_b == @as(u32x16, @splat(5)));
-                const b_drain_dmg = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * mit_a, v_zeros);
-                const b_drain_heal = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)), v_zeros);
+                const b_drain_dmg = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * effects_b.drain_life_damage * mit_a, v_zeros);
+                const b_drain_heal = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)) * effects_b.drain_life_healing, v_zeros);
                 hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + b_drain_heal);
 
                 const b_sb_hit = vAnd16(vAnd16(b_cast_finished, dist <= v_max_dist), c_id_b == @as(u32x16, @splat(4)));
-                const b_sb_dmg = select16(b_sb_hit, @as(f32x16, @splat(if (spec_b == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * mit_a, v_zeros);
-                if (spec_b == .frost_mage) crp_a = select16(b_sb_hit, splat(Frost.SlowDuration), crp_a);
+                @import("projectiles.zig").launch(&self.state, false, i, 4, @as(f32x16, @splat(if (spec_b == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * (if (spec_b == .warlock) effects_b.shadow_damage else splat(1)), b_sb_hit);
+                const b_sp_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(11)) else @as(bool16, @splat(false));
+                @import("projectiles.zig").launch(&self.state, false, i, 11, splat(WarlockConstants.SearingPainDamage), b_sp_hit);
+                const b_inc_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(12)) else @as(bool16, @splat(false));
+                const b_inc_bonus = select16(immolate_a > v_zeros, splat(1.25), splat(1.0));
+                @import("projectiles.zig").launch(&self.state, false, i, 12, splat(WarlockConstants.IncinerateDamage) * b_inc_bonus, b_inc_hit);
+                const b_immolate_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(13)) else @as(bool16, @splat(false));
+                @import("projectiles.zig").launch(&self.state, false, i, 13, splat(WarlockConstants.ImmolateInitialDamage), b_immolate_hit);
+                const b_sb_dmg = (hits_b.bolt + hits_b.lance + hits_b.coil) * mit_a;
+                if (spec_b == .frost_mage) crp_a = select16(hits_b.bolt > v_zeros, splat(Frost.SlowDuration), crp_a);
 
                 const b_fear_hit = vAnd16(vAnd16(b_cast_finished, dist <= splat(if (spec_b == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_b == @as(u32x16, @splat(3)));
                 const b_fear_dr_mult = getDrMultiplier(fear_dr_t_a);
@@ -513,9 +596,16 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 c_tot_b = select16(b_cast_finished, v_zeros, c_tot_b);
                 r_tmr_b = select16(b_cast_finished, v_zeros, r_tmr_b);
 
+                const pet_a = if (spec_a == .warlock) @import("pets.zig").tick(&self.state, true, i, dt, effects_a.imp_firebolt_damage) * effects_a.pet_damage else v_zeros;
+                const pet_b = if (spec_b == .warlock) @import("pets.zig").tick(&self.state, false, i, dt, effects_b.imp_firebolt_damage) * effects_b.pet_damage else v_zeros;
+
                 // 7. Apply Damage to HP
-                var total_dmg_to_a = dmg_ago_a + dmg_crp_a + b_drain_dmg + b_sb_dmg;
-                var total_dmg_to_b = dmg_ago_b + dmg_crp_b + a_drain_dmg + a_sb_dmg;
+                var total_dmg_to_a = dmg_ago_a + dmg_crp_a + dmg_immolate_a + hits_b.immolate * mit_a + dmg_siph_a + b_drain_dmg + b_sb_dmg + pet_b * mit_a;
+                var total_dmg_to_b = dmg_ago_b + dmg_crp_b + dmg_immolate_b + hits_a.immolate * mit_b + dmg_siph_b + a_drain_dmg + a_sb_dmg + pet_a * mit_b;
+                immolate_a = if (spec_b == .warlock) select16(hits_b.immolate > v_zeros, splat(WarlockConstants.ImmolateDuration), immolate_a) else immolate_a;
+                immolate_b = if (spec_a == .warlock) select16(hits_a.immolate > v_zeros, splat(WarlockConstants.ImmolateDuration), immolate_b) else immolate_b;
+                const incoming_a = total_dmg_to_a;
+                const incoming_b = total_dmg_to_b;
 
                 if (spec_a == .frost_mage) {
                     const shield = self.extra(.shield, true, i);
@@ -525,7 +615,17 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     total_dmg_to_a -= absorbed;
                     un_dur_a = select16(shield.* > v_zeros, un_dur_a, v_zeros);
                 }
-                hp_a = @max(v_zeros, hp_a - total_dmg_to_a);
+                const pet_live_a = self.state.pet_hp_a[i..][0..VEC_LEN].* > v_zeros;
+                const sl_active_a = if (spec_a == .warlock) vAnd16(pet_live_a, self.state.soul_link_a[i..][0..VEC_LEN].* != v_zeros_u32) else @as(bool16, @splat(false));
+                const sl_split_a = select16(sl_active_a, total_dmg_to_a * @as(f32x16, @splat(0.30)), v_zeros);
+                const direct_dmg_a = total_dmg_to_a - sl_split_a;
+                if (spec_a == .warlock) {
+                    self.state.pet_hp_a[i..][0..VEC_LEN].* = @max(v_zeros, self.state.pet_hp_a[i..][0..VEC_LEN].* - sl_split_a);
+                }
+
+                @import("projectiles.zig").recordHits(&self.state, false, i, hits_b, mit_a, incoming_a, @min(@as(f32x16, hp_a), total_dmg_to_a));
+                @import("pets.zig").recordDamage(&self.state, false, i, pet_b * mit_a, incoming_a, @min(@as(f32x16, hp_a), total_dmg_to_a));
+                hp_a = @max(v_zeros, hp_a - direct_dmg_a);
                 if (spec_b == .frost_mage) {
                     const root_damage = self.extra(.root_damage, true, i);
                     root_damage.* += total_dmg_to_a;
@@ -539,7 +639,17 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     total_dmg_to_b -= absorbed;
                     un_dur_b = select16(shield.* > v_zeros, un_dur_b, v_zeros);
                 }
-                hp_b = @max(v_zeros, hp_b - total_dmg_to_b);
+                const pet_live_b = self.state.pet_hp_b[i..][0..VEC_LEN].* > v_zeros;
+                const sl_active_b = if (spec_b == .warlock) vAnd16(pet_live_b, self.state.soul_link_b[i..][0..VEC_LEN].* != v_zeros_u32) else @as(bool16, @splat(false));
+                const sl_split_b = select16(sl_active_b, total_dmg_to_b * @as(f32x16, @splat(0.30)), v_zeros);
+                const direct_dmg_b = total_dmg_to_b - sl_split_b;
+                if (spec_b == .warlock) {
+                    self.state.pet_hp_b[i..][0..VEC_LEN].* = @max(v_zeros, self.state.pet_hp_b[i..][0..VEC_LEN].* - sl_split_b);
+                }
+
+                @import("projectiles.zig").recordHits(&self.state, true, i, hits_a, mit_b, incoming_b, @min(@as(f32x16, hp_b), total_dmg_to_b));
+                @import("pets.zig").recordDamage(&self.state, true, i, pet_a * mit_b, incoming_b, @min(@as(f32x16, hp_b), total_dmg_to_b));
+                hp_b = @max(v_zeros, hp_b - direct_dmg_b);
                 if (spec_a == .frost_mage) {
                     const root_damage = self.extra(.root_damage, false, i);
                     root_damage.* += total_dmg_to_b;
@@ -576,27 +686,31 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 self.state.cast_total_b[i..][0..VEC_LEN].* = c_tot_b;
 
                 self.state.agony_timer_a[i..][0..VEC_LEN].* = ago_a;
+                self.state.immolate_timer_a[i..][0..VEC_LEN].* = immolate_a;
                 self.state.corruption_timer_a[i..][0..VEC_LEN].* = crp_a;
+                self.state.siphon_timer_a[i..][0..VEC_LEN].* = siph_a;
                 self.state.fear_timer_a[i..][0..VEC_LEN].* = fear_a;
                 self.state.fear_accum_dmg_a[i..][0..VEC_LEN].* = fear_dmg_a;
                 self.state.horror_timer_a[i..][0..VEC_LEN].* = horror_a;
 
                 self.state.agony_timer_b[i..][0..VEC_LEN].* = ago_b;
+                self.state.immolate_timer_b[i..][0..VEC_LEN].* = immolate_b;
                 self.state.corruption_timer_b[i..][0..VEC_LEN].* = crp_b;
+                self.state.siphon_timer_b[i..][0..VEC_LEN].* = siph_b;
                 self.state.fear_timer_b[i..][0..VEC_LEN].* = fear_b;
                 self.state.fear_accum_dmg_b[i..][0..VEC_LEN].* = fear_dmg_b;
                 self.state.horror_timer_b[i..][0..VEC_LEN].* = horror_b;
 
-                self.state.unending_cd_a[i..][0..VEC_LEN].* = un_cd_a;
-                self.state.unending_dur_a[i..][0..VEC_LEN].* = un_dur_a;
+                self.state.action6_cd_a[i..][0..VEC_LEN].* = un_cd_a;
+                self.state.action6_dur_a[i..][0..VEC_LEN].* = un_dur_a;
                 self.state.death_coil_cd_a[i..][0..VEC_LEN].* = dc_cd_a;
                 self.state.fear_dr_tier_a[i..][0..VEC_LEN].* = fear_dr_t_a;
                 self.state.fear_dr_timer_a[i..][0..VEC_LEN].* = fear_dr_tmr_a;
                 self.state.horror_dr_tier_a[i..][0..VEC_LEN].* = horror_dr_t_a;
                 self.state.horror_dr_timer_a[i..][0..VEC_LEN].* = horror_dr_tmr_a;
 
-                self.state.unending_cd_b[i..][0..VEC_LEN].* = un_cd_b;
-                self.state.unending_dur_b[i..][0..VEC_LEN].* = un_dur_b;
+                self.state.action6_cd_b[i..][0..VEC_LEN].* = un_cd_b;
+                self.state.action6_dur_b[i..][0..VEC_LEN].* = un_dur_b;
                 self.state.death_coil_cd_b[i..][0..VEC_LEN].* = dc_cd_b;
                 self.state.fear_dr_tier_b[i..][0..VEC_LEN].* = fear_dr_t_b;
                 self.state.fear_dr_timer_b[i..][0..VEC_LEN].* = fear_dr_tmr_b;
@@ -638,6 +752,8 @@ test "Frost Nova roots movement without preventing casts; Ice Lance shatters and
     try std.testing.expectEqual(@as(f32, 0), state.agony_timer_b[16]);
     @memset(state.gcd_a, 0);
     arena.applyActionA(0, frostAction(.IceLance), splat(0));
+    try std.testing.expectEqual(@as(f32, 2000), state.hp_b[0]);
+    _ = arena.tickPhysics16(0.21, 0);
     try std.testing.expectEqual(@as(f32, 1700), state.hp_b[0]);
     try std.testing.expectEqual(@as(f32, 0), state.agony_timer_b[0]);
     try std.testing.expectEqual(@as(f32, 2000), state.hp_b[16]);
@@ -649,6 +765,8 @@ test "Frostbolt applies slow; Blink removes roots and clamps distance" {
     const state = arena.combat();
     arena.applyActionA(0, frostAction(.Frostbolt), splat(0));
     _ = arena.tickPhysics16(1.8, 0);
+    try std.testing.expectEqual(@as(f32, 2000), state.hp_b[0]);
+    _ = arena.tickPhysics16(1, 0);
     try std.testing.expectEqual(@as(f32, 1760), state.hp_b[0]);
     try std.testing.expectEqual(Frost.SlowDuration, state.corruption_timer_b[0]);
     @memset(state.move_intent_b, -1);
@@ -684,6 +802,8 @@ test "Ice Barrier absorbs direct and periodic Warlock damage with no extra mitig
     defer arena.deinit();
     arena.applyActionA(0, frostAction(.IceBarrier), splat(0));
     arena.applyActionB(0, ids(7), splat(0));
+    try std.testing.expectEqual(Frost.BarrierAbsorb, arena.frostTelemetry(true, 0)[2]);
+    _ = arena.tickPhysics16(1.25, 0);
     try std.testing.expectEqual(@as(f32, 2000), arena.state.hp_a[0]);
     try std.testing.expectEqual(@as(f32, 220), arena.frostTelemetry(true, 0)[2]);
     @memset(arena.state.gcd_b, 0);
@@ -695,7 +815,7 @@ test "Ice Barrier absorbs direct and periodic Warlock damage with no extra mitig
     _ = arena.tickPhysics16(10, 0);
     try std.testing.expectApproxEqAbs(@as(f32, 1890), arena.state.hp_a[0], 0.001);
     try std.testing.expectEqual(@as(f32, 0), arena.frostTelemetry(true, 0)[2]);
-    try std.testing.expectEqual(@as(f32, 0), arena.state.unending_dur_a[0]);
+    try std.testing.expectEqual(@as(f32, 0), arena.state.action6_dur_a[0]);
 }
 
 test "Polymorph incapacitates and cancels casts, breaks on damage, and obeys DR and range" {
@@ -708,6 +828,8 @@ test "Polymorph incapacitates and cancels casts, breaks on damage, and obeys DR 
     try std.testing.expectEqual(@as(u32, 0), arena.state.cast_id_b[0]);
     @memset(arena.state.gcd_a, 0);
     arena.applyActionA(0, frostAction(.IceLance), splat(0));
+    try std.testing.expect(arena.state.fear_timer_b[0] > 0);
+    _ = arena.tickPhysics16(0.9, 0);
     try std.testing.expectEqual(@as(f32, 0), arena.state.fear_timer_b[0]);
     arena.applyActionA(0, frostAction(.Polymorph), splat(0)); // GCD blocks this action.
     try std.testing.expectEqual(@as(u32, 0), arena.state.cast_id_a[0]);
@@ -726,18 +848,84 @@ test "Barrier absorbs full incoming hits even when remaining HP is below the hit
     @memset(arena.state.hp_a, 40);
     arena.applyActionA(0, frostAction(.IceBarrier), splat(0));
     arena.applyActionB(0, ids(7), splat(0));
+    _ = arena.tickPhysics16(1.25, 0);
     try std.testing.expectEqual(@as(f32, 40), arena.state.hp_a[0]);
     try std.testing.expectEqual(@as(f32, 220), arena.frostTelemetry(true, 0)[2]);
 }
 
-test "A dead target cannot cast or heal itself between instant damage and physics" {
+test "A dead target cannot cast or heal itself after a projectile kills it" {
     var arena = try ArenaPool(.frost_mage, .warlock).init(std.testing.allocator, 16);
     defer arena.deinit();
     @memset(arena.state.hp_b, 50);
     arena.applyActionA(0, frostAction(.IceLance), splat(0));
+    try std.testing.expect(arena.getActionMaskB(0)[7][0]);
+    _ = arena.tickPhysics16(0.7, 0);
     try std.testing.expect(!arena.getActionMaskB(0)[7][0]);
     arena.applyActionB(0, ids(7), splat(0));
     try std.testing.expectEqual(@as(f32, 0), arena.state.hp_b[0]);
     _ = arena.tickPhysics16(0.01, 0);
     try std.testing.expectEqual(@as(u32, 0), arena.state.is_active[0]);
+}
+
+test "2D advance follows opponent heading without voluntary strafe" {
+    var arena = try ArenaPool(.warlock, .frost_mage).init(std.testing.allocator, 16);
+    defer arena.deinit();
+    const state = arena.combat();
+    @memset(state.pos_x_a, 0);
+    @memset(state.pos_y_a, 0);
+    @memset(state.pos_x_b, 15);
+    @memset(state.pos_y_b, 20);
+    @memset(state.move_intent_a, -1);
+    _ = arena.tickPhysics16(0.1, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.42), state.pos_x_a[0], 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.56), state.pos_y_a[0], 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 24.3), state.distance[0], 0.0001);
+}
+
+test "Fear and Polymorph wander in both axes with normalized speed" {
+    inline for (.{ Spec.warlock, Spec.frost_mage }) |source| {
+        var arena = try ArenaPool(source, .warlock).init(std.testing.allocator, 16);
+        defer arena.deinit();
+        const state = arena.combat();
+        @memset(state.fear_timer_b, 6);
+        var positive_x = false;
+        var negative_x = false;
+        var positive_y = false;
+        var negative_y = false;
+        for (0..500) |_| {
+            const old_distance = state.distance[0];
+            const x = state.pos_x_b[0];
+            const y = state.pos_y_b[0];
+            _ = arena.tickPhysics16(0.01, 0);
+            const dx = state.pos_x_b[0] - x;
+            const dy = state.pos_y_b[0] - y;
+            positive_x = positive_x or dx > 0.0001;
+            negative_x = negative_x or dx < -0.0001;
+            positive_y = positive_y or dy > 0.0001;
+            negative_y = negative_y or dy < -0.0001;
+            const speed: f32 = if (source == .warlock) 7 else 2.5;
+            if (old_distance > 1.1 and old_distance < 34.9 and state.distance[0] > 1.1 and state.distance[0] < 34.9)
+                try std.testing.expectApproxEqAbs(speed * 0.01, @sqrt(dx * dx + dy * dy), 0.0001);
+            const gx = state.pos_x_b[0] - state.pos_x_a[0];
+            const gy = state.pos_y_b[0] - state.pos_y_a[0];
+            try std.testing.expectApproxEqAbs(state.distance[0], @sqrt(gx * gx + gy * gy), 0.0001);
+        }
+        try std.testing.expect(positive_x and negative_x and positive_y and negative_y);
+    }
+}
+
+test "Blink moves the casting mage along the 2D opponent axis" {
+    var arena = try ArenaPool(.frost_mage, .warlock).init(std.testing.allocator, 16);
+    defer arena.deinit();
+    const state = arena.combat();
+    @memset(state.pos_x_a, 0);
+    @memset(state.pos_y_a, 0);
+    @memset(state.pos_x_b, 15);
+    @memset(state.pos_y_b, 20);
+    arena.applyActionA(0, frostAction(.Blink), splat(-1));
+    try std.testing.expectApproxEqAbs(@as(f32, 9), state.pos_x_a[0], 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 12), state.pos_y_a[0], 0.0001);
+    try std.testing.expectEqual(@as(f32, 15), state.pos_x_b[0]);
+    try std.testing.expectEqual(@as(f32, 20), state.pos_y_b[0]);
+    try std.testing.expectApproxEqAbs(@as(f32, 10), state.distance[0], 0.0001);
 }

@@ -1,0 +1,362 @@
+[
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 230406314,
+    "optimized_ns": 216836107,
+    "speedup": 1.0626,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 218425226,
+    "optimized_ns": 187400159,
+    "speedup": 1.1656,
+    "repeat": 0
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 224252399,
+    "optimized_ns": 224226921,
+    "speedup": 1.0001,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 204197104,
+    "optimized_ns": 109673083,
+    "speedup": 1.8619,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 218342593,
+    "optimized_ns": 111290218,
+    "speedup": 1.9619,
+    "repeat": 0
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 224225200,
+    "optimized_ns": 126888722,
+    "speedup": 1.7671,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 204712610,
+    "optimized_ns": 108467807,
+    "speedup": 1.8873,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 217332507,
+    "optimized_ns": 125365774,
+    "speedup": 1.7336,
+    "repeat": 0
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 221102309,
+    "optimized_ns": 121477045,
+    "speedup": 1.8201,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 205057638,
+    "optimized_ns": 204290570,
+    "speedup": 1.0038,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 220749782,
+    "optimized_ns": 220129511,
+    "speedup": 1.0028,
+    "repeat": 0
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 224889146,
+    "optimized_ns": 224880935,
+    "speedup": 1.0,
+    "repeat": 0
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 202755159,
+    "optimized_ns": 190903387,
+    "speedup": 1.0621,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 220295431,
+    "optimized_ns": 189109217,
+    "speedup": 1.1649,
+    "repeat": 1
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 226560663,
+    "optimized_ns": 226054637,
+    "speedup": 1.0022,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 205305847,
+    "optimized_ns": 110997956,
+    "speedup": 1.8496,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 219308007,
+    "optimized_ns": 111516778,
+    "speedup": 1.9666,
+    "repeat": 1
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 225948875,
+    "optimized_ns": 127703623,
+    "speedup": 1.7693,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 205421907,
+    "optimized_ns": 108847646,
+    "speedup": 1.8872,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 219887296,
+    "optimized_ns": 127520791,
+    "speedup": 1.7243,
+    "repeat": 1
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 223148885,
+    "optimized_ns": 121455834,
+    "speedup": 1.8373,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 204906548,
+    "optimized_ns": 204335723,
+    "speedup": 1.0028,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 220134854,
+    "optimized_ns": 219672459,
+    "speedup": 1.0021,
+    "repeat": 1
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 225523078,
+    "optimized_ns": 225564547,
+    "speedup": 0.9998,
+    "repeat": 1
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 208021359,
+    "optimized_ns": 195648760,
+    "speedup": 1.0632,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 220667276,
+    "optimized_ns": 189326115,
+    "speedup": 1.1655,
+    "repeat": 2
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "natural",
+    "calls": 128000,
+    "reference_ns": 225963477,
+    "optimized_ns": 226192395,
+    "speedup": 0.999,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 206473224,
+    "optimized_ns": 110367282,
+    "speedup": 1.8708,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 220321717,
+    "optimized_ns": 111902053,
+    "speedup": 1.9689,
+    "repeat": 2
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "a_only",
+    "calls": 128000,
+    "reference_ns": 226579091,
+    "optimized_ns": 127691194,
+    "speedup": 1.7744,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 205867287,
+    "optimized_ns": 109223779,
+    "speedup": 1.8848,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 220706966,
+    "optimized_ns": 127862619,
+    "speedup": 1.7261,
+    "repeat": 2
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "b_only",
+    "calls": 128000,
+    "reference_ns": 225874887,
+    "optimized_ns": 123172505,
+    "speedup": 1.8338,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 205388683,
+    "optimized_ns": 205186954,
+    "speedup": 1.001,
+    "repeat": 2
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 220680212,
+    "optimized_ns": 220167399,
+    "speedup": 1.0023,
+    "repeat": 2
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "scenario": "both",
+    "calls": 128000,
+    "reference_ns": 225920332,
+    "optimized_ns": 225526011,
+    "speedup": 1.0017,
+    "repeat": 2
+  }
+]

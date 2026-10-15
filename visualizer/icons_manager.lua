@@ -35,13 +35,16 @@ local ICON_FILES = {
     shaman  = "icons/class_shaman.png",
 
     -- Spells / Buffs / Debuffs
-    agony           = "icons/spell_agony.png",
+    agony           = "icons/spell_shadow_curseofsargeras.png",
     corruption      = "icons/spell_corruption.png",
-    fear            = "icons/spell_fear.png",
+    fear            = "icons/spell_shadow_possession.png",
+    possession      = "icons/spell_shadow_possession.png",
     shadowbolt      = "icons/spell_shadowbolt.png",
     drainlife       = "icons/spell_drainlife.png",
-    unendingresolve = "icons/spell_unendingresolve.png",
+    healthstone      = "icons/inv_stone_04.png",
     deathcoil       = "icons/spell_deathcoil.png",
+    siphonlife      = "icons/spell_shadow_requiem.png",
+    immolate        = "icons/spell_fire_immolation.png",
     horror          = "icons/spell_horror.png",
 
     -- UI / Indicators
@@ -54,25 +57,50 @@ local ICON_FILES = {
     pvp_banner  = "icons/ui_pvp_banner.png",
     border      = "icons/ui_border.png",
     silver_border = "icons/ui_silver_border.png",
+
+    -- Pets
+    pet_imp         = "icons/spell_shadow_summonimp.png",
+    pet_succubus    = "icons/ability_warlock_randomizesuccubusincubus.png",
+    pet_felhunter   = "icons/spell_shadow_summonfelhunter.png",
+    pet_voidwalker  = "icons/spell_shadow_summonvoidwalker.png",
+    firebolt        = "icons/spell_fire_fireball02.png",
 }
 
 function icons.load()
+    -- Load base known files
     for name, path in pairs(ICON_FILES) do
-        local info = love.filesystem.getInfo(path)
+        local info = love.filesystem.getInfo(path) or love.filesystem.getInfo("visualizer/" .. path)
+        local resolvedPath = love.filesystem.getInfo(path) and path or ("visualizer/" .. path)
         if info then
-            local img = love.graphics.newImage(path)
+            local img = love.graphics.newImage(resolvedPath)
             if img then
                 img:setFilter("linear", "linear")
                 loadedImages[name] = img
             end
-        else
-            -- Check parent path if running from root directory
-            local altPath = "visualizer/" .. path
-            if love.filesystem.getInfo(altPath) then
-                local img = love.graphics.newImage(altPath)
-                if img then
-                    img:setFilter("linear", "linear")
-                    loadedImages[name] = img
+        end
+    end
+
+    -- Automatically discover and load all PNGs in icons/ directory
+    local iconDirs = { "icons", "visualizer/icons" }
+    for _, dir in ipairs(iconDirs) do
+        local files = love.filesystem.getDirectoryItems(dir)
+        if files and #files > 0 then
+            for _, filename in ipairs(files) do
+                if filename:match("%.png$") or filename:match("%.PNG$") then
+                    local name = filename:gsub("%.[pP][nN][gG]$", ""):lower()
+                    if not loadedImages[name] then
+                        local fullPath = dir .. "/" .. filename
+                        local img = love.graphics.newImage(fullPath)
+                        if img then
+                            img:setFilter("linear", "linear")
+                            loadedImages[name] = img
+                            -- Also register without prefix if it starts with spell_ or ui_
+                            local cleanName = name:gsub("^spell_", ""):gsub("^ui_", "")
+                            if not loadedImages[cleanName] then
+                                loadedImages[cleanName] = img
+                            end
+                        end
+                    end
                 end
             end
         end

@@ -110,7 +110,7 @@ zig build test
 
 ## Training and evaluation
 
-See [CLI_REFERENCE.md](CLI_REFERENCE.md) for training, resume, sparring, recording, and Love2D playback commands, and [RL_PVP_DESIGN.md](RL_PVP_DESIGN.md) for roadmap status. The engine supports Warlock and Frost Mage with 24 observations, 24 hidden units, 9 actions, and a separate movement head. See [Frost Mage mechanics, commands, and performance checks](FROST_MAGE.md). Models named after other Warlock specs currently share this kit.
+See [CLI_REFERENCE.md](CLI_REFERENCE.md) for training, resume, sparring, recording, and Love2D playback commands, and [RL_PVP_DESIGN.md](RL_PVP_DESIGN.md) for roadmap status. The engine supports Warlock and Frost Mage with 24 observations, 24 hidden units, 11 Warlock action IDs (including idle and cancel-cast), and a separate movement head. See [Frost Mage mechanics, commands, and performance checks](FROST_MAGE.md). Models named after other Warlock specs currently share this kit.
 
 Run the performance regression floors on the benchmark host:
 
@@ -131,3 +131,19 @@ Pipeline runs record their stage and completion state beside their artifacts in 
 Successful individual or manual training runs, and the end of the full pipeline, automatically evaluate saved champions and record replays. **Evaluate + replays** on F5 also runs this step independently. Evaluation snapshots models from `models/`, saved pipeline stages, and the latest legacy champion per kit when no base stage exists, without moving source checkpoints. It writes `spec_matrix.lua` and recordings in `matches/`, then refreshes F4 and F3. Evaluation snapshots and logs live in `evaluation_runs/`. F3 shows class icons from replay metadata; use arrows or Page Up/Page Down to browse all recordings.
 
 Training supports `--threads N` and the Love2D **CPU training threads** setting (default: 1). See [multithreading performance and design](MULTITHREADING.md).
+
+## 2D duel movement
+
+Combat state stores aligned `pos_x_a`, `pos_y_a`, `pos_x_b`, and `pos_y_b` arrays and derives opponent distance from those positions. Movement remains advance, hold, or retreat along the current opponent axis; agents cannot choose to strafe. Fear makes targets wander at 7 m/s, and Polymorph makes them wander at 2.5 m/s. Directions change in 0.75-second timer buckets, including lateral and forward/back movement, with normalized diagonal speed. Roots and slows still apply.
+
+Movement uses the existing 16-wide SIMD batches. Forced paths are deterministic from combat timers, so MCTS snapshots reproduce them without additional random state. Blink moves along the opponent axis. The existing 0–35 m separation constraint remains; this change does not add walls, obstacles, or pathfinding.
+
+Replay columns 3/4 retain the X positions; appended columns 49/50 store A/B Y positions after the Frost telemetry. Older recordings default to Y=0 in playback. New recordings use actual combat positions for characters, beams, projectiles, and combat text.
+
+## Projectile travel
+
+Shadow Bolt and Frostbolt travel at 30 m/s, Ice Lance at 40 m/s, and Death Coil at 20 m/s. These are simulator tuning values, defined in `src/projectiles.zig`, rather than values tied to a game patch. A stationary target 30 m away takes approximately 1 second for a bolt to reach, after the cast completes. Travel and impact are quantized to the 10 ms physics tick.
+
+Missiles home toward the target's current 2D position, including after Blink. Damage, Frostbolt slow, Death Coil healing/Horror/interrupts, shield absorption, and damage-based control breaks occur on impact. Ice Lance's frozen damage bonus is selected at launch. Fear and Polymorph remain direct effects on cast completion; DOT applications and Drain Life remain direct/channeled effects.
+
+Each caster has four fixed projectile slots in aligned SoA arrays, with no per-shot heap allocation. Empty queues skip flight math. Queues and positions are included in MCTS snapshots. New replay columns 51–82 store four `spell, damage, x, y` slots per side; playback uses these recorded positions and emits impact effects at the recorded arrival time. Older replays keep their legacy cosmetic projectile effects.

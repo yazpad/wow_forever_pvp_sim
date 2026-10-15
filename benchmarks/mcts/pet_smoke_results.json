@@ -1,0 +1,29 @@
+[
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "pet_a": "imp",
+    "pet_b": "succubus",
+    "pet_attacks": 5,
+    "frames": 800,
+    "json_lua_valid": true
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "pet_a": "felhunter",
+    "pet_b": "none",
+    "pet_attacks": 3,
+    "frames": 800,
+    "json_lua_valid": true
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "warlock",
+    "pet_a": "none",
+    "pet_b": "voidwalker",
+    "pet_attacks": 2,
+    "frames": 800,
+    "json_lua_valid": true
+  }
+]

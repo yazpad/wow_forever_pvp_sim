@@ -1,0 +1,34 @@
+{
+  "warlock": [
+    {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
+    {"id": 1, "symbol": "Agony", "name": "Agony", "icon": "agony"},
+    {"id": 2, "symbol": "Corruption", "name": "Corruption", "icon": "corruption"},
+    {"id": 3, "symbol": "Fear", "name": "Fear", "icon": "possession", "starts_cast": true},
+    {"id": 4, "symbol": "ShadowBolt", "name": "Shadow Bolt", "icon": "shadowbolt", "starts_cast": true},
+    {"id": 5, "symbol": "DrainLife", "name": "Drain Life", "icon": "drainlife", "starts_cast": true},
+    {"id": 6, "symbol": "Healthstone", "name": "Healthstone", "icon": "healthstone"},
+    {"id": 7, "symbol": "DeathCoil", "name": "Death Coil", "icon": "deathcoil"},
+    {"id": 8, "symbol": "SiphonLife", "name": "Siphon Life", "icon": "siphonlife", "talent": {"tree": "Affliction", "id": 105912}},
+    {"id": 9, "symbol": "Shadowburn", "name": "Shadowburn", "icon": "spell_shadow_scourgebuild", "talent": {"tree": "Destruction", "id": 105884}},
+    {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
+    {"id": 11, "symbol": "SearingPain", "name": "Searing Pain", "icon": "spell_fire_soulburn", "starts_cast": true},
+    {"id": 12, "symbol": "Incinerate", "name": "Incinerate", "icon": "spell_fire_incinerate", "starts_cast": true, "talent": {"tree": "Destruction", "id": 105874}},
+    {"id": 13, "symbol": "Immolate", "name": "Immolate", "icon": "spell_fire_immolation", "starts_cast": true}
+  ],
+  "frost_mage": [
+    {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
+    {"id": 1, "symbol": "IceLance", "name": "Ice Lance", "icon": "frostbolt"},
+    {"id": 2, "symbol": "FrostNova", "name": "Frost Nova", "icon": "frostbolt"},
+    {"id": 3, "symbol": "Polymorph", "name": "Polymorph", "icon": "frostbolt", "starts_cast": true},
+    {"id": 4, "symbol": "Frostbolt", "name": "Frostbolt", "icon": "frostbolt", "starts_cast": true},
+    {"id": 5, "symbol": "Blink", "name": "Blink", "icon": "sword"},
+    {"id": 6, "symbol": "IceBarrier", "name": "Ice Barrier", "icon": "shield"},
+    {"id": 7, "symbol": "Counterspell", "name": "Counterspell", "icon": "clock"},
+    {"id": 8, "symbol": "None", "name": "None", "icon": "border"},
+    {"id": 9, "symbol": "Unused", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
+    {"id": 11, "symbol": "Unused11", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 12, "symbol": "Unused12", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 13, "symbol": "Unused13", "name": "None", "selectable": false, "icon": "border"}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-11",
+  "cpu": "AMD Ryzen 9 9950X, 16 cores / 32 threads",
+  "zig": "0.14.0",
+  "build": "ReleaseFast native",
+  "base_commit": "c0d30f37edd8e4a426ada88251bd15a4346dd557",
+  "initial_distance": 25,
+  "initial_hp": [
+    2000,
+    2000
+  ],
+  "timeout_seconds": 60,
+  "physics_hz": 100,
+  "notes": "quality and quality_high precede final SIMD staging optimization; quality_high UCT precedes batch visit reservations. throughput is final implementation. Timings are search wall time; quality runs may overlap compilation."
+}

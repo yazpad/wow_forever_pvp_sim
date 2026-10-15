@@ -15,7 +15,9 @@ Both classes have 2,000 HP, 1,000 mana, 15 mana/sec regeneration, 7 m/sec advanc
 | 5 | Blink | Off GCD, 40 mana, 15 sec cooldown; 15 m toward target if advancing, away otherwise; removes roots and cancels own cast |
 | 6 | Ice Barrier | Off GCD and usable while casting, 60 mana, 25 sec cooldown; absorbs 400 damage for up to 20 sec |
 | 7 | Counterspell | Off GCD and usable while casting, 30 m, 24 sec cooldown; interrupts an active cast and locks spell actions for 4 sec |
-| 8 | Cancel Cast | Cancels an active cast |
+| 8 | None | Unused action ID |
+| 9 | None | Unused action ID |
+| 10 | Cancel Cast | Cancels an active cast |
 
 Nova roots prevent movement but allow casting; accumulated HP damage of 250
 breaks a root. Ice Lance checks the root before its damage breaks it. Polymorph

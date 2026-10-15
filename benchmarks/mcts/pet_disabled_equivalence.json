@@ -1,0 +1,50 @@
+[
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "boundary": "event",
+    "matched": true
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "boundary": "tick",
+    "matched": true
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "boundary": "event",
+    "matched": true
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "boundary": "tick",
+    "matched": true
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "warlock",
+    "boundary": "event",
+    "matched": true
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "warlock",
+    "boundary": "tick",
+    "matched": true
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "boundary": "event",
+    "matched": true
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "boundary": "tick",
+    "matched": true
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "calls": 128000,
+    "reference_ns": 270848862,
+    "optimized_ns": 211007087,
+    "speedup": 1.2836
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 285559722,
+    "optimized_ns": 227883063,
+    "speedup": 1.2531
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 288933153,
+    "optimized_ns": 234213926,
+    "speedup": 1.2336
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "calls": 128000,
+    "reference_ns": 277190399,
+    "optimized_ns": 214210489,
+    "speedup": 1.294
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 283844915,
+    "optimized_ns": 227852904,
+    "speedup": 1.2457
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 289001643,
+    "optimized_ns": 233828531,
+    "speedup": 1.236
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "warlock",
+    "calls": 128000,
+    "reference_ns": 272396409,
+    "optimized_ns": 210597174,
+    "speedup": 1.2934
+  },
+  {
+    "spec_a": "warlock",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 287762414,
+    "optimized_ns": 230962241,
+    "speedup": 1.2459
+  },
+  {
+    "spec_a": "frost_mage",
+    "spec_b": "frost_mage",
+    "calls": 128000,
+    "reference_ns": 284825906,
+    "optimized_ns": 230754057,
+    "speedup": 1.2343
+  }
+]

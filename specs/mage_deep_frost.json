@@ -1,0 +1,33 @@
+{
+  "name": "Deep Frost Control",
+  "class": "frost_mage",
+  "level": 60,
+  "description": "Classic shatter control frost mage with Ice Barrier, shatter ice lance burst, and deep frost chill.",
+  "talents_summary": "17/0/34",
+  "trees": {
+    "Arcane": {
+      "20101": 2,
+      "20102": 3,
+      "20106": 5,
+      "20111": 2,
+      "20112": 3,
+      "20113": 1,
+      "20115": 1
+    },
+    "Fire": {},
+    "Frost": {
+      "20302": 5,
+      "20303": 3,
+      "20304": 5,
+      "20305": 3,
+      "20306": 2,
+      "20307": 3,
+      "20308": 3,
+      "20309": 1,
+      "20311": 2,
+      "20312": 1,
+      "20313": 5,
+      "20317": 1
+    }
+  }
+}

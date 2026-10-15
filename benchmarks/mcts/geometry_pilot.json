@@ -1,0 +1,358 @@
+{
+  "host": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+  "runs": [
+    {
+      "case": "default",
+      "repeat": 0,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 1.042637,
+        "rollouts_per_second": 9821.2,
+        "ticks_per_second": 16505425.7,
+        "lane_utilization": 0.8844,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "default",
+      "repeat": 0,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.842131,
+        "rollouts_per_second": 12159.6,
+        "ticks_per_second": 20435267.3,
+        "lane_utilization": 0.8844,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "default",
+      "repeat": 1,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.811612,
+        "rollouts_per_second": 12616.9,
+        "ticks_per_second": 21203698.6,
+        "lane_utilization": 0.8844,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "default",
+      "repeat": 1,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.823111,
+        "rollouts_per_second": 12440.6,
+        "ticks_per_second": 20907483.2,
+        "lane_utilization": 0.8844,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "terminal",
+      "repeat": 0,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--evaluator",
+        "rollout"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.866146,
+        "rollouts_per_second": 11822.5,
+        "ticks_per_second": 21034037.2,
+        "lane_utilization": 0.8644,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "terminal",
+      "repeat": 0,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--evaluator",
+        "rollout"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.857072,
+        "rollouts_per_second": 11947.7,
+        "ticks_per_second": 21256735.2,
+        "lane_utilization": 0.8644,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "terminal",
+      "repeat": 1,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--evaluator",
+        "rollout"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.861959,
+        "rollouts_per_second": 11879.9,
+        "ticks_per_second": 21136210.2,
+        "lane_utilization": 0.8644,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "terminal",
+      "repeat": 1,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--evaluator",
+        "rollout"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 0.870508,
+        "rollouts_per_second": 11763.3,
+        "ticks_per_second": 20928645.2,
+        "lane_utilization": 0.8644,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "suffix",
+      "repeat": 0,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--start-ticks",
+        "300",
+        "--boundary",
+        "tick"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 1.792133,
+        "rollouts_per_second": 5713.9,
+        "ticks_per_second": 7748820.5,
+        "lane_utilization": 0.9028,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "suffix",
+      "repeat": 0,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--start-ticks",
+        "300",
+        "--boundary",
+        "tick"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 1.788781,
+        "rollouts_per_second": 5724.6,
+        "ticks_per_second": 7763340.0,
+        "lane_utilization": 0.9028,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "suffix",
+      "repeat": 1,
+      "version": "after",
+      "command": [
+        "zig-out/bin/mcts_fight",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--start-ticks",
+        "300",
+        "--boundary",
+        "tick"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 1.794142,
+        "rollouts_per_second": 5707.5,
+        "ticks_per_second": 7740144.0,
+        "lane_utilization": 0.9028,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    },
+    {
+      "case": "suffix",
+      "repeat": 1,
+      "version": "before",
+      "command": [
+        "/tmp/mcts_before_geometry",
+        "--benchmark",
+        "--rounds",
+        "20",
+        "--rollouts",
+        "512",
+        "--start-ticks",
+        "300",
+        "--boundary",
+        "tick"
+      ],
+      "result": {
+        "spec_a": "warlock",
+        "spec_b": "frost_mage",
+        "workers": 1,
+        "rollouts": 10240,
+        "seconds": 1.794616,
+        "rollouts_per_second": 5706.0,
+        "ticks_per_second": 7738099.9,
+        "lane_utilization": 0.9028,
+        "nodes": 10260,
+        "max_depth": 5,
+        "memory_bytes": 7719296
+      }
+    }
+  ],
+  "summaries": {
+    "default": {
+      "before": 11130.900000000001,
+      "after": 12388.25,
+      "speedup": 1.112960317674222
+    },
+    "terminal": {
+      "before": 11792.9,
+      "after": 11913.8,
+      "speedup": 1.010251931246767
+    },
+    "suffix": {
+      "before": 5709.95,
+      "after": 5716.05,
+      "speedup": 1.001068310580653
+    }
+  }
+}

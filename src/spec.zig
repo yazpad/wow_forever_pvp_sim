@@ -1,4 +1,7 @@
 const std = @import("std");
+const action_catalog = @import("action_catalog_generated.zig");
+const ActionCount = action_catalog.ActionCount;
+const AllActionBits: u32 = (@as(u32, 1) << ActionCount) - 1;
 
 pub const Spec = enum(u8) {
     warlock = 0,
@@ -11,25 +14,15 @@ pub const Spec = enum(u8) {
         return null;
     }
 
-    pub fn actionNames(self: Spec) [9][]const u8 {
+    pub fn actionNames(self: Spec) [action_catalog.ActionCount][]const u8 {
         return switch (self) {
-            .warlock => .{ "Idle/Maneuver", "Agony", "Corruption", "Fear", "Shadow Bolt", "Drain Life", "Unending Resolve", "Death Coil", "Cancel Cast" },
-            .frost_mage => .{ "Idle/Maneuver", "Ice Lance", "Frost Nova", "Polymorph", "Frostbolt", "Blink", "Ice Barrier", "Counterspell", "Cancel Cast" },
+            .warlock => action_catalog.warlock_names,
+            .frost_mage => action_catalog.frost_mage_names,
         };
     }
 };
 
-pub const FrostAction = enum(u32) {
-    IdleOrManeuver = 0,
-    IceLance = 1,
-    FrostNova = 2,
-    Polymorph = 3,
-    Frostbolt = 4,
-    Blink = 5,
-    IceBarrier = 6,
-    Counterspell = 7,
-    CancelCast = 8,
-};
+pub const FrostAction = action_catalog.FrostAction;
 
 // Deliberately a compact simulator kit, not a particular retail game patch.
 pub const Frost = struct {
@@ -99,62 +92,92 @@ pub const TalentBuild = struct {
     }
 };
 
-/// Combat stat multipliers derived from a talent build.
-/// Kept branchless and computed at init/compile time so simulation loops never branch.
+pub const WarlockTalentRanks = struct {
+    improved_corruption: u8 = 0, // 105924
+    malediction: u8 = 0, // 105923
+    improved_drains: u8 = 0, // 105920
+    improved_bane_of_agony: u8 = 0, // 105919
+    siphon_life: u8 = 0, // 105912
+    shadow_mastery: u8 = 0, // 105910
+    unholy_power: u8 = 0, // 105906
+    soul_link: u8 = 0, // 105892
+    bane: u8 = 0, // 105888
+    molten_skin: u8 = 0, // 105885
+    cataclysm: u8 = 0, // 105887
+    improved_imp: u8 = 0, // 105908
+    shadowburn: u8 = 0, // 105884
+    shadow_and_flame: u8 = 0, // 105875
+
+    pub fn encode(self: WarlockTalentRanks) u32 {
+        return (@as(u32, self.improved_corruption) & 0x7) |
+            ((@as(u32, self.malediction) & 0x7) << 3) |
+            ((@as(u32, self.improved_drains) & 0x3) << 6) |
+            ((@as(u32, self.improved_bane_of_agony) & 0x3) << 8) |
+            ((@as(u32, self.siphon_life) & 0x1) << 10) |
+            ((@as(u32, self.shadow_mastery) & 0x7) << 11) |
+            ((@as(u32, self.unholy_power) & 0x7) << 14) |
+            ((@as(u32, self.soul_link) & 0x1) << 17) |
+            ((@as(u32, self.bane) & 0x7) << 18) |
+            ((@as(u32, self.molten_skin) & 0x7) << 21) |
+            ((@as(u32, self.cataclysm) & 0x3) << 24) |
+            ((@as(u32, self.improved_imp) & 0x3) << 26) |
+            ((@as(u32, self.shadowburn) & 0x1) << 28) |
+            ((@as(u32, self.shadow_and_flame) & 0x7) << 29);
+    }
+};
+
+/// Scalar summary of supported Warlock effects for spec metadata and reports.
+/// The search kernels use the packed rank word to derive SIMD equivalents once
+/// per fighter, outside the physics tick loop.
 pub const CombatModifiers = struct {
-    // Damage scaling
-    dot_dmg_mult: f32 = 1.0,
-    direct_dmg_mult: f32 = 1.0,
-    // Cast time scaling
-    cast_time_mult: f32 = 1.0,
-    // Cooldown scaling
-    cooldown_mult: f32 = 1.0,
-    // Defensives & EHP
+    agony_damage_mult: f32 = 1.0,
+    corruption_damage_mult: f32 = 1.0,
+    siphon_life_damage_mult: f32 = 1.0,
+    siphon_life_healing_mult: f32 = 1.0,
+    shadow_damage_mult: f32 = 1.0,
+    drain_life_mult: f32 = 1.0,
     damage_taken_mult: f32 = 1.0,
-    shield_absorb_mult: f32 = 1.0,
-    healing_mult: f32 = 1.0,
-    // Speed
-    move_speed_mult: f32 = 1.0,
+    shadow_bolt_cast_time: f32 = 1.8,
+    shadow_bolt_mana_mult: f32 = 1.0,
+    pet_damage_mult: f32 = 1.0,
+    imp_firebolt_damage_mult: f32 = 1.0,
+    soul_link_pct: f32 = 0.0,
+    has_siphon_life: bool = false,
 
     pub fn default() CombatModifiers {
         return .{};
     }
 
-    /// Compute modifiers from class and talent build x/y/z
-    pub fn fromTalents(class: Spec, talents: TalentBuild) CombatModifiers {
+    /// Build scalar effects for spec metadata and UI summaries.
+    pub fn fromWarlockRanks(t: WarlockTalentRanks) CombatModifiers {
         var m = CombatModifiers.default();
-        switch (class) {
-            .warlock => {
-                // Tree 1: Affliction (e.g. up to +25% dot damage, +20% siphon heal)
-                const aff_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree1)) / 30.0);
-                m.dot_dmg_mult += 0.25 * aff_ratio;
-                m.healing_mult += 0.20 * aff_ratio;
-
-                // Tree 2: Demonology / Soul Link (e.g. up to 20% passive damage reduction)
-                const demo_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree2)) / 30.0);
-                m.damage_taken_mult -= 0.20 * demo_ratio;
-
-                // Tree 3: Destruction (e.g. up to +30% direct spell damage, -15% cast time)
-                const destro_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree3)) / 30.0);
-                m.direct_dmg_mult += 0.30 * destro_ratio;
-                m.cast_time_mult -= 0.15 * destro_ratio;
-            },
-            .frost_mage => {
-                // Tree 1: Arcane (Presence of Mind / cooldown reductions & mana efficiency)
-                const arc_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree1)) / 30.0);
-                m.cooldown_mult -= 0.15 * arc_ratio;
-
-                // Tree 2: Fire (Burst damage scaling)
-                const fire_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree2)) / 30.0);
-                m.direct_dmg_mult += 0.25 * fire_ratio;
-
-                // Tree 3: Frost (Shield absorption, control & shattered burst)
-                const frost_ratio = @min(1.0, @as(f32, @floatFromInt(talents.tree3)) / 30.0);
-                m.shield_absorb_mult += 0.30 * frost_ratio;
-                m.dot_dmg_mult += 0.15 * frost_ratio; // Chilled / control mastery
-                m.damage_taken_mult -= 0.10 * frost_ratio;
-            },
-        }
+        const shadow = 1.0 + 0.01 * @as(f32, @floatFromInt(t.shadow_mastery));
+        const shadow_damage = shadow * (if (t.soul_link > 0) @as(f32, 1.03) else 1.0);
+        const periodic = 1.0 + 0.01 * @as(f32, @floatFromInt(t.malediction));
+        m.shadow_damage_mult = shadow_damage;
+        m.agony_damage_mult = shadow_damage * periodic * (1.0 + 0.05 * @as(f32, @floatFromInt(t.improved_bane_of_agony)));
+        m.corruption_damage_mult = shadow_damage * periodic * (1.0 + 0.02 * @as(f32, @floatFromInt(t.improved_corruption)));
+        m.siphon_life_damage_mult = shadow_damage * periodic;
+        m.siphon_life_healing_mult = m.siphon_life_damage_mult;
+        const drain_mult: f32 = switch (t.improved_drains) {
+            0 => 1.0,
+            1 => 1.07,
+            2 => 1.13,
+            else => 1.20,
+        };
+        m.drain_life_mult = shadow_damage * periodic * drain_mult;
+        m.damage_taken_mult = 1.0 - 0.02 * @as(f32, @floatFromInt(t.molten_skin));
+        m.shadow_bolt_cast_time = @max(0.0, 1.8 - 0.1 * @as(f32, @floatFromInt(t.bane)));
+        m.shadow_bolt_mana_mult = switch (t.cataclysm) {
+            0 => 1.0,
+            1 => 0.97,
+            2 => 0.94,
+            else => 0.90,
+        };
+        m.pet_damage_mult = (1.0 + 0.02 * @as(f32, @floatFromInt(t.unholy_power))) * (if (t.soul_link > 0) @as(f32, 1.03) else 1.0);
+        m.imp_firebolt_damage_mult = 1.0 + 0.10 * @as(f32, @floatFromInt(t.improved_imp));
+        m.soul_link_pct = if (t.soul_link > 0) 0.30 else 0.0;
+        m.has_siphon_life = t.siphon_life > 0;
         return m;
     }
 };
@@ -165,6 +188,8 @@ pub const SpecConfig = struct {
     name: []const u8,
     class: Spec,
     talents: TalentBuild,
+    action_mask: u32 = AllActionBits,
+    warlock_talents: WarlockTalentRanks = .{},
     modifiers: CombatModifiers,
 
     pub fn init(id: []const u8, name: []const u8, class: Spec, talents: TalentBuild) SpecConfig {
@@ -173,10 +198,106 @@ pub const SpecConfig = struct {
             .name = name,
             .class = class,
             .talents = talents,
-            .modifiers = CombatModifiers.fromTalents(class, talents),
+            .action_mask = AllActionBits,
+            .modifiers = CombatModifiers.default(),
         };
     }
 };
+
+fn rankInTree(trees: std.json.ObjectMap, tree_name: []const u8, talent_id: []const u8) u8 {
+    const tree_value = trees.get(tree_name) orelse return 0;
+    const rank_value = tree_value.object.get(talent_id) orelse return 0;
+    return switch (rank_value) {
+        .integer => |rank| if (rank > 0 and rank <= 255) @intCast(rank) else 0,
+        else => 0,
+    };
+}
+
+fn actionMaskFromRoot(root: std.json.ObjectMap, class: Spec) !u32 {
+    const names = if (class == .warlock) action_catalog.warlock_names else action_catalog.frost_mage_names;
+    var mask = AllActionBits;
+    if (root.get("action_loadout") orelse root.get("action_slots")) |actions_value| {
+        if (actions_value != .array) return error.InvalidActionLoadout;
+        mask = 0;
+        for (actions_value.array.items) |value| {
+            if (value != .string) continue;
+            for (names, 0..) |name, id| {
+                if (std.mem.eql(u8, value.string, name)) mask |= @as(u32, 1) << @intCast(id);
+            }
+        }
+        // These controls are reserved by the editor and stay available regardless
+        // of which spell slots the user selected.
+        const idle_id: usize = if (class == .warlock) @intFromEnum(action_catalog.WarlockAction.IdleOrManeuver) else @intFromEnum(action_catalog.FrostAction.IdleOrManeuver);
+        const cancel_id: usize = if (class == .warlock) @intFromEnum(action_catalog.WarlockAction.CancelCast) else @intFromEnum(action_catalog.FrostAction.CancelCast);
+        mask |= @as(u32, 1) << @intCast(idle_id);
+        mask |= @as(u32, 1) << @intCast(cancel_id);
+    }
+
+    if (class == .warlock) {
+        if (root.get("trees")) |tree_value| {
+            if (tree_value == .object) {
+                var ranks_buf: [16]u8 = undefined;
+                inline for (0..ActionCount) |id| {
+                    const talent_id = action_catalog.warlock_talent_gate_ids[id];
+                    const tree_name = action_catalog.warlock_talent_gate_trees[id];
+                    if (talent_id == 0) continue;
+                    const key = try std.fmt.bufPrint(&ranks_buf, "{d}", .{talent_id});
+                    if (rankInTree(tree_value.object, tree_name, key) == 0) mask &= ~(@as(u32, 1) << id);
+                }
+            }
+        } else {
+            // Without saved talent ranks, talent-gated abilities cannot be
+            // proven available.
+            inline for (0..ActionCount) |id| {
+                if (action_catalog.warlock_talent_gate_ids[id] != 0) mask &= ~(@as(u32, 1) << id);
+            }
+        }
+    }
+    return mask & AllActionBits;
+}
+
+fn warlockRanksFromTrees(trees: std.json.ObjectMap) WarlockTalentRanks {
+    return .{
+        .improved_corruption = rankInTree(trees, "Affliction", "105924"),
+        .malediction = rankInTree(trees, "Affliction", "105923"),
+        .improved_drains = rankInTree(trees, "Affliction", "105920"),
+        .improved_bane_of_agony = rankInTree(trees, "Affliction", "105919"),
+        .siphon_life = rankInTree(trees, "Affliction", "105912"),
+        .shadow_mastery = rankInTree(trees, "Affliction", "105910"),
+        .unholy_power = rankInTree(trees, "Demonology", "105906"),
+        .soul_link = rankInTree(trees, "Demonology", "105892"),
+        .bane = rankInTree(trees, "Destruction", "105888"),
+        .molten_skin = rankInTree(trees, "Destruction", "105885"),
+        .cataclysm = rankInTree(trees, "Destruction", "105887"),
+        .improved_imp = rankInTree(trees, "Demonology", "105908"),
+        .shadowburn = rankInTree(trees, "Destruction", "105884"),
+        .shadow_and_flame = rankInTree(trees, "Destruction", "105875"),
+    };
+}
+
+fn sumTreeRanks(trees: std.json.ObjectMap, tree_name: []const u8) !u8 {
+    const tree_value = trees.get(tree_name) orelse return error.MissingTalentTree;
+    var total: u16 = 0;
+    var iter = tree_value.object.iterator();
+    while (iter.next()) |entry| {
+        switch (entry.value_ptr.*) {
+            .integer => |rank| {
+                if (rank < 0 or rank > 5) return error.InvalidTalentRank;
+                total += @intCast(rank);
+            },
+            else => return error.InvalidTalentRank,
+        }
+    }
+    if (total > 255) return error.InvalidTalentBuild;
+    return @intCast(total);
+}
+
+fn validateWarlockRanks(ranks: WarlockTalentRanks) !void {
+    if (ranks.improved_corruption > 5 or ranks.malediction > 5 or ranks.improved_drains > 3 or
+        ranks.improved_bane_of_agony > 2 or ranks.siphon_life > 1 or ranks.shadow_mastery > 5 or
+        ranks.unholy_power > 5 or ranks.soul_link > 1 or ranks.bane > 5 or ranks.improved_imp > 3 or
+        ranks.molten_skin > 5 or ranks.cataclysm > 3 or ranks.shadowburn > 1 or ranks.shadow_and_flame > 5) return error.InvalidTalentRank;
+}
 
 /// Standard canonical specs with explicit talent builds x/y/z
 pub const CANONICAL_SPECS = [_]SpecConfig{
@@ -192,8 +313,83 @@ pub const CANONICAL_SPECS = [_]SpecConfig{
 
 pub fn findCanonicalSpec(id: []const u8) ?SpecConfig {
     for (CANONICAL_SPECS) |s| {
-        if (std.mem.eql(u8, s.id, id)) return s;
+        if (std.mem.eql(u8, s.id, id)) {
+            var result = s;
+            if (std.mem.eql(u8, s.id, "soul_link_warlock")) {
+                result.warlock_talents.soul_link = 1;
+                result.modifiers = CombatModifiers.fromWarlockRanks(result.warlock_talents);
+            }
+            return result;
+        }
     }
+    return null;
+}
+
+/// Loads a spec by path, resolving name, class, and talent summary (e.g. "20/31/0").
+pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig {
+    const file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+    const contents = try file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(contents);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, contents, .{});
+    defer parsed.deinit();
+
+    const root = parsed.value.object;
+    const class_str = if (root.get("class")) |v| v.string else "warlock";
+    const class = Spec.parse(class_str) orelse .warlock;
+    const action_mask = try actionMaskFromRoot(root, class);
+
+    var talents = TalentBuild{};
+    var warlock_talents = WarlockTalentRanks{};
+    var modifiers = CombatModifiers.default();
+    if (root.get("trees")) |tree_value| {
+        if (tree_value != .object) return error.InvalidTalentTrees;
+        const trees = tree_value.object;
+        talents = .{
+            .tree1 = try sumTreeRanks(trees, if (class == .warlock) "Affliction" else "Arcane"),
+            .tree2 = try sumTreeRanks(trees, if (class == .warlock) "Demonology" else "Fire"),
+            .tree3 = try sumTreeRanks(trees, if (class == .warlock) "Destruction" else "Frost"),
+        };
+        if (talents.total() > 51) return error.InvalidTalentBuild;
+        if (root.get("talents_summary")) |summary| {
+            const stated = TalentBuild.parse(summary.string) orelse return error.InvalidTalentSummary;
+            if (!std.meta.eql(stated, talents)) return error.TalentSummaryMismatch;
+        }
+        if (class == .warlock) {
+            warlock_talents = warlockRanksFromTrees(trees);
+            try validateWarlockRanks(warlock_talents);
+            modifiers = CombatModifiers.fromWarlockRanks(warlock_talents);
+        }
+    } else if (root.get("talents_summary")) |ts| {
+        // Legacy summary-only specs retain their point totals but do not gain
+        // talent effects that cannot be proven from the saved rank data.
+        if (TalentBuild.parse(ts.string)) |tb| talents = tb;
+    }
+
+    const name = if (root.get("name")) |n| try allocator.dupe(u8, n.string) else try allocator.dupe(u8, path);
+    const id = try allocator.dupe(u8, std.fs.path.stem(path));
+
+    return .{
+        .id = id,
+        .name = name,
+        .class = class,
+        .talents = talents,
+        .action_mask = action_mask,
+        .warlock_talents = warlock_talents,
+        .modifiers = modifiers,
+    };
+}
+
+/// Resolves a spec configuration from a canonical ID, path, or filename.
+pub fn resolveSpec(allocator: std.mem.Allocator, id_or_path: []const u8) ?SpecConfig {
+    if (findCanonicalSpec(id_or_path)) |c| return c;
+    // Check if it's a direct file path
+    if (loadSpecFile(allocator, id_or_path)) |cfg| return cfg else |_| {}
+    // Check inside specs/ directory
+    var buf: [256]u8 = undefined;
+    const spec_path = std.fmt.bufPrint(&buf, "specs/{s}.json", .{id_or_path}) catch return null;
+    if (loadSpecFile(allocator, spec_path)) |cfg| return cfg else |_| {}
     return null;
 }
 
@@ -210,14 +406,26 @@ test "TalentBuild parse and format" {
 }
 
 test "CombatModifiers calculations" {
-    const aff = CombatModifiers.fromTalents(.warlock, .{ .tree1 = 30, .tree2 = 0, .tree3 = 0 });
-    try std.testing.expect(aff.dot_dmg_mult > 1.20);
-    try std.testing.expect(aff.healing_mult > 1.15);
+    const aff = CombatModifiers.fromWarlockRanks(.{ .malediction = 5, .improved_bane_of_agony = 2, .siphon_life = 1 });
+    try std.testing.expect(aff.agony_damage_mult > 1.15);
+    try std.testing.expect(aff.has_siphon_life);
 
-    const sl = CombatModifiers.fromTalents(.warlock, .{ .tree1 = 0, .tree2 = 30, .tree3 = 0 });
-    try std.testing.expect(sl.damage_taken_mult < 0.85);
-
-    const frost = CombatModifiers.fromTalents(.frost_mage, .{ .tree1 = 0, .tree2 = 0, .tree3 = 30 });
-    try std.testing.expect(frost.shield_absorb_mult > 1.25);
+    const sl = CombatModifiers.fromWarlockRanks(.{ .soul_link = 1 });
+    try std.testing.expectEqual(@as(f32, 0.30), sl.soul_link_pct);
+    try std.testing.expectEqual(@as(f32, 1.03), sl.shadow_damage_mult);
 }
 
+test "loadSpecFile and resolveSpec" {
+    const sl = resolveSpec(std.testing.allocator, "soul_link__affliction");
+    try std.testing.expect(sl != null);
+    if (sl) |cfg| {
+        defer std.testing.allocator.free(cfg.name);
+        defer std.testing.allocator.free(cfg.id);
+        try std.testing.expectEqual(Spec.warlock, cfg.class);
+        try std.testing.expectEqual(@as(u8, 24), cfg.talents.tree1);
+        try std.testing.expectEqual(@as(u8, 27), cfg.talents.tree2);
+        try std.testing.expectEqual(@as(u8, 0), cfg.talents.tree3);
+        try std.testing.expectEqual(@as(f32, 0.30), cfg.modifiers.soul_link_pct);
+        try std.testing.expectEqual(@as(u8, 1), cfg.warlock_talents.soul_link);
+    }
+}

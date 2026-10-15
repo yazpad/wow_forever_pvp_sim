@@ -1,0 +1,34 @@
+{
+  "name": "Destruction Conflagrate",
+  "class": "warlock",
+  "level": 60,
+  "description": "Deep Destruction burst spec featuring fast Bane casts, Conflagrate burst finisher, Ruin critical strikes, and Incinerate.",
+  "talents_summary": "0/17/34",
+  "trees": {
+    "Affliction": {},
+    "Demonology": {
+      "105907": 5,
+      "105908": 3,
+      "105905": 2,
+      "105903": 3,
+      "105902": 2,
+      "105900": 1,
+      "105898": 1
+    },
+    "Destruction": {
+      "105888": 5,
+      "105881": 2,
+      "105887": 3,
+      "105883": 5,
+      "105884": 1,
+      "105882": 3,
+      "105880": 1,
+      "105879": 2,
+      "105876": 1,
+      "105877": 3,
+      "105878": 2,
+      "105875": 5,
+      "105874": 1
+    }
+  }
+}

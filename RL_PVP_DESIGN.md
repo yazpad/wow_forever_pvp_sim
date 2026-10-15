@@ -21,7 +21,7 @@
 * **Arena Distance:** $0.0\text{m}$ to $35.0\text{m}$ (starts at $25.0\text{m}$)
 * **Global Cooldown (GCD):** $1.0\text{s}$
 
-### 2.2 Action Palette (9 Discrete Actions)
+### 2.2 Action Palette (11 Warlock Action IDs)
 | Action ID | Name | Cast Type | Cast Time | Base Dmg/Heal | Range | Resource | Movement Rule | Special Effect |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
 | **0** | **Maneuver / Idle** | None | 0s | - | - | 0 | Move $\pm$ | Choose direction (Advance, Kite, or Stand) without casting |
@@ -30,9 +30,11 @@
 | **3** | **Fear** | Hard Cast | 1.5s | 0 | 20m | 60 Mana | **Stationary only** | Crowd Control: Interrupts target & incapacitates for up to 4s |
 | **4** | **Shadow Bolt** | Hard Cast | 1.8s | 240 dmg | 35m | 50 Mana | **Stationary only** | Heavy direct damage nuker |
 | **5** | **Drain Life** | Channel | 3.0s | 70 dps / +60 hps | 25m | 70 Mana | **Stationary only** | Channeled life siphon (deals dmg and heals self) |
-| **6** | **Unending Resolve** | Instant | 0s | - | Self | 0 | **Castable while moving** | 45s CD: 40% damage reduction for 6s |
+| **6** | **Healthstone** | Instant | 0s | 1200 heal | Self | 0 | Off GCD | 120s cooldown |
 | **7** | **Death Coil** | Instant | 0s | 180 dmg / 300 heal | 30m | 50 Mana | **Castable while moving** | 45s CD: 3s Horror with separate DR |
-| **8** | **Cancel Cast** | Instant | 0s | - | Self | 0 | Anywhere | **Cancels active cast** (crucial for fake-casting and baiting) |
+| **8** | **Siphon Life** | Instant | 0s | 25 dps / 25 hps | 30m | 45 Mana | **Castable while moving** | Talent-gated 30s damage and healing over time |
+| **9** | **Shadowburn** | Instant | 0s | 148 dmg | 30m | 245 Mana + 1 Soul Shard | **Castable while moving** | Talent-gated; 15s cooldown; Shadow and Flame can refund shards |
+| **10** | **Cancel Cast** | Instant | 0s | - | Self | 0 | Anywhere | **Cancels active cast** (crucial for fake-casting and baiting) |
 
 ### 2.3 Hard Stops & Reaction Time Dynamics
 1. **100ms Reaction Timer (`t_react`):** Agent evaluates the policy network every 100ms instead of every 10ms (10x policy evaluation speedup).

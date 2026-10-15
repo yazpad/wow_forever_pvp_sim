@@ -1,0 +1,272 @@
+[
+  {
+    "scenario": "horizontal",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 8096781,
+    "optimized_ns": 8030176,
+    "speedup": 1.0083,
+    "repeat": 0
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23454504,
+    "optimized_ns": 23359281,
+    "speedup": 1.0041,
+    "repeat": 0
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 4889861,
+    "optimized_ns": 4893711,
+    "speedup": 0.9992,
+    "repeat": 0
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 22278752,
+    "optimized_ns": 22166906,
+    "speedup": 1.005,
+    "repeat": 0
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 5563996,
+    "optimized_ns": 5560129,
+    "speedup": 1.0007,
+    "repeat": 0
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 12900350,
+    "optimized_ns": 12853112,
+    "speedup": 1.0037,
+    "repeat": 0
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 4767907,
+    "optimized_ns": 4788601,
+    "speedup": 0.9957,
+    "repeat": 1
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 22138079,
+    "optimized_ns": 22023926,
+    "speedup": 1.0052,
+    "repeat": 1
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 6288501,
+    "optimized_ns": 6290230,
+    "speedup": 0.9997,
+    "repeat": 1
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 21998102,
+    "optimized_ns": 21969919,
+    "speedup": 1.0013,
+    "repeat": 1
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 5559435,
+    "optimized_ns": 5628562,
+    "speedup": 0.9877,
+    "repeat": 1
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 14476497,
+    "optimized_ns": 14347002,
+    "speedup": 1.009,
+    "repeat": 1
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 4115184,
+    "optimized_ns": 4156307,
+    "speedup": 0.9901,
+    "repeat": 2
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23073354,
+    "optimized_ns": 23197755,
+    "speedup": 0.9946,
+    "repeat": 2
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3251939,
+    "optimized_ns": 3258473,
+    "speedup": 0.998,
+    "repeat": 2
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23162621,
+    "optimized_ns": 23195360,
+    "speedup": 0.9986,
+    "repeat": 2
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3278236,
+    "optimized_ns": 3266089,
+    "speedup": 1.0037,
+    "repeat": 2
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 12687817,
+    "optimized_ns": 12699328,
+    "speedup": 0.9991,
+    "repeat": 2
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3833713,
+    "optimized_ns": 3821621,
+    "speedup": 1.0032,
+    "repeat": 3
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23641254,
+    "optimized_ns": 23748778,
+    "speedup": 0.9955,
+    "repeat": 3
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3450177,
+    "optimized_ns": 3445423,
+    "speedup": 1.0014,
+    "repeat": 3
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23722942,
+    "optimized_ns": 23937106,
+    "speedup": 0.9911,
+    "repeat": 3
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3322475,
+    "optimized_ns": 3327715,
+    "speedup": 0.9984,
+    "repeat": 3
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 12820210,
+    "optimized_ns": 12711406,
+    "speedup": 1.0086,
+    "repeat": 3
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3063264,
+    "optimized_ns": 3049105,
+    "speedup": 1.0046,
+    "repeat": 4
+  },
+  {
+    "scenario": "horizontal",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 24559006,
+    "optimized_ns": 24433959,
+    "speedup": 1.0051,
+    "repeat": 4
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3431758,
+    "optimized_ns": 3433609,
+    "speedup": 0.9995,
+    "repeat": 4
+  },
+  {
+    "scenario": "two_dimensional",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 23753655,
+    "optimized_ns": 23874735,
+    "speedup": 0.9949,
+    "repeat": 4
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "movement",
+    "calls": 64000,
+    "reference_ns": 3411068,
+    "optimized_ns": 3416923,
+    "speedup": 0.9983,
+    "repeat": 4
+  },
+  {
+    "scenario": "sparse",
+    "kernel": "homing",
+    "calls": 64000,
+    "reference_ns": 13953503,
+    "optimized_ns": 13862779,
+    "speedup": 1.0065,
+    "repeat": 4
+  }
+]

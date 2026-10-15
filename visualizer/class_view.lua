@@ -1,34 +1,27 @@
 local view = {}
-local names = {
-    warlock = {[0]="Idle", "Agony", "Corruption", "Fear", "Shadow Bolt", "Drain Life", "Unending Resolve", "Death Coil", "Cancel Cast"},
-    frost_mage = {[0]="Idle", "Ice Lance", "Frost Nova", "Polymorph", "Frostbolt", "Blink", "Ice Barrier", "Counterspell", "Cancel Cast"},
-}
-local icons = {
-    warlock = {[0]="ui_sword", "agony", "corruption", "fear", "shadowbolt", "drainlife", "unendingresolve", "deathcoil"},
-    frost_mage = {[0]="ui_sword", "icelance", "frostnova", "polymorph", "frostbolt", "blink", "icebarrier", "counterspell"},
-}
+local action_catalog = require("action_catalog")
 function view.spec(meta, side)
     return (meta and meta[side == 0 and "spec_a" or "spec_b"]) or "warlock"
 end
 function view.name(meta, side, id)
-    return (names[view.spec(meta, side)] or names.warlock)[id] or "Cast"
+    return (action_catalog.names_by_id[view.spec(meta, side)] or action_catalog.names_by_id.warlock)[id] or "Cast"
 end
 function view.icon(meta, side, id)
-    return (icons[view.spec(meta, side)] or icons.warlock)[id] or "ui_sword"
+    return (action_catalog.icons_by_id[view.spec(meta, side)] or action_catalog.icons_by_id.warlock)[id] or "ui_sword"
 end
 function view.classIcon(meta, side)
     return view.spec(meta, side) == "frost_mage" and "mage" or "warlock"
 end
 function view.aura(meta, side, kind)
-    local mage = view.spec(meta, kind == "unendingresolve" and side or (1-side)) == "frost_mage"
+    local mage = view.spec(meta, kind == "icebarrier" and side or (1-side)) == "frost_mage"
     if mage then
-        return ({agony="frostnova", corruption="slow", fear="polymorph", unendingresolve="icebarrier"})[kind] or kind
+        return ({agony="frostnova", corruption="slow", fear="polymorph"})[kind] or kind
     end
     return kind
 end
 function view.auraDuration(meta, side, kind)
     local icon = view.aura(meta, side, kind)
-    return ({frostnova=4, slow=6, polymorph=4, icebarrier=20, agony=18, corruption=14, fear=4, unendingresolve=6})[icon] or 3
+    return ({frostnova=4, slow=6, polymorph=4, icebarrier=20, agony=18, corruption=14, fear=4})[icon] or 3
 end
 function view.drawMagePanel(meta, f, side, x, iconsRef)
     local g, offset = love.graphics, side
