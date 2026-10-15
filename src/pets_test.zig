@@ -178,3 +178,78 @@ test "pet snapshots replay exactly through both action staging paths without new
     try std.testing.expect(r.choices[0].len <= 27);
     try std.testing.expectEqualDeep(saved, fast.snapshot(0));
 }
+
+test "Spell Lock preserves school lockout through simultaneous actions and snapshots" {
+    inline for (.{ true, false }) |attacker_a| {
+        inline for (.{ @as(u32, 3), 4, 5, 11, 12, 13 }) |cast_id| {
+            var d = try sim.Duel(.warlock, .warlock).init(std.testing.allocator);
+            defer d.deinit();
+            const state = d.arena.combat();
+            @memset(state.distance, 15);
+            const target = if (attacker_a) "_b" else "_a";
+            pets.set(state, attacker_a, 0, .felhunter);
+            @field(state, "cast_id" ++ target)[0] = cast_id;
+            @field(state, "cast_timer" ++ target)[0] = 1;
+            @field(state, "cast_total" ++ target)[0] = 2;
+            // A simultaneous Cancel Cast must not erase the enemy's lockout.
+            const lock: sim.Action = .{ .ability = 15 };
+            const cancel: sim.Action = .{ .ability = 10 };
+            d.applyMasked(@splat(if (attacker_a) lock else cancel), @splat(if (attacker_a) cancel else lock), @splat(true), @splat(true));
+            try std.testing.expectEqual(@as(u32, 0), @field(state, "cast_id" ++ target)[0]);
+            const shadow = cast_id <= 5;
+            const timer = if (shadow) "shadow_lockout" else "fire_lockout";
+            try std.testing.expectEqual(combat.WarlockConstants.SpellLockDuration, @field(state, timer ++ target)[0]);
+            const masks = if (attacker_a) d.getActionMaskB(0) else d.getActionMaskA(0);
+            inline for (.{ 1, 2, 3, 4, 5, 7 }) |slot| try std.testing.expectEqual(!shadow, masks[slot][0]);
+            inline for (.{ 11, 12, 13 }) |slot| try std.testing.expectEqual(shadow, masks[slot][0]);
+            try std.testing.expect(masks[0][0]);
+            // Adjacent lanes must remain unaffected.
+            try std.testing.expectEqual(@as(f32, 0), @field(state, timer ++ target)[1]);
+            const snapshot = d.snapshot(0);
+            _ = d.arena.tickPhysics16(3.99, 0);
+            try std.testing.expect(@field(state, timer ++ target)[0] > 0);
+            _ = d.arena.tickPhysics16(0.02, 0);
+            try std.testing.expectEqual(@as(f32, 0), @field(state, timer ++ target)[0]);
+            d.restore(0, snapshot);
+            try std.testing.expectEqual(combat.WarlockConstants.SpellLockDuration, @field(state, timer ++ target)[0]);
+            state.resetDuel(0);
+            try std.testing.expectEqual(@as(f32, 0), @field(state, timer ++ target)[0]);
+        }
+    }
+}
+
+test "Aftermath scales Immolate projectile hits in mirrors and mixed matchups on either side" {
+    inline for (.{ multi.ArenaPool(.warlock, .warlock), multi.ArenaPool(.warlock, .frost_mage), multi.ArenaPool(.frost_mage, .warlock) }) |Arena| {
+        var arena = try Arena.init(std.testing.allocator, 16);
+        defer arena.deinit();
+        const state = arena.combat();
+        inline for (.{ true, false }) |side| {
+            const suffix = if (side) "_a" else "_b";
+            for (0..6) |lane| {
+                const ranks = @import("spec.zig").WarlockTalentRanks{ .aftermath = @intCast(lane), .shadow_and_flame = 5 };
+                @field(state, "talent_ranks" ++ suffix)[lane] = @truncate(ranks.encode());
+                @field(state, "talent_flags" ++ suffix)[lane] = @truncate(ranks.encode() >> 32);
+                @field(state, "cast_id" ++ suffix)[lane] = 13;
+                @field(state, "cast_timer" ++ suffix)[lane] = 0.001;
+            }
+        }
+        _ = arena.tickPhysics16(0.01, 0);
+        var impacts_a: [6]f32 = @splat(0);
+        var impacts_b: [6]f32 = @splat(0);
+        for (0..150) |_| {
+            _ = arena.tickPhysics16(0.01, 0);
+            for (0..6) |lane| {
+                impacts_a[lane] += state.impact_bolt_a[lane];
+                impacts_b[lane] += state.impact_bolt_b[lane];
+            }
+        }
+        for (0..6) |lane| {
+            const expected = combat.WarlockConstants.ImmolateInitialDamage * 1.1 * (1.0 + 0.1 * @as(f32, @floatFromInt(lane)));
+            // Only the Warlock side in mixed matchups launches Immolate.
+            if (Arena == multi.ArenaPool(.warlock, .warlock) or Arena == multi.ArenaPool(.warlock, .frost_mage))
+                try std.testing.expectApproxEqAbs(expected, impacts_a[lane], 0.001);
+            if (Arena == multi.ArenaPool(.warlock, .warlock) or Arena == multi.ArenaPool(.frost_mage, .warlock))
+                try std.testing.expectApproxEqAbs(expected, impacts_b[lane], 0.001);
+        }
+    }
+}

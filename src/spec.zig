@@ -1,4 +1,5 @@
 const std = @import("std");
+const pets = @import("pets.zig");
 const action_catalog = @import("action_catalog_generated.zig");
 const ActionCount = action_catalog.ActionCount;
 const AllActionBits: u32 = (@as(u32, 1) << ActionCount) - 1;
@@ -107,22 +108,32 @@ pub const WarlockTalentRanks = struct {
     improved_imp: u8 = 0, // 105908
     shadowburn: u8 = 0, // 105884
     shadow_and_flame: u8 = 0, // 105875
+    demonic_sacrifice: u8 = 0, // 105900
+    demonic_pact: u8 = 0, // 105890
+    aftermath: u8 = 0, // 105886
+    conflagrate: u8 = 0, // 105880
+    demonic_sacrifice_pet: u8 = 1, // pet enum; 0 means none
 
-    pub fn encode(self: WarlockTalentRanks) u32 {
-        return (@as(u32, self.improved_corruption) & 0x7) |
-            ((@as(u32, self.malediction) & 0x7) << 3) |
-            ((@as(u32, self.improved_drains) & 0x3) << 6) |
-            ((@as(u32, self.improved_bane_of_agony) & 0x3) << 8) |
-            ((@as(u32, self.siphon_life) & 0x1) << 10) |
-            ((@as(u32, self.shadow_mastery) & 0x7) << 11) |
-            ((@as(u32, self.unholy_power) & 0x7) << 14) |
-            ((@as(u32, self.soul_link) & 0x1) << 17) |
-            ((@as(u32, self.bane) & 0x7) << 18) |
-            ((@as(u32, self.molten_skin) & 0x7) << 21) |
-            ((@as(u32, self.cataclysm) & 0x3) << 24) |
-            ((@as(u32, self.improved_imp) & 0x3) << 26) |
-            ((@as(u32, self.shadowburn) & 0x1) << 28) |
-            ((@as(u32, self.shadow_and_flame) & 0x7) << 29);
+    pub fn encode(self: WarlockTalentRanks) u64 {
+        return (@as(u64, self.improved_corruption) & 0x7) |
+            ((@as(u64, self.malediction) & 0x7) << 3) |
+            ((@as(u64, self.improved_drains) & 0x3) << 6) |
+            ((@as(u64, self.improved_bane_of_agony) & 0x3) << 8) |
+            ((@as(u64, self.siphon_life) & 0x1) << 10) |
+            ((@as(u64, self.shadow_mastery) & 0x7) << 11) |
+            ((@as(u64, self.unholy_power) & 0x7) << 14) |
+            ((@as(u64, self.soul_link) & 0x1) << 17) |
+            ((@as(u64, self.bane) & 0x7) << 18) |
+            ((@as(u64, self.molten_skin) & 0x7) << 21) |
+            ((@as(u64, self.cataclysm) & 0x3) << 24) |
+            ((@as(u64, self.improved_imp) & 0x3) << 26) |
+            ((@as(u64, self.shadowburn) & 0x1) << 28) |
+            ((@as(u64, self.shadow_and_flame) & 0x7) << 29) |
+            ((@as(u64, self.demonic_sacrifice) & 0x1) << 32) |
+            ((@as(u64, self.demonic_pact) & 0x1) << 33) |
+            ((@as(u64, self.demonic_sacrifice_pet) & 0x7) << 34) |
+            ((@as(u64, self.aftermath) & 0x7) << 37) |
+            ((@as(u64, self.conflagrate) & 0x1) << 40);
     }
 };
 
@@ -135,6 +146,8 @@ pub const CombatModifiers = struct {
     siphon_life_damage_mult: f32 = 1.0,
     siphon_life_healing_mult: f32 = 1.0,
     shadow_damage_mult: f32 = 1.0,
+    fire_damage_mult: f32 = 1.0,
+    immolate_initial_damage_mult: f32 = 1.0,
     drain_life_mult: f32 = 1.0,
     damage_taken_mult: f32 = 1.0,
     shadow_bolt_cast_time: f32 = 1.8,
@@ -155,6 +168,8 @@ pub const CombatModifiers = struct {
         const shadow_damage = shadow * (if (t.soul_link > 0) @as(f32, 1.03) else 1.0);
         const periodic = 1.0 + 0.01 * @as(f32, @floatFromInt(t.malediction));
         m.shadow_damage_mult = shadow_damage;
+        m.fire_damage_mult = 1.0 + 0.02 * @as(f32, @floatFromInt(t.shadow_and_flame));
+        m.immolate_initial_damage_mult = m.fire_damage_mult * (1.0 + 0.10 * @as(f32, @floatFromInt(t.aftermath)));
         m.agony_damage_mult = shadow_damage * periodic * (1.0 + 0.05 * @as(f32, @floatFromInt(t.improved_bane_of_agony)));
         m.corruption_damage_mult = shadow_damage * periodic * (1.0 + 0.02 * @as(f32, @floatFromInt(t.improved_corruption)));
         m.siphon_life_damage_mult = shadow_damage * periodic;
@@ -190,6 +205,8 @@ pub const SpecConfig = struct {
     talents: TalentBuild,
     action_mask: u32 = AllActionBits,
     warlock_talents: WarlockTalentRanks = .{},
+    pet: pets.Kind = .imp,
+    sacrifice_pet: pets.Kind = .imp,
     modifiers: CombatModifiers,
 
     pub fn init(id: []const u8, name: []const u8, class: Spec, talents: TalentBuild) SpecConfig {
@@ -198,7 +215,9 @@ pub const SpecConfig = struct {
             .name = name,
             .class = class,
             .talents = talents,
-            .action_mask = AllActionBits,
+            .action_mask = if (class == .warlock) AllActionBits & ~((@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction)) | (@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock))) else AllActionBits,
+            .pet = if (class == .warlock) .imp else .none,
+            .sacrifice_pet = if (class == .warlock) .imp else .none,
             .modifiers = CombatModifiers.default(),
         };
     }
@@ -272,6 +291,10 @@ fn warlockRanksFromTrees(trees: std.json.ObjectMap) WarlockTalentRanks {
         .improved_imp = rankInTree(trees, "Demonology", "105908"),
         .shadowburn = rankInTree(trees, "Destruction", "105884"),
         .shadow_and_flame = rankInTree(trees, "Destruction", "105875"),
+        .demonic_sacrifice = rankInTree(trees, "Demonology", "105900"),
+        .demonic_pact = rankInTree(trees, "Demonology", "105890"),
+        .aftermath = rankInTree(trees, "Destruction", "105886"),
+        .conflagrate = rankInTree(trees, "Destruction", "105880"),
     };
 }
 
@@ -296,7 +319,8 @@ fn validateWarlockRanks(ranks: WarlockTalentRanks) !void {
     if (ranks.improved_corruption > 5 or ranks.malediction > 5 or ranks.improved_drains > 3 or
         ranks.improved_bane_of_agony > 2 or ranks.siphon_life > 1 or ranks.shadow_mastery > 5 or
         ranks.unholy_power > 5 or ranks.soul_link > 1 or ranks.bane > 5 or ranks.improved_imp > 3 or
-        ranks.molten_skin > 5 or ranks.cataclysm > 3 or ranks.shadowburn > 1 or ranks.shadow_and_flame > 5) return error.InvalidTalentRank;
+        ranks.molten_skin > 5 or ranks.cataclysm > 3 or ranks.shadowburn > 1 or ranks.shadow_and_flame > 5 or
+        ranks.conflagrate > 1 or ranks.aftermath > 5 or ranks.demonic_sacrifice > 1 or ranks.demonic_pact > 1 or ranks.demonic_sacrifice_pet > 4) return error.InvalidTalentRank;
 }
 
 /// Standard canonical specs with explicit talent builds x/y/z
@@ -338,7 +362,15 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
     const root = parsed.value.object;
     const class_str = if (root.get("class")) |v| v.string else "warlock";
     const class = Spec.parse(class_str) orelse .warlock;
-    const action_mask = try actionMaskFromRoot(root, class);
+    const pet_value = if (root.get("pet")) |value| blk: {
+        if (value != .string) return error.InvalidPet;
+        break :blk pets.Kind.parse(value.string) orelse return error.UnknownPet;
+    } else null;
+    const sacrifice_pet_value = if (root.get("sacrifice_pet")) |value| blk: {
+        if (value != .string) return error.InvalidPet;
+        break :blk pets.Kind.parse(value.string) orelse return error.UnknownPet;
+    } else null;
+    var action_mask = try actionMaskFromRoot(root, class);
 
     var talents = TalentBuild{};
     var warlock_talents = WarlockTalentRanks{};
@@ -358,6 +390,7 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         }
         if (class == .warlock) {
             warlock_talents = warlockRanksFromTrees(trees);
+            warlock_talents.demonic_sacrifice_pet = @intCast(@intFromEnum(sacrifice_pet_value orelse .imp));
             try validateWarlockRanks(warlock_talents);
             modifiers = CombatModifiers.fromWarlockRanks(warlock_talents);
         }
@@ -366,6 +399,11 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         // talent effects that cannot be proven from the saved rank data.
         if (TalentBuild.parse(ts.string)) |tb| talents = tb;
     }
+
+    const pet = pet_value orelse if (class == .warlock and warlock_talents.demonic_sacrifice > 0) pets.Kind.none else if (class == .warlock) pets.Kind.imp else pets.Kind.none;
+    const sacrifice_pet = sacrifice_pet_value orelse if (class == .warlock) pets.Kind.imp else pets.Kind.none;
+    if (class == .warlock and pet != .succubus) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction));
+    if (class == .warlock and pet != .felhunter) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock));
 
     const name = if (root.get("name")) |n| try allocator.dupe(u8, n.string) else try allocator.dupe(u8, path);
     const id = try allocator.dupe(u8, std.fs.path.stem(path));
@@ -377,6 +415,8 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         .talents = talents,
         .action_mask = action_mask,
         .warlock_talents = warlock_talents,
+        .pet = pet,
+        .sacrifice_pet = sacrifice_pet,
         .modifiers = modifiers,
     };
 }
@@ -428,4 +468,30 @@ test "loadSpecFile and resolveSpec" {
         try std.testing.expectEqual(@as(f32, 0.30), cfg.modifiers.soul_link_pct);
         try std.testing.expectEqual(@as(u8, 1), cfg.warlock_talents.soul_link);
     }
+}
+
+test "Aftermath parses from the Destruction tree and rejects excess ranks" {
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator,
+        \\{"Destruction":{"105886":5}}
+    , .{});
+    defer parsed.deinit();
+    const ranks = warlockRanksFromTrees(parsed.value.object);
+    try std.testing.expectEqual(@as(u8, 5), ranks.aftermath);
+    try validateWarlockRanks(ranks);
+    try std.testing.expectError(error.InvalidTalentRank, validateWarlockRanks(.{ .aftermath = 6 }));
+}
+
+test "Conflagrate talent and saved action loadout round trip into runtime gates" {
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator,
+        \\{"action_loadout":["Immolate","Conflagrate"],"trees":{"Destruction":{"105880":1}}}
+    , .{});
+    defer parsed.deinit();
+    const root = parsed.value.object;
+    const ranks = warlockRanksFromTrees(root.get("trees").?.object);
+    try std.testing.expectEqual(@as(u8, 1), ranks.conflagrate);
+    try validateWarlockRanks(ranks);
+    try std.testing.expectError(error.InvalidTalentRank, validateWarlockRanks(.{ .conflagrate = 2 }));
+    const mask = try actionMaskFromRoot(root, .warlock);
+    try std.testing.expect(mask & (@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Conflagrate)) != 0);
+    try std.testing.expect(mask & (@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Immolate)) != 0);
 }

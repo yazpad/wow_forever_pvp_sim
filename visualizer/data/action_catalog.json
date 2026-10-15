@@ -13,7 +13,10 @@
     {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
     {"id": 11, "symbol": "SearingPain", "name": "Searing Pain", "icon": "spell_fire_soulburn", "starts_cast": true},
     {"id": 12, "symbol": "Incinerate", "name": "Incinerate", "icon": "spell_fire_incinerate", "starts_cast": true, "talent": {"tree": "Destruction", "id": 105874}},
-    {"id": 13, "symbol": "Immolate", "name": "Immolate", "icon": "spell_fire_immolation", "starts_cast": true}
+    {"id": 13, "symbol": "Immolate", "name": "Immolate", "icon": "spell_fire_immolation", "starts_cast": true},
+    {"id": 14, "symbol": "Seduction", "name": "Seduction", "icon": "seduction", "pet": "succubus"},
+    {"id": 15, "symbol": "SpellLock", "name": "Spell Lock", "icon": "spell_lock", "pet": "felhunter"},
+    {"id": 16, "symbol": "Conflagrate", "name": "Conflagrate", "icon": "spell_fire_fireball", "talent": {"tree": "Destruction", "id": 105880}}
   ],
   "frost_mage": [
     {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
@@ -29,6 +32,9 @@
     {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
     {"id": 11, "symbol": "Unused11", "name": "None", "selectable": false, "icon": "border"},
     {"id": 12, "symbol": "Unused12", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 13, "symbol": "Unused13", "name": "None", "selectable": false, "icon": "border"}
+    {"id": 13, "symbol": "Unused13", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 14, "symbol": "Unused14", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 15, "symbol": "Unused15", "name": "None", "selectable": false, "icon": "border"},
+    {"id": 16, "symbol": "Unused16", "name": "None", "selectable": false, "icon": "border"}
   ]
 }

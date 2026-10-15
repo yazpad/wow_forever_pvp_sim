@@ -5,6 +5,20 @@ const Spec = @import("spec.zig").Spec;
 const WarlockTalentRanks = @import("spec.zig").WarlockTalentRanks;
 const pets = @import("pets.zig");
 const recorder = @import("match_recorder.zig");
+const Frost = @import("spec.zig").Frost;
+
+fn interruptedSchool(comptime caster: Spec, cast_id: u32) u32 {
+    if (caster == .warlock) return switch (cast_id) {
+        3, 4, 5 => 1, // Shadow
+        11, 12, 13 => 2, // Fire
+        else => 0,
+    };
+    return switch (cast_id) {
+        3 => 4, // Arcane
+        4 => 3, // Frost
+        else => 0,
+    };
+}
 const Options = struct {
     config: mcts.Config = .{
         .evaluator = .heuristic,
@@ -69,6 +83,7 @@ pub fn main() !void {
             o.a = cfg_a.class;
             o.warlock_talents_a = cfg_a.warlock_talents;
             o.action_mask_a = cfg_a.action_mask;
+            if (o.pet_a == null) o.pet_a = cfg_a.pet;
             if (o.name_a == null) o.name_a = cfg_a.name;
         } else return error.UnknownSpecId;
     }
@@ -77,6 +92,7 @@ pub fn main() !void {
             o.b = cfg_b.class;
             o.warlock_talents_b = cfg_b.warlock_talents;
             o.action_mask_b = cfg_b.action_mask;
+            if (o.pet_b == null) o.pet_b = cfg_b.pet;
             if (o.name_b == null) o.name_b = cfg_b.name;
         } else return error.UnknownSpecId;
     }
@@ -85,6 +101,9 @@ pub fn main() !void {
     o.pet_a = o.pet_a orelse (if (o.a == .warlock) pets.Kind.imp else pets.Kind.none);
     o.pet_b = o.pet_b orelse (if (o.b == .warlock) pets.Kind.imp else pets.Kind.none);
     if ((o.a != .warlock and o.pet_a.? != .none) or (o.b != .warlock and o.pet_b.? != .none)) return error.PetRequiresWarlock;
+    // Resummoning the sacrificed demon cancels the effect even with Demonic Pact.
+    if (o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_a.?))) == o.warlock_talents_a.demonic_sacrifice_pet) o.warlock_talents_a.demonic_sacrifice = 0;
+    if (o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_b.?))) == o.warlock_talents_b.demonic_sacrifice_pet) o.warlock_talents_b.demonic_sacrifice = 0;
     o.config.stop_file = o.stop_file;
     switch (o.a) {
         .warlock => switch (o.b) {
@@ -108,8 +127,10 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     state.pos_x_b[0] = o.distance * 0.5;
     state.hp_a[0] = o.hp_a;
     state.hp_b[0] = o.hp_b;
-    pets.set(state, true, 0, o.pet_a.?);
-    pets.set(state, false, 0, o.pet_b.?);
+    const active_pet_a = if (a == .warlock and o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact == 0) pets.Kind.none else o.pet_a.?;
+    const active_pet_b = if (b == .warlock and o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_pact == 0) pets.Kind.none else o.pet_b.?;
+    pets.set(state, true, 0, active_pet_a);
+    pets.set(state, false, 0, active_pet_b);
     d.setWarlockTalentRanksA(if (a == .warlock) o.warlock_talents_a.encode() else 0);
     d.setWarlockTalentRanksB(if (b == .warlock) o.warlock_talents_b.encode() else 0);
     d.setActionMaskA(o.action_mask_a);
@@ -151,6 +172,8 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     const writer = buffered.writer();
     try writer.writeAll("{\"label\":\"search-generated; not certified optimal\",\"simulator_version\":\"mcts-simultaneous-v2-pets\",\"options\":");
     try std.json.stringify(o, .{}, writer);
+    try writer.writeAll(",\"simulator_fingerprint\":");
+    try std.json.stringify(@import("simulator_identity_generated.zig").fingerprint, .{}, writer);
     try writer.writeAll(",\"initial_state\":");
     try std.json.stringify(d.snapshot(0), .{}, writer);
     try writer.writeAll(",\"decisions\":[\n");
@@ -218,7 +241,7 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
             }
             const actions = r.actions;
             if (rounds > 0) try writer.writeAll(",\n");
-            try std.json.stringify(.{ .tick = d.ticks[0], .actions = actions, .choices = r.choices, .strategies = r.distributions, .stats = r.stats, .seconds = r.seconds }, .{}, writer);
+            try std.json.stringify(.{ .tick = d.ticks[0], .state = d.snapshot(0), .actions = actions, .choices = r.choices, .strategies = r.distributions, .stats = r.stats, .seconds = r.seconds }, .{}, writer);
             totals.add(r.stats);
             elapsed += r.seconds;
             rounds += 1;
@@ -252,12 +275,14 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
         const flight_after = @import("projectiles.zig").telemetry(state, 0);
         const coil_arrived_a = state.impact_mask_a[0] & 4 != 0;
         const coil_arrived_b = state.impact_mask_b[0] & 4 != 0;
-        const impact_a = state.impact_bolt_a[0] + state.impact_lance_a[0] + state.impact_coil_a[0] + state.impact_pet_a[0];
-        const impact_b = state.impact_bolt_b[0] + state.impact_lance_b[0] + state.impact_coil_b[0] + state.impact_pet_b[0];
+        const impact_a = state.impact_bolt_a[0] + state.impact_lance_a[0] + state.impact_coil_a[0] + state.impact_pet_a[0] + state.impact_conflagrate_a[0];
+        const impact_b = state.impact_bolt_b[0] + state.impact_lance_b[0] + state.impact_coil_b[0] + state.impact_pet_b[0] + state.impact_conflagrate_b[0];
         traj.total_dmg_a += impact_a;
         traj.total_dmg_b += impact_b;
         inline for (.{ true, false }) |side_a| {
             const suffix = if (side_a) "_a" else "_b";
+            const conflag_amount = @field(state, "impact_conflagrate" ++ suffix)[0];
+            if (conflag_amount > 0) try traj.events.append(.{ .time_s = time_s, .source = if (side_a) 0 else 1, .target = if (side_a) 1 else 0, .kind = .DamageHit, .spell_id = 16, .amount = conflag_amount });
             const pet_amount = @field(state, "impact_pet" ++ suffix)[0];
             if (pet_amount > 0) try traj.events.append(.{ .time_s = time_s, .source = if (side_a) 0 else 1, .target = if (side_a) 1 else 0, .kind = .PetAttack, .spell_id = @field(state, "pet_kind" ++ suffix)[0], .amount = pet_amount });
             inline for (.{ "bolt", "lance", "coil" }, .{ 4, 1, 7 }, .{ 1, 2, 4 }) |kind, spell, bit| {
@@ -275,6 +300,8 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 0, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if (a == .frost_mage and action_a == 7)
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .Counterspell, .spell_id = 7, .amount = 0 });
+            if (a == .warlock and action_a == 15 and old_cast_b != 0)
+                try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .SpellLock, .spell_id = interruptedSchool(b, old_cast_b), .amount = Frost.LockoutDuration });
         }
         if (act_b_triggered and action_b != 0) {
             try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .ActionUsed, .spell_id = action_b, .amount = 0 });
@@ -282,6 +309,8 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
                 try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if (b == .frost_mage and action_b == 7)
                 try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .Counterspell, .spell_id = 7, .amount = 0 });
+            if (b == .warlock and action_b == 15 and old_cast_a != 0)
+                try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 0, .kind = .SpellLock, .spell_id = interruptedSchool(a, old_cast_a), .amount = Frost.LockoutDuration });
         }
 
         // 2. Cast start
@@ -450,6 +479,14 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
             .siphon_b = state.siphon_timer_b[0],
             .immolate_a = state.immolate_timer_a[0],
             .immolate_b = state.immolate_timer_b[0],
+            .seduced_a = @floatFromInt(state.seduced_a[0]),
+            .seduced_b = @floatFromInt(state.seduced_b[0]),
+            .seduction_cd_a = state.seduction_cd_a[0],
+            .seduction_cd_b = state.seduction_cd_b[0],
+            .seduction_a = state.seduction_timer_a[0],
+            .seduction_b = state.seduction_timer_b[0],
+            .seduction_cast_a = state.seduction_cast_a[0],
+            .seduction_cast_b = state.seduction_cast_b[0],
             .frost = .{ fa[0], fb[0], fa[1], fb[1], fa[2], fb[2], fa[3], fb[3] },
             .time_s = time_s,
             .dist = state.distance[0],

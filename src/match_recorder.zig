@@ -27,6 +27,7 @@ pub const EventKind = enum(u8) {
     Counterspell = 14,
     ProjectileImpact = 15,
     PetAttack = 16,
+    SpellLock = 17,
 };
 
 pub const RecordedEvent = struct {
@@ -46,6 +47,14 @@ pub const RecordedFrame = struct {
     siphon_b: f32 = 0,
     immolate_a: f32 = 0,
     immolate_b: f32 = 0,
+    seduced_a: f32 = 0,
+    seduced_b: f32 = 0,
+    seduction_cd_a: f32 = 0,
+    seduction_cd_b: f32 = 0,
+    seduction_a: f32 = 0,
+    seduction_b: f32 = 0,
+    seduction_cast_a: f32 = 0,
+    seduction_cast_b: f32 = 0,
     // Appended replay columns: Blink/Nova cooldown, shield, lockout, per side.
     frost: [8]f32 = [_]f32{0} ** 8,
     time_s: f32,
@@ -183,6 +192,10 @@ pub const MatchTrajectory = struct {
             for (f.pets) |value| try writer.print(",{d:0.3}", .{value});
             try writer.print(",{d:0.2},{d:0.2}", .{ f.siphon_a, f.siphon_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.immolate_a, f.immolate_b });
+            try writer.print(",{d},{d}", .{ f.seduced_a, f.seduced_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cd_a, f.seduction_cd_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_a, f.seduction_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cast_a, f.seduction_cast_b });
             try writer.print("]{s}\n", .{if (idx + 1 < self.frames.items.len) "," else ""});
         }
         try writer.print("  ]\n}}\n", .{});
@@ -232,6 +245,10 @@ pub const MatchTrajectory = struct {
             for (f.pets) |value| try writer.print(",{d:0.3}", .{value});
             try writer.print(",{d:0.2},{d:0.2}", .{ f.siphon_a, f.siphon_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.immolate_a, f.immolate_b });
+            try writer.print(",{d},{d}", .{ f.seduced_a, f.seduced_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cd_a, f.seduction_cd_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_a, f.seduction_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cast_a, f.seduction_cast_b });
             try writer.writeAll(" },\n");
         }
         try writer.print("  }}\n}}\n", .{});
@@ -248,6 +265,7 @@ pub const MatchRecorder = struct {
         if (cast_id > 0 and cast_id <= 5) return 0;
         const move = @field(state, "move_intent" ++ suffix)[0];
         var speed: f32 = if (move < 0) -WarlockConstants.ForwardSpeed else if (move > 0) WarlockConstants.BackpedalSpeed else 0;
+        if (@field(state, "seduction_timer" ++ suffix)[0] > dt) speed = 0;
         if (@field(state, "fear_timer" ++ suffix)[0] > dt or @field(state, "horror_timer" ++ suffix)[0] > dt)
             speed = if (source_class == .frost_mage) 0 else WarlockConstants.ForwardSpeed;
         if (source_class == .frost_mage) {

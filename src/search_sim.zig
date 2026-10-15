@@ -5,18 +5,25 @@ const action_catalog = @import("action_catalog_generated.zig");
 const Spec = @import("spec.zig").Spec;
 const warlock_talents = @import("warlock_talents.zig");
 const fields = std.meta.fields(combat.WarlockArenaPool);
-pub const columns = fields.len - 3;
+pub const columns = fields.len - 7; // omit the immutable per-spec talent columns
+fn snapshotIndex(comptime offset: usize) usize {
+    var result: usize = 0;
+    inline for (fields[3..], 0..) |field, index| {
+        if (index < offset and !std.mem.startsWith(u8, field.name, "talent_ranks_") and !std.mem.startsWith(u8, field.name, "talent_flags_")) result += 1;
+    }
+    return result;
+}
 const ActionWrite = enum { unchanged, owner, shared };
 // Staged action kernels launch into their own queues; impact telemetry and
 // physics-only CC bookkeeping are never changed by an action. Geometry remains
 // shared because launch synchronization and Blink can move both positions.
 fn actionWrite(comptime name: []const u8) ActionWrite {
     if (std.mem.startsWith(u8, name, "pet_") or std.mem.startsWith(u8, name, "impact_") or std.mem.eql(u8, name, "is_active")) return .unchanged;
-    if (std.mem.startsWith(u8, name, "talent_ranks_")) return .unchanged;
+    if (std.mem.startsWith(u8, name, "talent_ranks_") or std.mem.startsWith(u8, name, "talent_flags_")) return .unchanged;
     inline for (.{ "fear_timer_", "fear_accum_dmg_", "fear_dr_", "horror_timer_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .unchanged;
     }
-    inline for (.{ "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_" }) |prefix| {
+    inline for (.{ "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "shadow_flame_timer_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .owner;
     }
     return .shared;
@@ -56,7 +63,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             var scratch = try Arena.init(allocator, 16);
             errdefer scratch.deinit();
             const original = try Arena.init(allocator, 16);
-            const empty_effects = warlock_talents.decode(@splat(0));
+            const empty_effects = warlock_talents.decode(@splat(0), @splat(0));
             var self: Self = .{ .arena = arena, .scratch = scratch, .original = original, .warlock_effects_a = empty_effects, .warlock_effects_b = empty_effects };
             for (0..16) |i| self.arena.resetDuel(i);
             return self;
@@ -72,17 +79,27 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             self.scratch.deinit();
             self.original.deinit();
         }
-        pub fn setWarlockTalentRanksA(self: *Self, encoded: u32) void {
-            const state = self.arena.combat();
-            @memset(state.talent_ranks_a[0..16], encoded);
-            @memset(state.soul_link_a[0..16], @intFromBool((encoded & (@as(u32, 1) << 17)) != 0));
-            self.warlock_effects_a = warlock_talents.decode(@splat(encoded));
+        pub fn setWarlockTalentRanksA(self: *Self, encoded: u64) void {
+            inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
+                const state = pool.combat();
+                const low: u32 = @truncate(encoded);
+                const high: u32 = @truncate(encoded >> 32);
+                @memset(state.talent_ranks_a[0..16], low);
+                @memset(state.talent_flags_a[0..16], high);
+                @memset(state.soul_link_a[0..16], @intFromBool((encoded & (@as(u64, 1) << 17)) != 0));
+            }
+            self.warlock_effects_a = warlock_talents.decode(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)));
         }
-        pub fn setWarlockTalentRanksB(self: *Self, encoded: u32) void {
-            const state = self.arena.combat();
-            @memset(state.talent_ranks_b[0..16], encoded);
-            @memset(state.soul_link_b[0..16], @intFromBool((encoded & (@as(u32, 1) << 17)) != 0));
-            self.warlock_effects_b = warlock_talents.decode(@splat(encoded));
+        pub fn setWarlockTalentRanksB(self: *Self, encoded: u64) void {
+            inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
+                const state = pool.combat();
+                const low: u32 = @truncate(encoded);
+                const high: u32 = @truncate(encoded >> 32);
+                @memset(state.talent_ranks_b[0..16], low);
+                @memset(state.talent_flags_b[0..16], high);
+                @memset(state.soul_link_b[0..16], @intFromBool((encoded & (@as(u64, 1) << 17)) != 0));
+            }
+            self.warlock_effects_b = warlock_talents.decode(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)));
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
             self.allowed_actions_a = mask | reservedActionBits(a);
@@ -110,14 +127,18 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
         }
         pub fn snapshot(self: *Self, lane: usize) Snapshot {
             var s: Snapshot = .{ .words = undefined, .tick = self.ticks[lane] };
-            inline for (fields[3..], 0..) |f, j| s.words[j] = @bitCast(@field(self.arena.combat(), f.name)[lane]);
+            inline for (fields[3..], 0..) |f, j| {
+                if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_")) s.words[snapshotIndex(j)] = @bitCast(@field(self.arena.combat(), f.name)[lane]);
+            }
             if (@hasField(Arena, "extras")) inline for (0..10) |j| {
                 s.extras[j] = self.arena.extras[j * 16 + lane];
             };
             return s;
         }
         pub fn restore(self: *Self, lane: usize, s: Snapshot) void {
-            inline for (fields[3..], 0..) |f, j| @field(self.arena.combat(), f.name)[lane] = @bitCast(s.words[j]);
+            inline for (fields[3..], 0..) |f, j| {
+                if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_")) @field(self.arena.combat(), f.name)[lane] = @bitCast(s.words[snapshotIndex(j)]);
+            }
             if (@hasField(Arena, "extras")) inline for (0..10) |j| {
                 self.arena.extras[j * 16 + lane] = s.extras[j];
             };
@@ -139,6 +160,12 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 c.add(.{ .movement = @field(state, "move_intent" ++ suffix)[lane] });
                 return c;
             }
+            const controlled = @field(state, "fear_timer" ++ suffix)[lane] > 0 or
+                @field(state, "horror_timer" ++ suffix)[lane] > 0 or
+                @field(state, "seduction_timer" ++ suffix)[lane] > 0;
+            // Keep a no-op available under CC so an off-GCD pet command such as
+            // Seduction is a choice, rather than the forced action.
+            if (controlled) c.add(.{});
             for (0..combat.WarlockAction.COUNT) |id| {
                 if (!masks[id][lane]) continue;
                 // The action kernels force movement to zero during an existing cast.
@@ -146,8 +173,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 const casting = @field(state, "cast_id" ++ suffix)[lane] != 0 and id != 10 and !((if (side) a else b) == .frost_mage and id == 5);
                 const actor = if (side) a else b;
                 const starts_cast = if (actor == .warlock) action_catalog.warlock_starts_cast[id] else action_catalog.frost_mage_starts_cast[id];
-                const controlled = @field(state, "fear_timer" ++ suffix)[lane] > 0 or @field(state, "horror_timer" ++ suffix)[lane] > 0;
-                if (casting or starts_cast or controlled) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
+                if (controlled or casting or starts_cast) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
             }
             if (c.len == 0) c.add(.{}); // Forced no-op while controlled.
             return c;
@@ -160,13 +186,18 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 c.add(.{ .movement = @field(state, "move_intent" ++ suffix)[lane] });
                 return c;
             }
+            const controlled = @field(state, "fear_timer" ++ suffix)[lane] > 0 or
+                @field(state, "horror_timer" ++ suffix)[lane] > 0 or
+                @field(state, "seduction_timer" ++ suffix)[lane] > 0;
+            // Keep a no-op available under CC so an off-GCD pet command such as
+            // Seduction is a choice, rather than the forced action.
+            if (controlled) c.add(.{});
             for (0..combat.WarlockAction.COUNT) |id| {
                 if (!masks[id][lane]) continue;
                 const casting = @field(state, "cast_id" ++ suffix)[lane] != 0 and id != 10 and !((if (side) a else b) == .frost_mage and id == 5);
                 const actor = if (side) a else b;
                 const starts_cast = if (actor == .warlock) action_catalog.warlock_starts_cast[id] else action_catalog.frost_mage_starts_cast[id];
-                const controlled = @field(state, "fear_timer" ++ suffix)[lane] > 0 or @field(state, "horror_timer" ++ suffix)[lane] > 0;
-                if (casting or starts_cast or controlled) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
+                if (controlled or casting or starts_cast) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
             }
             if (c.len == 0) c.add(.{});
             return c;
@@ -199,7 +230,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             self.applyMaskedImpl(aa, bb, ra, rb, false);
         }
         fn applyOneSided(self: *Self, comptime side_a: bool, requested: [16]Action, ready_mask: @Vector(16, bool)) void {
-            @setEvalBranchQuota(20000);
+            @setEvalBranchQuota(40000);
             const legal = if (side_a) self.getActionMaskA(0) else self.getActionMaskB(0);
             var actions: @Vector(16, u32) = undefined;
             var movement: @Vector(16, f32) = undefined;
@@ -246,7 +277,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             };
         }
         fn applyMaskedImpl(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool), comptime optimized: bool) void {
-            @setEvalBranchQuota(20000);
+            @setEvalBranchQuota(40000);
             const cast_before_a = self.arena.combat().cast_id_a[0..16].*;
             const cast_before_b = self.arena.combat().cast_id_b[0..16].*;
             const legal_a = self.getActionMaskA(0);
@@ -442,7 +473,7 @@ test "simultaneous coil impacts and one-sided readiness" {
 }
 
 test "simultaneous swaps preserve mirror states, including overlapping instant effects" {
-    @setEvalBranchQuota(20000);
+    @setEvalBranchQuota(40000);
     inline for (.{ Spec.warlock, Spec.frost_mage }) |spec| {
         var x = try Duel(spec, spec).init(std.testing.allocator);
         defer x.deinit();

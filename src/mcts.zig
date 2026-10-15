@@ -322,10 +322,17 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             self.allocator.free(self.workers);
             self.allocator.destroy(self);
         }
-        pub fn setWarlockTalentRanksA(self: *Self, encoded: u32) void {
+        /// Restart continuation RNGs without reallocating worker trees or threads.
+        pub fn reseed(self: *Self, seed: u64) void {
+            self.config.seed = seed;
+            for (self.workers, 0..) |*worker, i| {
+                worker.rng = std.Random.DefaultPrng.init(seed +% (@as(u64, @intCast(i)) *% 0x9e3779b97f4a7c15));
+            }
+        }
+        pub fn setWarlockTalentRanksA(self: *Self, encoded: u64) void {
             for (self.workers) |*worker| worker.duel.setWarlockTalentRanksA(encoded);
         }
-        pub fn setWarlockTalentRanksB(self: *Self, encoded: u32) void {
+        pub fn setWarlockTalentRanksB(self: *Self, encoded: u64) void {
             for (self.workers) |*worker| worker.duel.setWarlockTalentRanksB(encoded);
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
@@ -406,7 +413,7 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     }
     const hp = @field(s, "hp" ++ own)[lane];
     // Put instant DoTs (Corruption 2, Agony 1, Siphon Life 8) as highest offensive priorities at opening.
-    const priorities = if (spec == .warlock) [_]u32{ 9, 2, 1, 8, 7, 6, 5, 4, 3 } else [_]u32{ 6, 7, 2, 1, 4, 3, 5 };
+    const priorities = if (spec == .warlock) [_]u32{ 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 } else [_]u32{ 6, 7, 2, 1, 4, 3, 5 };
     for (priorities) |candidate| {
         var allowed = true;
         if (spec == .warlock) {
@@ -417,7 +424,9 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
                 1 => @field(s, "agony_timer" ++ enemy)[lane] < 1.0,
                 8 => @field(s, "siphon_timer" ++ enemy)[lane] < 1.0,
                 9 => @field(s, "hp" ++ enemy)[lane] < 500,
+                13 => @field(s, "immolate_timer" ++ enemy)[lane] < 1.0,
                 5 => hp < 1400,
+                15 => @field(s, "cast_id" ++ enemy)[lane] != 0,
                 else => true,
             };
         } else allowed = switch (candidate) {
@@ -553,6 +562,12 @@ pub fn computePriors(comptime spec: Spec, comptime side: bool, d: anytype, lane:
                 },
                 13 => { // Immolate
                     if (@field(s, "immolate_timer" ++ enemy)[lane] < 1.0) weight += 5.0;
+                },
+                16 => { // Conflagrate
+                    weight += 5.0;
+                },
+                15 => { // Spell Lock
+                    if (enemy_casting) weight += 8.0 else weight = 0.2;
                 },
                 else => {},
             }

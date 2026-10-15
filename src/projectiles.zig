@@ -7,7 +7,7 @@ pub const Slots = 4;
 pub const BoltSpeed: f32 = 30;
 pub const LanceSpeed: f32 = 40;
 pub const CoilSpeed: f32 = 20;
-pub const Hits = struct { bolt: V = @splat(0), lance: V = @splat(0), coil: V = @splat(0), immolate: V = @splat(0) };
+pub const Hits = struct { conflagrate: V = @splat(0), bolt: V = @splat(0), lance: V = @splat(0), coil: V = @splat(0), immolate: V = @splat(0) };
 fn splat(x: f32) V {
     return @splat(x);
 }
@@ -98,14 +98,15 @@ pub fn recordHits(state: anytype, comptime side_a: bool, i: usize, hits: Hits, m
     @field(state, "impact_mask" ++ suffix)[i..][0..16].* =
         @select(u32, (hits.bolt + hits.immolate) > splat(0), @as(simd.u32x16, @splat(1)), zero) |
         @select(u32, hits.lance > splat(0), @as(simd.u32x16, @splat(2)), zero) |
-        @select(u32, hits.coil > splat(0), @as(simd.u32x16, @splat(4)), zero);
-    if (!@reduce(.Or, hits.bolt + hits.lance + hits.coil + hits.immolate > splat(0))) {
-        inline for (.{ "bolt", "lance", "coil" }) |kind|
+        @select(u32, hits.coil > splat(0), @as(simd.u32x16, @splat(4)), zero) |
+        @select(u32, hits.conflagrate > splat(0), @as(simd.u32x16, @splat(8)), zero);
+    if (!@reduce(.Or, hits.bolt + hits.lance + hits.coil + hits.immolate + hits.conflagrate > splat(0))) {
+        inline for (.{ "bolt", "lance", "coil", "conflagrate" }) |kind|
             @field(state, "impact_" ++ kind ++ suffix)[i..][0..16].* = @as(V, @splat(0));
         return;
     }
     const ratio = mitigation * select(incoming > splat(0), applied / @max(incoming, splat(0.00001)), splat(0));
-    inline for (.{ "bolt", "lance", "coil" }) |kind|
+    inline for (.{ "bolt", "lance", "coil", "conflagrate" }) |kind|
         @field(state, "impact_" ++ kind ++ suffix)[i..][0..16].* = (if (comptime std.mem.eql(u8, kind, "bolt")) hits.bolt + hits.immolate else @field(hits, kind)) * ratio;
 }
 pub fn telemetry(state: anytype, lane: usize) [32]f32 {
@@ -119,8 +120,8 @@ pub fn telemetry(state: anytype, lane: usize) [32]f32 {
 
 pub fn pendingEffects(state: anytype, comptime side_a: bool, lane: usize) struct { damage: f32, healing: f32 } {
     const own = if (side_a) "a" else "b";
-    var result: struct { damage: f32, healing: f32 } = .{ .damage = 0, .healing = 0 };
-    if (@field(state, "projectile_count_" ++ own)[lane] == 0) return .{ .damage = 0, .healing = 0 };
+    var result: struct { damage: f32, healing: f32 } = .{ .damage = @field(state, "conflagrate_pending_" ++ own)[lane], .healing = 0 };
+    if (@field(state, "projectile_count_" ++ own)[lane] == 0) return .{ .damage = result.damage, .healing = result.healing };
     inline for (0..Slots) |slot| {
         const prefix = std.fmt.comptimePrint("projectile_{d}_", .{slot});
         result.damage += @field(state, prefix ++ "damage_" ++ own)[lane];

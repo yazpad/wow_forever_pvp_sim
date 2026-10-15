@@ -30,5 +30,21 @@
       "105875": 5,
       "105874": 1
     }
-  }
+  },
+  "action_slots": [
+    "Idle/Maneuver",
+    "Agony",
+    "Corruption",
+    "Fear",
+    "Shadow Bolt",
+    "Drain Life",
+    "Healthstone",
+    "Death Coil",
+    "Shadowburn",
+    "Searing Pain",
+    "Incinerate",
+    "Immolate",
+    "Conflagrate",
+    "Cancel Cast"
+  ]
 }

@@ -46,6 +46,8 @@ local ICON_FILES = {
     siphonlife      = "icons/spell_shadow_requiem.png",
     immolate        = "icons/spell_fire_immolation.png",
     horror          = "icons/spell_horror.png",
+    seduction       = "icons/spell_shadow_mindsteal.png",
+    spell_lock      = "icons/spell_shadow_mindrot.png",
 
     -- UI / Indicators
     coin        = "icons/ui_coin.png",

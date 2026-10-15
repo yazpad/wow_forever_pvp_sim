@@ -126,14 +126,15 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var result = if (side_a) self.state.getActionMaskA(i) else self.state.getActionMaskB(i);
                 inline for (1..combat_spec.WarlockAction.COUNT) |slot| result[slot] = vAnd16(result[slot], alive);
                 inline for (1..combat_spec.WarlockAction.COUNT) |action| {
-                    if (action != 6 and action != 10) result[action] = vAnd16(result[action], unlocked);
+                    if (action != 6 and action != 10 and action != 15) result[action] = vAnd16(result[action], unlocked);
                 }
                 return result;
             }
             const mana = self.column("mana", side_a, i).*;
             const free_gcd = self.column("gcd", side_a, i).* <= splat(0);
             const casting = self.castIds(side_a, i).* != ids(0);
-            const cc = vOr16(vNot16(alive), vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0)));
+            const seduction = if (side_a) self.state.seduction_timer_a[i..][0..VEC_LEN].* else self.state.seduction_timer_b[i..][0..VEC_LEN].*;
+            const cc = vOr16(vNot16(alive), vOr16(vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0)), seduction > splat(0)));
             const free = vAnd16(vNot16(cc), vNot16(casting));
             const spell = vAnd16(free, vAnd16(free_gcd, unlocked));
             const distance: f32x16 = self.state.distance[i..][0..VEC_LEN].*;
@@ -197,18 +198,32 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var actions = ids(0);
                 const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
                 inline for (1..combat_spec.WarlockAction.COUNT) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+                const spell_lock = actions == ids(15);
+                const target_cast = self.castIds(!side_a, i);
+                const interrupted = vAnd16(spell_lock, target_cast.* != ids(0));
                 if (staged) {
                     if (side_a) self.state.stageActionA(i, actions, movement) else self.state.stageActionB(i, actions, movement);
                 } else {
                     if (side_a) self.state.applyActionA(i, actions, movement) else self.state.applyActionB(i, actions, movement);
                 }
+                if (side_a) {
+                    self.state.seduction_cd_a[i..][0..VEC_LEN].* = select16(spell_lock, splat(WarlockConstants.SpellLockCooldown), self.state.seduction_cd_a[i..][0..VEC_LEN].*);
+                } else {
+                    self.state.seduction_cd_b[i..][0..VEC_LEN].* = select16(spell_lock, splat(WarlockConstants.SpellLockCooldown), self.state.seduction_cd_b[i..][0..VEC_LEN].*);
+                }
+                target_cast.* = @select(u32, interrupted, ids(0), target_cast.*);
+                self.column("cast_timer", !side_a, i).* = select16(interrupted, splat(0), self.column("cast_timer", !side_a, i).*);
+                self.column("cast_total", !side_a, i).* = select16(interrupted, splat(0), self.column("cast_total", !side_a, i).*);
+                const lockout = self.extra(.lockout, !side_a, i);
+                lockout.* = select16(interrupted, splat(Frost.LockoutDuration), lockout.*);
+                self.column("react_timer", !side_a, i).* = select16(interrupted, splat(0), self.column("react_timer", !side_a, i).*);
                 return;
             }
             const legal = self.masks(side_a, i);
             const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
             var actions = ids(0);
             inline for (1..11) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
-            const cc = vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0));
+            const cc = vOr16(vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0)), (if (side_a) self.state.seduction_timer_a[i..][0..VEC_LEN].* else self.state.seduction_timer_b[i..][0..VEC_LEN].*) > splat(0));
             const cast = self.castIds(side_a, i);
             const cancel = vOr16(actions == ids(10), actions == ids(5));
             cast.* = @select(u32, cancel, ids(0), cast.*);
@@ -309,8 +324,10 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             while (i < end) : (i += VEC_LEN) {
                 const active_mask: bool16 = self.state.is_active[i..][0..VEC_LEN].* > v_zeros_u32;
                 if (!@reduce(.Or, active_mask)) continue;
-                const effects_a = if (provided_a) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_a[i..][0..VEC_LEN].*);
-                const effects_b = if (provided_b) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_b[i..][0..VEC_LEN].*);
+                var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_a[i..][0..VEC_LEN].*, self.state.talent_flags_a[i..][0..VEC_LEN].*);
+                @import("conflagrate.zig").tickEffects(&self.state, true, i, dt, &effects_a);
+                var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_b[i..][0..VEC_LEN].*, self.state.talent_flags_b[i..][0..VEC_LEN].*);
+                @import("conflagrate.zig").tickEffects(&self.state, false, i, dt, &effects_b);
 
                 // Load State
                 var dist = self.state.distance[i..][0..VEC_LEN].*;
@@ -318,6 +335,35 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var hp_b = self.state.hp_b[i..][0..VEC_LEN].*;
                 var mana_a = self.state.mana_a[i..][0..VEC_LEN].*;
                 var mana_b = self.state.mana_b[i..][0..VEC_LEN].*;
+                const PetKind = @import("pets.zig").Kind;
+                const sacrifice_a = if (spec_a == .warlock) vAnd16(effects_a.demonic_sacrifice > v_zeros, effects_a.demonic_sacrifice_pet > v_zeros) else @as(bool16, @splat(false));
+                const sacrifice_b = if (spec_b == .warlock) vAnd16(effects_b.demonic_sacrifice > v_zeros, effects_b.demonic_sacrifice_pet > v_zeros) else @as(bool16, @splat(false));
+                const is_imp_a = vAnd16(sacrifice_a, effects_a.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.imp))));
+                const is_succ_a = vAnd16(sacrifice_a, effects_a.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.succubus))));
+                const is_vw_a = vAnd16(sacrifice_a, effects_a.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.voidwalker))));
+                const is_fh_a = vAnd16(sacrifice_a, effects_a.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.felhunter))));
+                const is_imp_b = vAnd16(sacrifice_b, effects_b.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.imp))));
+                const is_succ_b = vAnd16(sacrifice_b, effects_b.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.succubus))));
+                const is_vw_b = vAnd16(sacrifice_b, effects_b.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.voidwalker))));
+                const is_fh_b = vAnd16(sacrifice_b, effects_b.demonic_sacrifice_pet == splat(@floatFromInt(@intFromEnum(PetKind.felhunter))));
+                effects_a.shadow_damage *= select16(is_imp_a, splat(1.15), splat(1));
+                effects_b.shadow_damage *= select16(is_imp_b, splat(1.15), splat(1));
+                const shadow_sac_mult_a = select16(is_imp_a, splat(1.15), splat(1));
+                const shadow_sac_mult_b = select16(is_imp_b, splat(1.15), splat(1));
+                effects_a.agony_damage *= shadow_sac_mult_a;
+                effects_a.corruption_damage *= shadow_sac_mult_a;
+                effects_a.drain_life_damage *= shadow_sac_mult_a;
+                effects_a.drain_life_healing *= shadow_sac_mult_a;
+                effects_a.siphon_life_damage *= shadow_sac_mult_a;
+                effects_a.siphon_life_healing *= shadow_sac_mult_a;
+                effects_b.agony_damage *= shadow_sac_mult_b;
+                effects_b.corruption_damage *= shadow_sac_mult_b;
+                effects_b.drain_life_damage *= shadow_sac_mult_b;
+                effects_b.drain_life_healing *= shadow_sac_mult_b;
+                effects_b.siphon_life_damage *= shadow_sac_mult_b;
+                effects_b.siphon_life_healing *= shadow_sac_mult_b;
+                effects_a.fire_damage *= select16(is_succ_a, splat(1.15), splat(1));
+                effects_b.fire_damage *= select16(is_succ_b, splat(1.15), splat(1));
                 var gcd_a = self.state.gcd_a[i..][0..VEC_LEN].*;
                 var gcd_b = self.state.gcd_b[i..][0..VEC_LEN].*;
                 var r_tmr_a = self.state.react_timer_a[i..][0..VEC_LEN].*;
@@ -338,6 +384,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var crp_a = self.state.corruption_timer_a[i..][0..VEC_LEN].*;
                 var siph_a = self.state.siphon_timer_a[i..][0..VEC_LEN].*;
                 var fear_a = self.state.fear_timer_a[i..][0..VEC_LEN].*;
+                var seduced_a = self.state.seduced_a[i..][0..VEC_LEN].*;
+                var seduction_a = self.state.seduction_timer_a[i..][0..VEC_LEN].*;
                 var fear_dmg_a = self.state.fear_accum_dmg_a[i..][0..VEC_LEN].*;
                 var horror_a = self.state.horror_timer_a[i..][0..VEC_LEN].*;
 
@@ -346,22 +394,32 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var crp_b = self.state.corruption_timer_b[i..][0..VEC_LEN].*;
                 var siph_b = self.state.siphon_timer_b[i..][0..VEC_LEN].*;
                 var fear_b = self.state.fear_timer_b[i..][0..VEC_LEN].*;
+                var seduced_b = self.state.seduced_b[i..][0..VEC_LEN].*;
+                var seduction_b = self.state.seduction_timer_b[i..][0..VEC_LEN].*;
                 var fear_dmg_b = self.state.fear_accum_dmg_b[i..][0..VEC_LEN].*;
                 var horror_b = self.state.horror_timer_b[i..][0..VEC_LEN].*;
 
                 var un_cd_a = self.state.action6_cd_a[i..][0..VEC_LEN].*;
                 var un_dur_a = self.state.action6_dur_a[i..][0..VEC_LEN].*;
                 var dc_cd_a = self.state.death_coil_cd_a[i..][0..VEC_LEN].*;
+                var seduction_cd_a = self.state.seduction_cd_a[i..][0..VEC_LEN].*;
+                var seduction_cast_a = self.state.seduction_cast_a[i..][0..VEC_LEN].*;
                 var fear_dr_t_a = self.state.fear_dr_tier_a[i..][0..VEC_LEN].*;
                 var fear_dr_tmr_a = self.state.fear_dr_timer_a[i..][0..VEC_LEN].*;
+                var seduction_dr_t_a = self.state.seduction_dr_tier_a[i..][0..VEC_LEN].*;
+                var seduction_dr_tmr_a = self.state.seduction_dr_timer_a[i..][0..VEC_LEN].*;
                 var horror_dr_t_a = self.state.horror_dr_tier_a[i..][0..VEC_LEN].*;
                 var horror_dr_tmr_a = self.state.horror_dr_timer_a[i..][0..VEC_LEN].*;
 
                 var un_cd_b = self.state.action6_cd_b[i..][0..VEC_LEN].*;
                 var un_dur_b = self.state.action6_dur_b[i..][0..VEC_LEN].*;
                 var dc_cd_b = self.state.death_coil_cd_b[i..][0..VEC_LEN].*;
+                var seduction_cd_b = self.state.seduction_cd_b[i..][0..VEC_LEN].*;
+                var seduction_cast_b = self.state.seduction_cast_b[i..][0..VEC_LEN].*;
                 var fear_dr_t_b = self.state.fear_dr_tier_b[i..][0..VEC_LEN].*;
                 var fear_dr_tmr_b = self.state.fear_dr_timer_b[i..][0..VEC_LEN].*;
+                var seduction_dr_t_b = self.state.seduction_dr_tier_b[i..][0..VEC_LEN].*;
+                var seduction_dr_tmr_b = self.state.seduction_dr_timer_b[i..][0..VEC_LEN].*;
                 var horror_dr_t_b = self.state.horror_dr_tier_b[i..][0..VEC_LEN].*;
                 var horror_dr_tmr_b = self.state.horror_dr_timer_b[i..][0..VEC_LEN].*;
 
@@ -382,8 +440,20 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 un_dur_b = @max(v_zeros, un_dur_b - v_dt);
                 dc_cd_a = @max(v_zeros, dc_cd_a - v_dt);
                 dc_cd_b = @max(v_zeros, dc_cd_b - v_dt);
+                seduction_cd_a = @max(v_zeros, seduction_cd_a - v_dt);
+                seduction_cd_b = @max(v_zeros, seduction_cd_b - v_dt);
+                const seduction_casting_a = seduction_cast_a > v_zeros;
+                const seduction_casting_b = seduction_cast_b > v_zeros;
+                seduction_cast_a = @max(v_zeros, seduction_cast_a - v_dt);
+                seduction_cast_b = @max(v_zeros, seduction_cast_b - v_dt);
+                const seduction_cast_done_a = vAnd16(seduction_casting_a, seduction_cast_a <= v_zeros);
+                const seduction_cast_done_b = vAnd16(seduction_casting_b, seduction_cast_b <= v_zeros);
                 fear_a = @max(v_zeros, fear_a - v_dt);
                 fear_b = @max(v_zeros, fear_b - v_dt);
+                seduction_a = @max(v_zeros, seduction_a - v_dt);
+                seduction_b = @max(v_zeros, seduction_b - v_dt);
+                seduced_a = @select(u32, seduction_a > v_zeros, seduced_a, v_zeros_u32);
+                seduced_b = @select(u32, seduction_b > v_zeros, seduced_b, v_zeros_u32);
                 immolate_a = @max(v_zeros, immolate_a - v_dt);
                 immolate_b = @max(v_zeros, immolate_b - v_dt);
                 horror_a = @max(v_zeros, horror_a - v_dt);
@@ -394,11 +464,17 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 fear_dr_tmr_a = select16(fear_dr_ticking_a, @max(v_zeros, fear_dr_tmr_a - v_dt), fear_dr_tmr_a);
                 const fear_dr_reset_a = vAnd16(fear_dr_ticking_a, fear_dr_tmr_a <= v_zeros);
                 fear_dr_t_a = select16(fear_dr_reset_a, v_zeros, fear_dr_t_a);
+                const seduction_dr_ticking_a = vAnd16(seduction_a <= v_zeros, seduction_dr_t_a > v_zeros);
+                seduction_dr_tmr_a = select16(seduction_dr_ticking_a, @max(v_zeros, seduction_dr_tmr_a - v_dt), seduction_dr_tmr_a);
+                seduction_dr_t_a = select16(vAnd16(seduction_dr_ticking_a, seduction_dr_tmr_a <= v_zeros), v_zeros, seduction_dr_t_a);
 
                 const fear_dr_ticking_b = vAnd16(fear_b <= v_zeros, fear_dr_t_b > v_zeros);
                 fear_dr_tmr_b = select16(fear_dr_ticking_b, @max(v_zeros, fear_dr_tmr_b - v_dt), fear_dr_tmr_b);
                 const fear_dr_reset_b = vAnd16(fear_dr_ticking_b, fear_dr_tmr_b <= v_zeros);
                 fear_dr_t_b = select16(fear_dr_reset_b, v_zeros, fear_dr_t_b);
+                const seduction_dr_ticking_b = vAnd16(seduction_b <= v_zeros, seduction_dr_t_b > v_zeros);
+                seduction_dr_tmr_b = select16(seduction_dr_ticking_b, @max(v_zeros, seduction_dr_tmr_b - v_dt), seduction_dr_tmr_b);
+                seduction_dr_t_b = select16(vAnd16(seduction_dr_ticking_b, seduction_dr_tmr_b <= v_zeros), v_zeros, seduction_dr_t_b);
 
                 const horror_dr_ticking_a = vAnd16((if (spec_b == .frost_mage) ago_a else horror_a) <= v_zeros, horror_dr_t_a > v_zeros);
                 horror_dr_tmr_a = select16(horror_dr_ticking_a, @max(v_zeros, horror_dr_tmr_a - v_dt), horror_dr_tmr_a);
@@ -412,26 +488,32 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
 
                 // Mana passive regen
                 const regen: f32x16 = @splat(WarlockConstants.ManaRegenPerSec * dt);
-                mana_a = @min(@as(f32x16, @splat(WarlockConstants.MaxMana)), mana_a + regen);
-                mana_b = @min(@as(f32x16, @splat(WarlockConstants.MaxMana)), mana_b + regen);
+                mana_a = @min(@as(f32x16, @splat(WarlockConstants.MaxMana)), mana_a + regen + @select(f32, is_vw_a, splat(WarlockConstants.MaxMana * 0.02 * dt / 4.0), v_zeros));
+                mana_b = @min(@as(f32x16, @splat(WarlockConstants.MaxMana)), mana_b + regen + @select(f32, is_vw_b, splat(WarlockConstants.MaxMana * 0.02 * dt / 4.0), v_zeros));
+                hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + @select(f32, is_fh_a, splat(WarlockConstants.MaxHp * 0.03 * dt / 4.0), v_zeros));
+                hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + @select(f32, is_fh_b, splat(WarlockConstants.MaxHp * 0.03 * dt / 4.0), v_zeros));
 
                 // 2. Movement & Relative Distance Update
                 const speed_a = select16(move_a < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_a > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
                 const speed_b = select16(move_b < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_b > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
 
                 // While feared or horrified, unit runs away involuntarily!
-                const cc_a = vOr16(fear_a > v_zeros, horror_a > v_zeros);
-                const cc_b = vOr16(fear_b > v_zeros, horror_b > v_zeros);
-                const controlled_speed_a = select16(cc_a, @as(f32x16, @splat(if (spec_b == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_a);
-                const effective_speed_a = if (spec_b == .frost_mage)
+                const fear_cc_a = vOr16(fear_a > v_zeros, horror_a > v_zeros);
+                const fear_cc_b = vOr16(fear_b > v_zeros, horror_b > v_zeros);
+                const cc_a = vOr16(fear_cc_a, seduction_a > v_zeros);
+                const cc_b = vOr16(fear_cc_b, seduction_b > v_zeros);
+                const controlled_speed_a = select16(fear_cc_a, @as(f32x16, @splat(if (spec_b == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_a);
+                const fear_speed_a = if (spec_b == .frost_mage)
                     select16(ago_a > v_zeros, v_zeros, controlled_speed_a * select16(crp_a > v_zeros, splat(Frost.SlowMultiplier), splat(1)))
                 else
                     controlled_speed_a;
-                const controlled_speed_b = select16(cc_b, @as(f32x16, @splat(if (spec_a == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_b);
-                const effective_speed_b = if (spec_a == .frost_mage)
+                const controlled_speed_b = select16(fear_cc_b, @as(f32x16, @splat(if (spec_a == .frost_mage) @as(f32, 2.5) else WarlockConstants.ForwardSpeed)), speed_b);
+                const fear_speed_b = if (spec_a == .frost_mage)
                     select16(ago_b > v_zeros, v_zeros, controlled_speed_b * select16(crp_b > v_zeros, splat(Frost.SlowMultiplier), splat(1)))
                 else
                     controlled_speed_b;
+                const effective_speed_a = select16(seduction_a > v_zeros, v_zeros, fear_speed_a) * @import("conflagrate.zig").speed(&self.state, true, i);
+                const effective_speed_b = select16(seduction_b > v_zeros, v_zeros, fear_speed_b) * @import("conflagrate.zig").speed(&self.state, false, i);
 
                 // 3. Movement cast cancel check:
                 const a_is_stationary_casting = vAnd16(c_id_a > v_zeros_u32, c_id_a <= @as(u32x16, @splat(5)));
@@ -448,10 +530,13 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 c_tmr_b = select16(cancel_b, v_zeros, c_tmr_b);
                 c_tot_b = select16(cancel_b, v_zeros, c_tot_b);
 
-                dist = @import("movement_2d.zig").tick(&self.state, i, dt, effective_speed_a, effective_speed_b, cc_a, cc_b, @max(@as(f32x16, fear_a), @as(f32x16, horror_a)), @max(@as(f32x16, fear_b), @as(f32x16, horror_b)));
+                @import("conflagrate.zig").tickDaze(&self.state, i, dt);
+                dist = @import("movement_2d.zig").tick(&self.state, i, dt, effective_speed_a, effective_speed_b, fear_cc_a, fear_cc_b, @max(@as(f32x16, fear_a), @as(f32x16, horror_a)), @max(@as(f32x16, fear_b), @as(f32x16, horror_b)));
 
-                const hits_a = @import("projectiles.zig").tick(&self.state, true, i, dt);
-                const hits_b = @import("projectiles.zig").tick(&self.state, false, i, dt);
+                var hits_a = @import("projectiles.zig").tick(&self.state, true, i, dt);
+                hits_a.conflagrate = @import("conflagrate.zig").takeDamage(&self.state, true, i);
+                var hits_b = @import("projectiles.zig").tick(&self.state, false, i, dt);
+                hits_b.conflagrate = @import("conflagrate.zig").takeDamage(&self.state, false, i);
 
                 // 4. Damage Mitigation Factor:
                 const mit_a = if (spec_a == .warlock) effects_a.damage_taken else splat(1);
@@ -492,7 +577,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const has_crp_a = crp_a > v_zeros;
                 crp_a = @max(v_zeros, crp_a - v_dt);
                 const dmg_crp_a = if (spec_b == .frost_mage) v_zeros else select16(has_crp_a, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_b.corruption_damage * mit_a, v_zeros);
-                const dmg_immolate_a = if (spec_b == .frost_mage) v_zeros else select16(immolate_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_b.periodic_damage * mit_a, v_zeros);
+                const dmg_immolate_a = if (spec_b == .frost_mage) v_zeros else select16(immolate_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_b.periodic_damage * effects_b.fire_damage * mit_a, v_zeros);
 
                 const has_siph_a = siph_a > v_zeros;
                 siph_a = @max(v_zeros, siph_a - v_dt);
@@ -507,7 +592,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const has_crp_b = crp_b > v_zeros;
                 crp_b = @max(v_zeros, crp_b - v_dt);
                 const dmg_crp_b = if (spec_a == .frost_mage) v_zeros else select16(has_crp_b, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_a.corruption_damage * mit_b, v_zeros);
-                const dmg_immolate_b = if (spec_a == .frost_mage) v_zeros else select16(immolate_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_a.periodic_damage * mit_b, v_zeros);
+                const dmg_immolate_b = if (spec_a == .frost_mage) v_zeros else select16(immolate_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_a.periodic_damage * effects_a.fire_damage * mit_b, v_zeros);
 
                 const has_siph_b = siph_b > v_zeros;
                 siph_b = @max(v_zeros, siph_b - v_dt);
@@ -529,13 +614,13 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const a_sb_hit = vAnd16(vAnd16(a_cast_finished, dist <= v_max_dist), c_id_a == @as(u32x16, @splat(4)));
                 @import("projectiles.zig").launch(&self.state, true, i, 4, @as(f32x16, @splat(if (spec_a == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * (if (spec_a == .warlock) effects_a.shadow_damage else splat(1)), a_sb_hit);
                 const a_sp_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(11)) else @as(bool16, @splat(false));
-                @import("projectiles.zig").launch(&self.state, true, i, 11, splat(WarlockConstants.SearingPainDamage), a_sp_hit);
+                @import("projectiles.zig").launch(&self.state, true, i, 11, splat(WarlockConstants.SearingPainDamage) * (if (spec_a == .warlock) effects_a.fire_damage else splat(1)), a_sp_hit);
                 const a_inc_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(12)) else @as(bool16, @splat(false));
                 const a_inc_bonus = select16(immolate_b > v_zeros, splat(1.25), splat(1.0));
-                @import("projectiles.zig").launch(&self.state, true, i, 12, splat(WarlockConstants.IncinerateDamage) * a_inc_bonus, a_inc_hit);
+                @import("projectiles.zig").launch(&self.state, true, i, 12, splat(WarlockConstants.IncinerateDamage) * a_inc_bonus * (if (spec_a == .warlock) effects_a.fire_damage else splat(1)), a_inc_hit);
                 const a_immolate_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(13)) else @as(bool16, @splat(false));
-                @import("projectiles.zig").launch(&self.state, true, i, 13, splat(WarlockConstants.ImmolateInitialDamage), a_immolate_hit);
-                const a_sb_dmg = (hits_a.bolt + hits_a.lance + hits_a.coil) * mit_b;
+                @import("projectiles.zig").launch(&self.state, true, i, 13, splat(WarlockConstants.ImmolateInitialDamage) * (if (spec_a == .warlock) effects_a.immolate_initial_damage else splat(1)), a_immolate_hit);
+                const a_sb_dmg = (hits_a.bolt + hits_a.lance + hits_a.coil + hits_a.conflagrate) * mit_b;
                 if (spec_a == .frost_mage) crp_b = select16(hits_a.bolt > v_zeros, splat(Frost.SlowDuration), crp_b);
 
                 const a_fear_hit = vAnd16(vAnd16(a_cast_finished, dist <= splat(if (spec_a == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_a == @as(u32x16, @splat(3)));
@@ -569,13 +654,13 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const b_sb_hit = vAnd16(vAnd16(b_cast_finished, dist <= v_max_dist), c_id_b == @as(u32x16, @splat(4)));
                 @import("projectiles.zig").launch(&self.state, false, i, 4, @as(f32x16, @splat(if (spec_b == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) * (if (spec_b == .warlock) effects_b.shadow_damage else splat(1)), b_sb_hit);
                 const b_sp_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(11)) else @as(bool16, @splat(false));
-                @import("projectiles.zig").launch(&self.state, false, i, 11, splat(WarlockConstants.SearingPainDamage), b_sp_hit);
+                @import("projectiles.zig").launch(&self.state, false, i, 11, splat(WarlockConstants.SearingPainDamage) * (if (spec_b == .warlock) effects_b.fire_damage else splat(1)), b_sp_hit);
                 const b_inc_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(12)) else @as(bool16, @splat(false));
                 const b_inc_bonus = select16(immolate_a > v_zeros, splat(1.25), splat(1.0));
-                @import("projectiles.zig").launch(&self.state, false, i, 12, splat(WarlockConstants.IncinerateDamage) * b_inc_bonus, b_inc_hit);
+                @import("projectiles.zig").launch(&self.state, false, i, 12, splat(WarlockConstants.IncinerateDamage) * b_inc_bonus * (if (spec_b == .warlock) effects_b.fire_damage else splat(1)), b_inc_hit);
                 const b_immolate_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(13)) else @as(bool16, @splat(false));
-                @import("projectiles.zig").launch(&self.state, false, i, 13, splat(WarlockConstants.ImmolateInitialDamage), b_immolate_hit);
-                const b_sb_dmg = (hits_b.bolt + hits_b.lance + hits_b.coil) * mit_a;
+                @import("projectiles.zig").launch(&self.state, false, i, 13, splat(WarlockConstants.ImmolateInitialDamage) * (if (spec_b == .warlock) effects_b.immolate_initial_damage else splat(1)), b_immolate_hit);
+                const b_sb_dmg = (hits_b.bolt + hits_b.lance + hits_b.coil + hits_b.conflagrate) * mit_a;
                 if (spec_b == .frost_mage) crp_a = select16(hits_b.bolt > v_zeros, splat(Frost.SlowDuration), crp_a);
 
                 const b_fear_hit = vAnd16(vAnd16(b_cast_finished, dist <= splat(if (spec_b == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_b == @as(u32x16, @splat(3)));
@@ -596,12 +681,38 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 c_tot_b = select16(b_cast_finished, v_zeros, c_tot_b);
                 r_tmr_b = select16(b_cast_finished, v_zeros, r_tmr_b);
 
+                const succubus_kind = @import("pets.zig").Kind.succubus;
+                const seduce_hit_a = if (spec_a == .warlock) vAnd16(seduction_cast_done_a, vAnd16(dist <= splat(WarlockConstants.SeductionRange), vAnd16(self.state.pet_kind_a[i..][0..VEC_LEN].* == ids(@intFromEnum(succubus_kind)), self.state.pet_hp_a[i..][0..VEC_LEN].* > v_zeros))) else @as(bool16, @splat(false));
+                const seduce_hit_b = if (spec_b == .warlock) vAnd16(seduction_cast_done_b, vAnd16(dist <= splat(WarlockConstants.SeductionRange), vAnd16(self.state.pet_kind_b[i..][0..VEC_LEN].* == ids(@intFromEnum(succubus_kind)), self.state.pet_hp_b[i..][0..VEC_LEN].* > v_zeros))) else @as(bool16, @splat(false));
+                const seduce_dur_a = splat(WarlockConstants.SeductionDuration) * getDrMultiplier(seduction_dr_t_b);
+                const seduce_dur_b = splat(WarlockConstants.SeductionDuration) * getDrMultiplier(seduction_dr_t_a);
+                const seduce_applied_a = vAnd16(seduce_hit_a, seduce_dur_a > v_zeros);
+                const seduce_applied_b = vAnd16(seduce_hit_b, seduce_dur_b > v_zeros);
+                seduction_b = select16(seduce_applied_a, seduce_dur_a, seduction_b);
+                seduction_a = select16(seduce_applied_b, seduce_dur_b, seduction_a);
+                seduced_b = @select(u32, seduce_applied_a, v_ones_u32, seduced_b);
+                seduced_a = @select(u32, seduce_applied_b, v_ones_u32, seduced_a);
+                seduction_dr_t_b = select16(seduce_hit_a, @min(splat(3.0), seduction_dr_t_b + splat(1.0)), seduction_dr_t_b);
+                seduction_dr_tmr_b = select16(seduce_hit_a, splat(WarlockConstants.DrResetDuration), seduction_dr_tmr_b);
+                seduction_dr_t_a = select16(seduce_hit_b, @min(splat(3.0), seduction_dr_t_a + splat(1.0)), seduction_dr_t_a);
+                seduction_dr_tmr_a = select16(seduce_hit_b, splat(WarlockConstants.DrResetDuration), seduction_dr_tmr_a);
+                c_id_b = @select(u32, seduce_applied_a, v_zeros_u32, c_id_b);
+                c_tmr_b = select16(seduce_applied_a, v_zeros, c_tmr_b);
+                c_tot_b = select16(seduce_applied_a, v_zeros, c_tot_b);
+                c_id_a = @select(u32, seduce_applied_b, v_zeros_u32, c_id_a);
+                c_tmr_a = select16(seduce_applied_b, v_zeros, c_tmr_a);
+                c_tot_a = select16(seduce_applied_b, v_zeros, c_tot_a);
+
                 const pet_a = if (spec_a == .warlock) @import("pets.zig").tick(&self.state, true, i, dt, effects_a.imp_firebolt_damage) * effects_a.pet_damage else v_zeros;
                 const pet_b = if (spec_b == .warlock) @import("pets.zig").tick(&self.state, false, i, dt, effects_b.imp_firebolt_damage) * effects_b.pet_damage else v_zeros;
 
                 // 7. Apply Damage to HP
                 var total_dmg_to_a = dmg_ago_a + dmg_crp_a + dmg_immolate_a + hits_b.immolate * mit_a + dmg_siph_a + b_drain_dmg + b_sb_dmg + pet_b * mit_a;
                 var total_dmg_to_b = dmg_ago_b + dmg_crp_b + dmg_immolate_b + hits_a.immolate * mit_b + dmg_siph_b + a_drain_dmg + a_sb_dmg + pet_a * mit_b;
+                seduction_a = select16(total_dmg_to_a > v_zeros, v_zeros, seduction_a);
+                seduction_b = select16(total_dmg_to_b > v_zeros, v_zeros, seduction_b);
+                seduced_a = @select(u32, total_dmg_to_a > v_zeros, v_zeros_u32, seduced_a);
+                seduced_b = @select(u32, total_dmg_to_b > v_zeros, v_zeros_u32, seduced_b);
                 immolate_a = if (spec_b == .warlock) select16(hits_b.immolate > v_zeros, splat(WarlockConstants.ImmolateDuration), immolate_a) else immolate_a;
                 immolate_b = if (spec_a == .warlock) select16(hits_a.immolate > v_zeros, splat(WarlockConstants.ImmolateDuration), immolate_b) else immolate_b;
                 const incoming_a = total_dmg_to_a;
@@ -690,6 +801,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 self.state.corruption_timer_a[i..][0..VEC_LEN].* = crp_a;
                 self.state.siphon_timer_a[i..][0..VEC_LEN].* = siph_a;
                 self.state.fear_timer_a[i..][0..VEC_LEN].* = fear_a;
+                self.state.seduction_timer_a[i..][0..VEC_LEN].* = seduction_a;
+                self.state.seduced_a[i..][0..VEC_LEN].* = seduced_a;
                 self.state.fear_accum_dmg_a[i..][0..VEC_LEN].* = fear_dmg_a;
                 self.state.horror_timer_a[i..][0..VEC_LEN].* = horror_a;
 
@@ -698,22 +811,32 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 self.state.corruption_timer_b[i..][0..VEC_LEN].* = crp_b;
                 self.state.siphon_timer_b[i..][0..VEC_LEN].* = siph_b;
                 self.state.fear_timer_b[i..][0..VEC_LEN].* = fear_b;
+                self.state.seduction_timer_b[i..][0..VEC_LEN].* = seduction_b;
+                self.state.seduced_b[i..][0..VEC_LEN].* = seduced_b;
                 self.state.fear_accum_dmg_b[i..][0..VEC_LEN].* = fear_dmg_b;
                 self.state.horror_timer_b[i..][0..VEC_LEN].* = horror_b;
 
                 self.state.action6_cd_a[i..][0..VEC_LEN].* = un_cd_a;
                 self.state.action6_dur_a[i..][0..VEC_LEN].* = un_dur_a;
                 self.state.death_coil_cd_a[i..][0..VEC_LEN].* = dc_cd_a;
+                self.state.seduction_cd_a[i..][0..VEC_LEN].* = seduction_cd_a;
+                self.state.seduction_cast_a[i..][0..VEC_LEN].* = seduction_cast_a;
                 self.state.fear_dr_tier_a[i..][0..VEC_LEN].* = fear_dr_t_a;
                 self.state.fear_dr_timer_a[i..][0..VEC_LEN].* = fear_dr_tmr_a;
+                self.state.seduction_dr_tier_a[i..][0..VEC_LEN].* = seduction_dr_t_a;
+                self.state.seduction_dr_timer_a[i..][0..VEC_LEN].* = seduction_dr_tmr_a;
                 self.state.horror_dr_tier_a[i..][0..VEC_LEN].* = horror_dr_t_a;
                 self.state.horror_dr_timer_a[i..][0..VEC_LEN].* = horror_dr_tmr_a;
 
                 self.state.action6_cd_b[i..][0..VEC_LEN].* = un_cd_b;
                 self.state.action6_dur_b[i..][0..VEC_LEN].* = un_dur_b;
                 self.state.death_coil_cd_b[i..][0..VEC_LEN].* = dc_cd_b;
+                self.state.seduction_cd_b[i..][0..VEC_LEN].* = seduction_cd_b;
+                self.state.seduction_cast_b[i..][0..VEC_LEN].* = seduction_cast_b;
                 self.state.fear_dr_tier_b[i..][0..VEC_LEN].* = fear_dr_t_b;
                 self.state.fear_dr_timer_b[i..][0..VEC_LEN].* = fear_dr_tmr_b;
+                self.state.seduction_dr_tier_b[i..][0..VEC_LEN].* = seduction_dr_t_b;
+                self.state.seduction_dr_timer_b[i..][0..VEC_LEN].* = seduction_dr_tmr_b;
                 self.state.horror_dr_tier_b[i..][0..VEC_LEN].* = horror_dr_t_b;
                 self.state.horror_dr_timer_b[i..][0..VEC_LEN].* = horror_dr_tmr_b;
 

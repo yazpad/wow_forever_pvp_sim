@@ -48,8 +48,8 @@ local config = {
     distance = 25,
     hp_a = 2000,
     hp_b = 2000,
-    pet_a = "imp",
-    pet_b = "imp",
+    pet_a = nil,
+    pet_b = nil,
     output = "matches/mcts_custom.lua",
 }
 
@@ -123,8 +123,6 @@ function match_generator.startFight(overrideConfig)
         binPath,
         "--spec-a", specA,
         "--spec-b", specB,
-        "--pet-a", specA == "warlock" and (cfg.pet_a or "imp") or "none",
-        "--pet-b", specB == "warlock" and (cfg.pet_b or "imp") or "none",
         "--name-a", '"' .. nameA .. '"',
         "--name-b", '"' .. nameB .. '"',
         "--rollouts", tostring(cfg.rollouts),
@@ -138,6 +136,15 @@ function match_generator.startFight(overrideConfig)
         "--boundary", "event",
         "--output", outPath,
     }
+
+    if cfg.pet_a then
+        table.insert(args, "--pet-a")
+        table.insert(args, specA == "warlock" and cfg.pet_a or "none")
+    end
+    if cfg.pet_b then
+        table.insert(args, "--pet-b")
+        table.insert(args, specB == "warlock" and cfg.pet_b or "none")
+    end
 
     if specIdA and #specIdA > 0 then
         table.insert(args, "--spec-id-a")
@@ -229,10 +236,10 @@ function match_generator.drawModal(panelX, panelY, panelW, panelH)
     end)
     curY = curY + 38
 
-    drawOptionSelector("A Pet (Warlock):", petOptions, config.spec_a == "warlock" and config.pet_a or "none", curY,
+    drawOptionSelector("A Pet (Warlock):", petOptions, config.spec_a == "warlock" and (config.pet_a or (config.spec_a_obj and config.spec_a_obj.pet) or "imp") or "none", curY,
         function(v) if config.spec_a == "warlock" then config.pet_a = v end end)
     curY = curY + 30
-    drawOptionSelector("B Pet (Warlock):", petOptions, config.spec_b == "warlock" and config.pet_b or "none", curY,
+    drawOptionSelector("B Pet (Warlock):", petOptions, config.spec_b == "warlock" and (config.pet_b or (config.spec_b_obj and config.spec_b_obj.pet) or "imp") or "none", curY,
         function(v) if config.spec_b == "warlock" then config.pet_b = v end end)
     curY = curY + 32
 

@@ -32,6 +32,10 @@ local savedSpecs = {}
 local selectedSavedIdx = 1
 local actionLoadout = nil
 local actionSlots = nil
+local warlockPet = "imp"
+local sacrificePet = "imp"
+local PET_OPTIONS = { "none", "imp", "voidwalker", "succubus", "felhunter" }
+local PET_LABELS = { none = "None", imp = "Imp", voidwalker = "Voidwalker", succubus = "Succubus", felhunter = "Felhunter" }
 
 -- UI Interactive Elements & Hover Tooltip
 local buttons = {}
@@ -49,9 +53,22 @@ local modalInputText = ""
 
 local ACTION_CATALOG = action_catalog.specs
 local ACTION_ICONS = action_catalog.icons
+local ACTION_SLOT_COUNT = 13
+local TOTAL_SLOT_COUNT = ACTION_SLOT_COUNT + 2
 local function isTalentLocked(name, build)
     local gate = action_catalog.talent_gates[name]
     return gate ~= nil and talents_data.getRank(build and build[gate.tree], gate.id) == 0
+end
+local function isPetLocked(name, pet)
+    local required = action_catalog.pet_gates[name]
+    return required ~= nil and pet ~= required
+end
+local function selectedActionPet()
+    if currentClass ~= "warlock" then return "none" end
+    local sacrificeRank = talents_data.getRank(currentBuild and currentBuild.Demonology, "105900")
+    local pactRank = talents_data.getRank(currentBuild and currentBuild.Demonology, "105890")
+    if sacrificeRank > 0 and (pactRank == 0 or warlockPet == sacrificePet) then return "none" end
+    return warlockPet
 end
 
 local ACTION_LABELS = { Agony = "Bane of Agony" }
@@ -59,17 +76,15 @@ local ACTION_LABELS = { Agony = "Bane of Agony" }
 local function defaultActionSlots(className, build)
     local catalog = ACTION_CATALOG[className] or {}
     local slots = {}
-    for i = 1, 10 do slots[i] = "" end
-    slots[1], slots[10] = "Idle/Maneuver", "Cancel Cast"
+    for i = 1, TOTAL_SLOT_COUNT do slots[i] = "" end
+    slots[1], slots[TOTAL_SLOT_COUNT] = "Idle/Maneuver", "Cancel Cast"
     local slot = 2
     for i = 2, #catalog - 1 do
-        if slot > 9 then break end
+        if slot >= TOTAL_SLOT_COUNT then break end
         local name = catalog[i]
-        local locked = className == "warlock" and isTalentLocked(name, build)
-        if i < 10 then slots[slot] = locked and "" or name; slot = slot + 1 end
-    end
-    if className == "warlock" and slots[9] == "" and talents_data.getRank(build and build.Destruction, 105884) > 0 then
-        slots[9] = "Shadowburn"
+        local locked = className == "warlock" and (isTalentLocked(name, build) or isPetLocked(name, selectedActionPet()))
+        slots[slot] = locked and "" or name
+        slot = slot + 1
     end
     return slots
 end
@@ -80,12 +95,12 @@ local function cloneActionSlots(slots, className, build, legacy)
             local allowed, result = {}, {}
             for _, name in ipairs(legacy) do allowed[name] = true end
             local catalog = ACTION_CATALOG[className] or {}
-            for i = 1, 10 do result[i] = "" end
-            result[1], result[10] = "Idle/Maneuver", "Cancel Cast"
+            for i = 1, TOTAL_SLOT_COUNT do result[i] = "" end
+            result[1], result[TOTAL_SLOT_COUNT] = "Idle/Maneuver", "Cancel Cast"
             local slot = 2
             for i = 2, #catalog - 1 do
                 local name = catalog[i]
-                if slot <= 9 and allowed[name] then result[slot] = name; slot = slot + 1 end
+                if slot < TOTAL_SLOT_COUNT and allowed[name] then result[slot] = name; slot = slot + 1 end
             end
             return result
         end
@@ -93,15 +108,22 @@ local function cloneActionSlots(slots, className, build, legacy)
     end
     local result, valid = {}, {}
     for i, name in ipairs(ACTION_CATALOG[className] or {}) do if i > 1 and i < #ACTION_CATALOG[className] then valid[name] = true end end
-    local catalog = ACTION_CATALOG[className] or {}
-    for i = 1, 10 do
-        local name = slots[i]
-        local locked = className == "warlock" and isTalentLocked(name, build)
-        if i == 1 or i == 10 then
-            result[i] = i == 1 and "Idle/Maneuver" or "Cancel Cast"
-        else
+    local is_legacy_layout = #slots < TOTAL_SLOT_COUNT or slots[10] == "Cancel Cast"
+    for i = 1, TOTAL_SLOT_COUNT do result[i] = "" end
+    result[1], result[TOTAL_SLOT_COUNT] = "Idle/Maneuver", "Cancel Cast"
+    if is_legacy_layout then
+        for i = 2, math.min(#slots, 9) do
+            local name = slots[i]
+            local locked = className == "warlock" and (isTalentLocked(name, build) or isPetLocked(name, selectedActionPet()))
             result[i] = type(name) == "string" and (name == "" or (valid[name] and not locked and name)) or ""
+            if type(result[i]) ~= "string" then result[i] = "" end
         end
+        return result
+    end
+    for i = 2, TOTAL_SLOT_COUNT - 1 do
+        local name = slots[i]
+        local locked = className == "warlock" and (isTalentLocked(name, build) or isPetLocked(name, selectedActionPet()))
+        result[i] = type(name) == "string" and (name == "" or (valid[name] and not locked and name)) or ""
         if type(result[i]) ~= "string" then result[i] = "" end
     end
     return result
@@ -110,7 +132,8 @@ end
 local function actionsFromSlots(slots)
     local result, seen = {}, {}
     for _, name in ipairs(slots or {}) do
-        if name ~= "" and name ~= "Idle/Maneuver" and name ~= "Cancel Cast" and not seen[name] then
+        if name ~= "" and name ~= "Idle/Maneuver" and name ~= "Cancel Cast" and not seen[name] and
+            not (currentClass == "warlock" and isPetLocked(name, selectedActionPet())) then
             result[#result + 1] = name
             seen[name] = true
         end
@@ -122,7 +145,8 @@ local function defaultActionLoadout(className, build)
     local result = {}
     for _, name in ipairs(ACTION_CATALOG[className] or {}) do
         if name ~= "Idle/Maneuver" and name ~= "Cancel Cast" and
-            not (className == "warlock" and isTalentLocked(name, build)) then
+            not (className == "warlock" and isTalentLocked(name, build)) and
+            not (className == "warlock" and isPetLocked(name, selectedActionPet())) then
             table.insert(result, name)
         end
     end
@@ -137,7 +161,7 @@ local function cloneActionLoadout(actions, className, build)
         if type(name) == "string" and not seen[name] then
             for _, supported in ipairs(catalog) do
                 local talent_locked = className == "warlock" and isTalentLocked(name, build)
-                if name == supported and not talent_locked then
+                if name == supported and not talent_locked and not (className == "warlock" and isPetLocked(name, selectedActionPet())) then
                     table.insert(result, name)
                     seen[name] = true
                     break
@@ -175,6 +199,8 @@ function spec_editor.setClass(newClass)
     currentBuild = talents_data.newEmptyBuild(cls)
     actionLoadout = defaultActionLoadout(cls, currentBuild)
     actionSlots = defaultActionSlots(cls, currentBuild)
+    warlockPet = "imp"
+    sacrificePet = "imp"
     specName = cls == "frost_mage" and "New Frost Mage Build" or "New Warlock Build"
     specDesc = "Custom 51-point level 60 talent build."
 end
@@ -194,6 +220,14 @@ function spec_editor.loadSpec(specObj)
     currentBuild = talents_data.cloneBuild(specObj.trees)
     actionLoadout = cloneActionLoadout(specObj.action_loadout, currentClass, currentBuild)
     actionSlots = cloneActionSlots(specObj.action_slots, currentClass, currentBuild, specObj.action_loadout)
+    local hasSacrifice = talents_data.getRank(currentBuild.Demonology, "105900") > 0
+    if hasSacrifice then
+        sacrificePet = specObj.sacrifice_pet or specObj.pet or "imp"
+        warlockPet = specObj.sacrifice_pet and (specObj.pet or "none") or "none"
+    else
+        sacrificePet = specObj.sacrifice_pet or "imp"
+        warlockPet = specObj.pet or "imp"
+    end
     specName = specObj.name or "Custom Build"
     specDesc = specObj.description or ""
     noticeText = "Loaded spec: " .. specName
@@ -212,6 +246,8 @@ function spec_editor.getCurrentSpecConfig()
     if not treeData or not currentBuild then return nil end
     local summary = talents_data.getSummaryString(treeData, currentBuild, currentClass)
     local hash = talents_data.exportHash(treeData, currentBuild, currentClass)
+    local sacrificeRank = currentClass == "warlock" and talents_data.getRank(currentBuild.Demonology, "105900") or 0
+    local pactRank = currentClass == "warlock" and talents_data.getRank(currentBuild.Demonology, "105890") or 0
     return {
         name = specName,
         class = currentClass,
@@ -222,6 +258,8 @@ function spec_editor.getCurrentSpecConfig()
         trees = talents_data.cloneBuild(currentBuild),
         action_loadout = actionsFromSlots(cloneActionSlots(actionSlots, currentClass, currentBuild)),
         action_slots = cloneActionSlots(actionSlots, currentClass, currentBuild),
+        pet = currentClass == "warlock" and (sacrificeRank > 0 and pactRank == 0 and "none" or (sacrificeRank > 0 and warlockPet == sacrificePet and "none" or warlockPet)) or "none",
+        sacrifice_pet = currentClass == "warlock" and sacrificeRank > 0 and sacrificePet or "none",
     }
 end
 
@@ -314,7 +352,7 @@ function spec_editor.mousepressed(x, y, button)
                     actionSlots[btn.slot] = btn.name == "(Empty)" and "" or btn.name
                     actionPickerSlot = nil
                 elseif btn.kind == "slot" then
-                    if btn.slot > 1 and btn.slot < 10 then
+                    if btn.slot > 1 and btn.slot < TOTAL_SLOT_COUNT then
                         actionPickerSlot = actionPickerSlot == btn.slot and nil or btn.slot
                     end
                 end
@@ -510,6 +548,7 @@ function spec_editor.draw(trainingController)
 
         cfg.spec_a = currentClass
         cfg.spec_a_obj = specConfig
+        cfg.pet_a = specConfig.pet
         cfg.ctrl_a = "search"
         cfg.output = "matches/fight_" .. fname .. ".lua"
         local ok, err = match_generator.startFight(cfg)
@@ -527,7 +566,7 @@ function spec_editor.draw(trainingController)
     local sidebarX = 24
     local mainY = 66
     local mainH = screenH - mainY - 30
-    local actionPanelH = 132
+    local actionPanelH = 152
 
     -- Left Sidebar Container
     g.setColor(0.06, 0.08, 0.14, 0.95)
@@ -837,7 +876,8 @@ function spec_editor.draw(trainingController)
         end
     end
 
-    -- Ten ordered action slots are saved with the spec.
+    -- Twelve configurable action slots are saved with the spec; movement and
+    -- cancel cast occupy the first and last reserved positions.
     local panelY = mainY + mainH - actionPanelH
     g.setColor(0.06, 0.08, 0.14, 0.98)
     g.rectangle("fill", treesAreaX, panelY, treesAreaW, actionPanelH, 6)
@@ -845,17 +885,17 @@ function spec_editor.draw(trainingController)
     g.rectangle("line", treesAreaX, panelY, treesAreaW, actionPanelH, 6)
     ui.setFont("small")
     g.setColor(0.75, 0.84, 1.0, 1.0)
-    g.print("TRACKED ACTION SLOTS (hover to inspect, click to change)", treesAreaX + 14, panelY + 8)
-    local slotSize, gap, cols = 36, 9, 10
+    g.print("13 ACTION SLOTS (hover to inspect, click to change)", treesAreaX + 14, panelY + 8)
+    local slotSize, gap, cols = 34, 6, TOTAL_SLOT_COUNT
     local totalW = cols * slotSize + (cols - 1) * gap
     local startX = treesAreaX + math.max(14, (treesAreaW - totalW) * 0.5)
     local slotY = panelY + 34
-    for i = 1, 10 do
+    for i = 1, TOTAL_SLOT_COUNT do
         local sx = startX + (i - 1) * (slotSize + gap)
         local name = actionSlots and actionSlots[i] or ""
         local isHover = mx >= sx and mx <= sx + slotSize and my >= slotY and my <= slotY + slotSize
         if isHover then hoveredActionSlot = i end
-        local reserved = i == 1 or i == 10
+        local reserved = i == 1 or i == TOTAL_SLOT_COUNT
         g.setColor(reserved and 0.10 or (isHover and 0.24 or 0.10), reserved and 0.11 or (isHover and 0.35 or 0.14), reserved and 0.13 or (isHover and 0.50 or 0.22), 1)
         g.rectangle("fill", sx, slotY, slotSize, slotSize, 4)
         g.setColor(reserved and 0.24 or (isHover and 0.45 or 0.27), reserved and 0.26 or (isHover and 0.72 or 0.38), reserved and 0.30 or (isHover and 1 or 0.58), 1)
@@ -890,6 +930,43 @@ function spec_editor.draw(trainingController)
             g.printf(label, tipX + 4, tipY + 3, tipW - 8, "center")
         end
     end
+    if currentClass == "warlock" then
+        local sacrificeRank = talents_data.getRank(currentBuild.Demonology, "105900")
+        local pactRank = talents_data.getRank(currentBuild.Demonology, "105890")
+        local function drawPetRow(label, selected, rowY, onSelect, exclude)
+            g.setColor(0.75, 0.84, 1.0, 1.0)
+            g.print(label, treesAreaX + 14, rowY + 4)
+            local choices = {}
+            for _, pet in ipairs(PET_OPTIONS) do if pet == "none" or pet ~= exclude then choices[#choices + 1] = pet end end
+            local petW, petH, petGap = 86, 24, 6
+            local petStartX = treesAreaX + 185
+            for index, pet in ipairs(choices) do
+                local px = petStartX + (index - 1) * (petW + petGap)
+                local isSelected = pet == selected
+                local isHover = mx >= px and mx <= px + petW and my >= rowY and my <= rowY + petH
+                g.setColor(isSelected and 0.20 or (isHover and 0.17 or 0.09), isSelected and 0.44 or (isHover and 0.29 or 0.14), isSelected and 0.68 or (isHover and 0.48 or 0.23), 0.98)
+                g.rectangle("fill", px, rowY, petW, petH, 4)
+                g.setColor(isSelected and 0.4 or 0.24, isSelected and 0.75 or 0.42, isSelected and 1.0 or 0.66, 0.9)
+                g.rectangle("line", px, rowY, petW, petH, 4)
+                g.setColor(1, 1, 1, isSelected and 1 or 0.75)
+                g.printf(PET_LABELS[pet], px + 2, rowY + 5, petW - 4, "center")
+                table.insert(buttons, { x = px, y = rowY, w = petW, h = petH, action = function() onSelect(pet) end })
+            end
+        end
+        if sacrificeRank > 0 then
+            if pactRank > 0 then
+                drawPetRow("Demonic Sacrifice:", sacrificePet, panelY + 78, function(pet)
+                    sacrificePet = pet
+                    if warlockPet == pet then warlockPet = "none" end
+                end)
+                drawPetRow("Active demon:", warlockPet == sacrificePet and "none" or warlockPet, panelY + 108, function(pet) warlockPet = pet end, sacrificePet)
+            else
+                drawPetRow("Demonic Sacrifice:", sacrificePet, panelY + 92, function(pet) sacrificePet = pet end)
+            end
+        else
+            drawPetRow("Active demon:", warlockPet, panelY + 92, function(pet) warlockPet = pet end)
+        end
+    end
     hoveredActionSlot = hoveredActionSlot or actionPickerSlot
     if actionPickerSlot then
         local menuW, rowH = 154, 19
@@ -905,7 +982,7 @@ function spec_editor.draw(trainingController)
         for i, name in ipairs(ACTION_CATALOG[currentClass]) do if i > 1 and i < #ACTION_CATALOG[currentClass] then options[#options + 1] = name end end
         for i, name in ipairs(options) do
             local oy = menuY + (i - 1) * rowH
-            local locked = currentClass == "warlock" and isTalentLocked(name, currentBuild)
+            local locked = currentClass == "warlock" and (isTalentLocked(name, currentBuild) or isPetLocked(name, selectedActionPet()))
             if locked then g.setColor(0.18, 0.19, 0.22, 0.95)
             elseif (name == "(Empty)" and actionSlots[actionPickerSlot] == "") or name == actionSlots[actionPickerSlot] then g.setColor(0.28, 0.55, 0.82, 0.95)
             else g.setColor(0.12, 0.16, 0.23, 0.95) end

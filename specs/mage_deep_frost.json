@@ -29,5 +29,21 @@
       "20313": 5,
       "20317": 1
     }
-  }
+  },
+  "action_slots": [
+    "Idle/Maneuver",
+    "Ice Lance",
+    "Frost Nova",
+    "Polymorph",
+    "Frostbolt",
+    "Blink",
+    "Ice Barrier",
+    "Counterspell",
+    "None",
+    "",
+    "",
+    "",
+    "",
+    "Cancel Cast"
+  ]
 }

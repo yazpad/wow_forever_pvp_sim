@@ -50,13 +50,15 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
     live = simd.vAnd16(live, simd.vAnd16(col(state, "hp", side, i).* > v(0), col(state, "hp", !side, i).* > v(0)));
     if (!@reduce(.Or, live)) return v(0);
     const imp: B = kind == @as(U, @splat(@intFromEnum(Kind.imp)));
+    const succubus: B = kind == @as(U, @splat(@intFromEnum(Kind.succubus)));
+    const seduction_casting = simd.vAnd16(succubus, col(state, "seduction_cast", side, i).* > v(0));
     const range = @select(f32, imp, v(FireboltRange), v(MeleeRange));
     const x = col(state, "pet_x", side, i);
     const y = col(state, "pet_y", side, i);
     const dx = col(state, "pos_x", !side, i).* - x.*;
     const dy = col(state, "pos_y", !side, i).* - y.*;
     const dist = @sqrt(dx * dx + dy * dy);
-    const travel = @min(v(RunSpeed * dt), @max(v(0), dist - range));
+    const travel = @select(f32, seduction_casting, v(0), @min(v(RunSpeed * dt), @max(v(0), dist - range)));
     const step = @select(f32, live, travel / @max(v(0.00001), dist), v(0));
     x.* += dx * step;
     y.* += dy * step;
@@ -66,7 +68,7 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
     // Imp Firebolt is a simple 2s stationary cast with immediate damage at
     // completion. Leaving range cancels it; no shared player projectile slots.
     next = @select(f32, simd.vAnd16(imp, simd.vNot16(in_range)), v(AttackInterval), next);
-    const hit = simd.vAnd16(live, simd.vAnd16(in_range, next <= v(0)));
+    const hit = simd.vAnd16(live, simd.vAnd16(in_range, simd.vAnd16(next <= v(0), simd.vNot16(seduction_casting))));
     next = @select(f32, hit, v(AttackInterval), next);
     timer.* = @select(f32, live, next, timer.*);
     const damage = @select(f32, imp, v(60), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.succubus))), v(50), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.felhunter))), v(40), v(30))));

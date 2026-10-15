@@ -130,10 +130,12 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
         iconsMgr.drawAuraBadge("horror", debX, row5Y, 20, f[23 + offset], 3.0, { 0.3, 0.9, 0.3, 1 })
         debX = debX + 24
     end
-    if f[21 + offset] > 0 then
-        local ccIcon = oppSpec == "frost_mage" and "polymorph" or "fear"
-        local maxDur = oppSpec == "frost_mage" and 4.0 or 6.0
-        iconsMgr.drawAuraBadge(ccIcon, debX, row5Y, 20, f[21 + offset], maxDur, { 0.85, 0.4, 1.0, 1 })
+    if f[21 + offset] > 0 or (f[101 + side] or 0) > 0 then
+        local seduced = (f[101 + side] or 0) > 0
+        local ccIcon = seduced and "seduction" or (oppSpec == "frost_mage" and "polymorph" or "fear")
+        local ccDuration = seduced and f[101 + side] or f[21 + offset]
+        local maxDur = seduced and 15.0 or (oppSpec == "frost_mage" and 4.0 or 6.0)
+        iconsMgr.drawAuraBadge(ccIcon, debX, row5Y, 20, ccDuration, maxDur, { 0.85, 0.4, 1.0, 1 })
         debX = debX + 24
     end
     if oppSpec == "frost_mage" then
@@ -154,12 +156,6 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
             iconsMgr.drawAuraBadge("corruption", debX, row5Y, 20, f[19 + offset], 14.0, { 0.95, 0.5, 0.2, 1 })
             debX = debX + 24
         end
-    end
-    -- Lockout debuff if applicable
-    local lockout = f[47 + offset] or 0
-    if lockout > 0 then
-        iconsMgr.drawAuraBadge("counterspell", debX, row5Y, 20, lockout, 4.0, { 1.0, 0.2, 0.2, 1 })
-        debX = debX + 24
     end
 end
 return view

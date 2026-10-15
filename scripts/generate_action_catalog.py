@@ -61,6 +61,8 @@ def generate_zig(catalog):
         gate_trees = ", ".join(zig_string(gate.get("tree", "")) for gate in gates)
         lines.append("pub const %s_talent_gate_ids = [_]u32{ %s };" % (spec, gate_ids))
         lines.append("pub const %s_talent_gate_trees = [_][]const u8{ %s };" % (spec, gate_trees))
+        pet_gates = ", ".join(zig_string(action.get("pet", "")) for action in catalog[spec])
+        lines.append("pub const %s_pet_gates = [_][]const u8{ %s };" % (spec, pet_gates))
     return "\n".join(lines) + "\n"
 
 
@@ -95,6 +97,11 @@ def generate_lua(catalog):
     for spec in ("warlock", "frost_mage"):
         entries = ", ".join("[%d] = %s" % (a["id"], json.dumps(a.get("icon", "border"))) for a in catalog[spec])
         lines.append("        %s = { %s }," % (spec, entries))
+    lines.extend(["    },", "    pet_gates = {"])
+    for actions in catalog.values():
+        for action in actions:
+            if action.get("pet"):
+                lines.append("        [%s] = %s," % (json.dumps(action["name"]), json.dumps(action["pet"])))
     lines.extend(["    },", "    talent_gates = {"])
     all_actions = {}
     for actions in catalog.values():
