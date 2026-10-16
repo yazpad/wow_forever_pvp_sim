@@ -475,7 +475,7 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         if (TalentBuild.parse(ts.string)) |tb| talents = tb;
     }
 
-    const pet = pet_value orelse if (class == .warlock and warlock_talents.demonic_sacrifice > 0) pets.Kind.none else if (class == .warlock) pets.Kind.imp else pets.Kind.none;
+    const pet = pet_value orelse if (class == .warlock and warlock_talents.demonic_sacrifice > 0 and (sacrifice_pet_value == null or sacrifice_pet_value.? != .none)) pets.Kind.none else if (class == .warlock) pets.Kind.imp else pets.Kind.none;
     const sacrifice_pet = sacrifice_pet_value orelse if (class == .warlock) pets.Kind.imp else pets.Kind.none;
     if (class == .warlock and pet != .succubus) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction));
     if (class == .warlock and pet != .felhunter) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock));

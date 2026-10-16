@@ -48,6 +48,7 @@ pub fn launch(state: anytype, comptime side_a: bool, i: usize, comptime spell: u
 // Resolve once at launch and snapshot the resulting payload in the queue.
 // Low-level launch remains useful for already-resolved payloads and physics tests.
 pub fn launchClass(state: anytype, comptime side_a: bool, i: usize, comptime spell: u32, damage: V, mask: B, comptime actor: anytype) void {
+    if (!@reduce(.Or, mask)) return;
     const resolution = @import("spell_resolution.zig");
     const effects = @import("warlock_talents.zig").decode(
         @field(state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
@@ -118,16 +119,20 @@ fn tickImpl(state: anytype, comptime side_a: bool, i: usize, dt: f32, comptime o
 pub fn recordHits(state: anytype, comptime side_a: bool, i: usize, hits: Hits, mitigation: V, incoming: V, applied: V) void {
     const suffix = if (side_a) "_a" else "_b";
     const zero: simd.u32x16 = @splat(0);
+    if (!@reduce(.Or, hits.bolt + hits.lance + hits.coil + hits.immolate + hits.conflagrate > splat(0))) {
+        const mask_col = @field(state, "impact_mask" ++ suffix)[i..][0..16];
+        if (@reduce(.Or, mask_col.* != zero)) {
+            mask_col.* = zero;
+            inline for (.{ "bolt", "lance", "coil", "conflagrate" }) |kind|
+                @field(state, "impact_" ++ kind ++ suffix)[i..][0..16].* = @as(V, @splat(0));
+        }
+        return;
+    }
     @field(state, "impact_mask" ++ suffix)[i..][0..16].* =
         @select(u32, (hits.bolt + hits.immolate) > splat(0), @as(simd.u32x16, @splat(1)), zero) |
         @select(u32, hits.lance > splat(0), @as(simd.u32x16, @splat(2)), zero) |
         @select(u32, hits.coil > splat(0), @as(simd.u32x16, @splat(4)), zero) |
         @select(u32, hits.conflagrate > splat(0), @as(simd.u32x16, @splat(8)), zero);
-    if (!@reduce(.Or, hits.bolt + hits.lance + hits.coil + hits.immolate + hits.conflagrate > splat(0))) {
-        inline for (.{ "bolt", "lance", "coil", "conflagrate" }) |kind|
-            @field(state, "impact_" ++ kind ++ suffix)[i..][0..16].* = @as(V, @splat(0));
-        return;
-    }
     const ratio = mitigation * select(incoming > splat(0), applied / @max(incoming, splat(0.00001)), splat(0));
     inline for (.{ "bolt", "lance", "coil", "conflagrate" }) |kind|
         @field(state, "impact_" ++ kind ++ suffix)[i..][0..16].* = (if (comptime std.mem.eql(u8, kind, "bolt")) hits.bolt + hits.immolate else @field(hits, kind)) * ratio;

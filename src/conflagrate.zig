@@ -59,9 +59,11 @@ pub fn apply(state: anytype, comptime side: bool, i: usize, mask: B, effects: ta
 }
 pub fn buffEffects(state: anytype, comptime side: bool, i: usize, effects: *talents.Effects) void {
     const buff = col(state, "shadow_flame_timer", side, i);
+    const active = buff.* > v(0);
+    if (!@reduce(.Or, active)) return;
     const ranks: U = @field(state, "talent_ranks" ++ (if (side) "_a" else "_b"))[i..][0..16].*;
     const bonus = v(1) + v(0.02) * @as(V, @floatFromInt(ranks >> @as(@Vector(16, u5), @splat(29))));
-    const mult = @select(f32, buff.* > v(0), bonus, v(1));
+    const mult = @select(f32, active, bonus, v(1));
     inline for (.{ "shadow_damage", "agony_damage", "corruption_damage", "drain_life_damage", "drain_life_healing", "siphon_life_damage", "siphon_life_healing" }) |field|
         @field(effects, field) *= mult;
 }
@@ -69,7 +71,7 @@ pub fn tickEffects(state: anytype, comptime side: bool, i: usize, dt: f32, effec
     buffEffects(state, side, i, effects);
     inline for (.{ "conflagrate_cd", "shadow_flame_timer" }) |field| {
         const timer = col(state, field, side, i);
-        timer.* = @max(v(0), timer.* - v(dt));
+        if (@reduce(.Or, timer.* > v(0))) timer.* = @max(v(0), timer.* - v(dt));
     }
 }
 pub fn speed(state: anytype, comptime side: bool, i: usize) V {
@@ -78,12 +80,12 @@ pub fn speed(state: anytype, comptime side: bool, i: usize) V {
 pub fn takeDamage(state: anytype, comptime side: bool, i: usize) V {
     const pending = col(state, "conflagrate_pending", side, i);
     const damage = pending.*;
-    pending.* = v(0);
+    if (@reduce(.Or, damage != v(0))) pending.* = v(0);
     return damage;
 }
 pub fn tickDaze(state: anytype, i: usize, dt: f32) void {
     inline for (.{ true, false }) |side| {
         const timer = col(state, "daze_timer", side, i);
-        timer.* = @max(v(0), timer.* - v(dt));
+        if (@reduce(.Or, timer.* > v(0))) timer.* = @max(v(0), timer.* - v(dt));
     }
 }

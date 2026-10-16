@@ -193,11 +193,15 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
         }
         fn apply(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16, comptime staged: bool) void {
             const actor = if (side_a) spec_a else spec_b;
+            const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
             if (actor == .warlock) {
-                const legal = self.masks(side_a, i);
                 var actions = ids(0);
-                const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
-                inline for (1..combat_spec.WarlockAction.COUNT) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+                if (staged) {
+                    actions = @select(u32, active, requested, ids(0));
+                } else {
+                    const legal = self.masks(side_a, i);
+                    inline for (1..combat_spec.WarlockAction.COUNT) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+                }
                 const spell_lock = actions == ids(15);
                 const target_cast = self.castIds(!side_a, i);
                 const attempted_interrupt = vAnd16(spell_lock, target_cast.* != ids(0));
@@ -208,14 +212,16 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 }
                 const pet_outcome = @field(self.state, "pet_outcome" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN].*;
                 const interrupted = vAnd16(attempted_interrupt, pet_outcome == ids(@intFromEnum(@import("spell_resolution.zig").Outcome.hit)));
-                const pet_effects = warlock_talents.decode(
-                    @field(self.state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN].*,
-                    @field(self.state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN].*,
-                );
-                if (side_a) {
-                    self.state.seduction_cd_a[i..][0..VEC_LEN].* = select16(spell_lock, pet_effects.spell_lock_cooldown, self.state.seduction_cd_a[i..][0..VEC_LEN].*);
-                } else {
-                    self.state.seduction_cd_b[i..][0..VEC_LEN].* = select16(spell_lock, pet_effects.spell_lock_cooldown, self.state.seduction_cd_b[i..][0..VEC_LEN].*);
+                if (@reduce(.Or, spell_lock)) {
+                    const pet_effects = warlock_talents.decode(
+                        @field(self.state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN].*,
+                        @field(self.state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..VEC_LEN].*,
+                    );
+                    if (side_a) {
+                        self.state.seduction_cd_a[i..][0..VEC_LEN].* = select16(spell_lock, pet_effects.spell_lock_cooldown, self.state.seduction_cd_a[i..][0..VEC_LEN].*);
+                    } else {
+                        self.state.seduction_cd_b[i..][0..VEC_LEN].* = select16(spell_lock, pet_effects.spell_lock_cooldown, self.state.seduction_cd_b[i..][0..VEC_LEN].*);
+                    }
                 }
                 target_cast.* = @select(u32, interrupted, ids(0), target_cast.*);
                 self.column("cast_timer", !side_a, i).* = select16(interrupted, splat(0), self.column("cast_timer", !side_a, i).*);
@@ -225,10 +231,13 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 self.column("react_timer", !side_a, i).* = select16(interrupted, splat(0), self.column("react_timer", !side_a, i).*);
                 return;
             }
-            const legal = self.masks(side_a, i);
-            const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
             var actions = ids(0);
-            inline for (1..11) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+            if (staged) {
+                actions = @select(u32, active, requested, ids(0));
+            } else {
+                const legal = self.masks(side_a, i);
+                inline for (1..11) |action| actions = @select(u32, vAnd16(active, vAnd16(requested == ids(action), legal[action])), ids(action), actions);
+            }
             const cc = vOr16(vOr16(self.column("fear_timer", side_a, i).* > splat(0), self.column("horror_timer", side_a, i).* > splat(0)), (if (side_a) self.state.seduction_timer_a[i..][0..VEC_LEN].* else self.state.seduction_timer_b[i..][0..VEC_LEN].*) > splat(0));
             const cast = self.castIds(side_a, i);
             const cancel = vOr16(actions == ids(10), actions == ids(5));

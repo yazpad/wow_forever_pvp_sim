@@ -18,8 +18,8 @@ local noticeTimer = 0.0
 
 -- Configurable presets for batch combinations
 local PRESETS = {
-    { id = "fast", label = "Fast (1k)", rollouts = 1024, workers = 4, eval = "heuristic" },
-    { id = "standard", label = "Standard (4k)", rollouts = 4096, workers = 8, eval = "heuristic" },
+    { id = "fast", label = "Fast (1k)", rollouts = 1024, workers = 4, eval = "rollout" },
+    { id = "standard", label = "Standard (4k)", rollouts = 4096, workers = 8, eval = "rollout" },
     { id = "deep", label = "Deep (16k)", rollouts = 16384, workers = 16, eval = "rollout" },
 }
 local selectedPresetIdx = 1

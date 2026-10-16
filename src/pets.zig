@@ -79,7 +79,12 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
 }
 // Same proportional shield/overkill accounting used by player missiles.
 pub fn recordDamage(state: anytype, comptime side: bool, i: usize, mitigated: V, incoming: V, applied: V) void {
-    col(state, "impact_pet", side, i).* = mitigated * @select(f32, incoming > v(0), applied / @max(v(0.00001), incoming), v(0));
+    const dst = col(state, "impact_pet", side, i);
+    if (!@reduce(.Or, mitigated > v(0))) {
+        if (@reduce(.Or, dst.* != v(0))) dst.* = v(0);
+        return;
+    }
+    dst.* = mitigated * @select(f32, incoming > v(0), applied / @max(v(0.00001), incoming), v(0));
 }
 // Appended replay columns, five per side: kind, HP, x, y, attack timer.
 pub fn telemetry(state: anytype, lane: usize) [10]f32 {

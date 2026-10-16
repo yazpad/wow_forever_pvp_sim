@@ -27,11 +27,12 @@ pub fn resolveRolls(remaining: V, total: V, count: U, channel: B, resistance: V,
     };
 }
 pub fn reset(state: anytype, comptime side: bool, i: usize, mask: B) void {
+    if (!@reduce(.Or, mask)) return;
     const suffix = if (side) "_a" else "_b";
     const count = @field(state, "cast_pushback_count" ++ suffix);
     const elapsed = @field(state, "channel_elapsed" ++ suffix);
-    count[i..][0..16].* = @select(u32, mask, u(0), count[i..][0..16].*);
-    elapsed[i..][0..16].* = @select(f32, mask, v(0), elapsed[i..][0..16].*);
+    if (@reduce(.Or, simd.vAnd16(mask, count[i..][0..16].* != u(0)))) count[i..][0..16].* = @select(u32, mask, u(0), count[i..][0..16].*);
+    if (@reduce(.Or, simd.vAnd16(mask, elapsed[i..][0..16].* != v(0)))) elapsed[i..][0..16].* = @select(f32, mask, v(0), elapsed[i..][0..16].*);
 }
 pub fn resistanceFor(comptime warlock: bool, cast: U, effects: talents.Effects) V {
     if (!warlock) return v(0);
@@ -39,6 +40,7 @@ pub fn resistanceFor(comptime warlock: bool, cast: U, effects: talents.Effects) 
     return @select(f32, cast == u(5), effects.fel_concentration_resist, @select(f32, destruction, effects.intensity_resist, v(0)));
 }
 fn hit(state: anytype, comptime side: bool, i: usize, amount: V, shield: *V, cast: U, remaining: anytype, total: V, channel: B, resistance: V) void {
+    if (!@reduce(.Or, amount > v(0))) return;
     const unabsorbed = @max(v(0), amount - shield.*);
     shield.* = @max(v(0), shield.* - amount);
     const suffix = if (side) "_a" else "_b";
@@ -56,6 +58,7 @@ fn hit(state: anytype, comptime side: bool, i: usize, amount: V, shield: *V, cas
 // aggregate HP/shield accounting remains in the combat kernel. Misses, resists,
 // and fully absorbed hits have zero qualifying damage and cannot push back.
 pub fn apply(state: anytype, comptime side: bool, comptime warlock: bool, i: usize, hits: projectiles.Hits, pet_damage: V, mitigation: V, absorb: V, effects: talents.Effects, cast: U, remaining: anytype, total: V) void {
+    if (!@reduce(.Or, cast != u(0))) return;
     var shield = absorb;
     const channel = if (warlock) cast == u(5) else @as(B, @splat(false));
     const resistance = resistanceFor(warlock, cast, effects);

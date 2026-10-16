@@ -87,17 +87,18 @@ pub const Bandit = struct {
         for (0..n) |i| p[i] = 0.9 * p[i] / sum + 0.1 / @as(f32, @floatFromInt(n));
         return p;
     }
-    pub fn update(self: *Bandit, n: usize, action: usize, probability: f32, reward: f32, p: [MaxChoices]f32) void {
+    pub fn update(self: *Bandit, n: usize, action: usize, probability: f32, reward: f32, algo: Algorithm) void {
         self.total += 1;
         self.visits[action] += 1;
         self.sums[action] += reward;
-        self.weights[action] += 0.1 / @as(f32, @floatFromInt(n)) * ((reward + 1) * 0.5) / @max(probability, 0.000001);
-        // Normalize log weights to avoid long-run growth.
-        const shift = self.weights[action];
-        if (shift > 100) for (0..n) |i| {
-            self.weights[i] -= shift;
-        };
-        for (0..n) |i| self.strategy[i] += p[i];
+        if (algo == .exp3) {
+            self.weights[action] += 0.1 / @as(f32, @floatFromInt(n)) * ((reward + 1) * 0.5) / @max(probability, 0.000001);
+            // Normalize log weights to avoid long-run growth.
+            const shift = self.weights[action];
+            if (shift > 100) for (0..n) |i| {
+                self.weights[i] -= shift;
+            };
+        }
     }
 };
 pub fn sample(p: [MaxChoices]f32, n: usize, random: std.Random) u8 {
@@ -115,7 +116,7 @@ const Node = struct {
     next: u32 = none,
     joint: u16 = 0,
 };
-const Visit = struct { node: u32, actions: [2]u8, probabilities: [2][MaxChoices]f32 };
+const Visit = struct { node: u32, actions: [2]u8, probabilities: [2]f32 };
 pub const Stats = struct {
     rollouts: u64 = 0,
     ticks: u64 = 0,
@@ -144,7 +145,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             fn run(w: *Worker, root: sim.Snapshot, config: Config, budget: usize, deadline: i128) void {
                 w.used = 1;
                 w.stats = .{};
-                w.duel.restore(0, root);
+                w.duel.restoreAll(root);
                 const root_ca = if (config.boundary == .event)
                     w.duel.choicesTactical(true, 0, w.duel.getActionMaskA(0))
                 else
@@ -159,9 +160,12 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                     w.nodes[0].bandits[1].initPriors(root_cb.len, computePriors(b, false, &w.duel, 0, root_cb));
                 }
                 const random = w.rng.random();
-                while (w.stats.rollouts < budget and (deadline == 0 or std.time.nanoTimestamp() < deadline)) {
+                var batch_idx: usize = 0;
+                while (w.stats.rollouts < budget and (deadline == 0 or std.time.nanoTimestamp() < deadline)) : (batch_idx += 1) {
                     if (config.stop_file) |path| {
-                        if (std.fs.cwd().access(path, .{})) |_| break else |_| {}
+                        if ((batch_idx & 31) == 0) {
+                            if (std.fs.cwd().access(path, .{})) |_| break else |_| {}
+                        }
                     }
                     const count = @min(16, budget - w.stats.rollouts);
                     var current: [16]u32 = @splat(0);
@@ -171,9 +175,9 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                     var leaf_ticks: [16]u32 = @splat(0);
                     var leaf_evaluated: [16]bool = @splat(false);
                     var leaf_values: [16]f32 = @splat(0);
-                    for (0..16) |i| {
-                        w.duel.restore(i, root);
-                        if (i >= count) w.duel.arena.combat().is_active[i] = 0;
+                    if (batch_idx > 0) w.duel.restoreAll(root);
+                    if (count < 16) {
+                        for (count..16) |i| w.duel.arena.combat().is_active[i] = 0;
                     }
                     while (true) {
                         const state = w.duel.arena.combat();
@@ -192,18 +196,18 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                             for (0..count) |i| {
                                 if (state.is_active[i] == 0 or (!ra[i] and !rb[i])) continue;
                                 if (leaf[i]) {
-                                    aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
-                                    bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
+                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
+                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
                                     continue;
                                 }
-                                const ca = if (config.boundary == .event) w.duel.choicesTactical(true, i, masks_a) else w.duel.choices(true, i, masks_a);
-                                const cb = if (config.boundary == .event) w.duel.choicesTactical(false, i, masks_b) else w.duel.choices(false, i, masks_b);
-                                if (!leaf[i] and lens[i] > 0) {
+                                if (lens[i] > 0) {
                                     const parent = current[i];
                                     var child = w.nodes[parent].first;
                                     while (child != none and w.nodes[child].joint != pending[i]) child = w.nodes[child].next;
                                     if (child == none) {
                                         if (w.used < w.nodes.len) {
+                                            const ca = if (config.boundary == .event) w.duel.choicesTactical(true, i, masks_a) else w.duel.choices(true, i, masks_a);
+                                            const cb = if (config.boundary == .event) w.duel.choicesTactical(false, i, masks_b) else w.duel.choices(false, i, masks_b);
                                             child = w.used;
                                             w.used += 1;
                                             var new_node: Node = .{ .choices = .{ ca, cb }, .joint = pending[i], .next = w.nodes[parent].first };
@@ -223,13 +227,20 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                                 }
                                 if (!leaf[i] and lens[i] < config.depth) {
                                     const node = &w.nodes[current[i]];
+                                    const ca = &node.choices[0];
+                                    const cb = &node.choices[1];
                                     const pa = node.bandits[0].distribution(ca.len, config.algorithm, config.c_puct);
                                     const pb = node.bandits[1].distribution(cb.len, config.algorithm, config.c_puct);
                                     const ia = sample(pa, ca.len, random);
                                     const ib = sample(pb, cb.len, random);
-                                    // Reserve visits until this batch completes so UCT / PUCT does not
-                                    // select the same unvisited action in all sixteen lanes.
-                                    if (config.algorithm == .uct or config.algorithm == .puct) {
+                                    if (config.algorithm == .exp3) {
+                                        for (0..ca.len) |k| node.bandits[0].strategy[k] += pa[k];
+                                        for (0..cb.len) |k| node.bandits[1].strategy[k] += pb[k];
+                                    } else {
+                                        node.bandits[0].strategy[ia] += 1.0;
+                                        node.bandits[1].strategy[ib] += 1.0;
+                                        // Reserve visits until this batch completes so UCT / PUCT does not
+                                        // select the same unvisited action in all sixteen lanes.
                                         node.bandits[0].visits[ia] += 1;
                                         node.bandits[0].total += 1;
                                         node.bandits[1].visits[ib] += 1;
@@ -237,16 +248,16 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                                     }
                                     aa[i] = ca.items[ia];
                                     bb[i] = cb.items[ib];
-                                    w.paths[i * config.depth + lens[i]] = .{ .node = current[i], .actions = .{ ia, ib }, .probabilities = .{ pa, pb } };
+                                    w.paths[i * config.depth + lens[i]] = .{ .node = current[i], .actions = .{ ia, ib }, .probabilities = .{ pa[ia], pb[ib] } };
                                     lens[i] += 1;
                                     pending[i] = @intCast(ia * MaxChoices + ib);
                                 } else {
                                     if (!leaf[i]) leaf[i] = true;
-                                    aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
-                                    bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
+                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
+                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
                                 }
                             }
-                            if (config.boundary == .event) w.duel.applyMasked(aa, bb, ra, rb) else w.duel.apply(aa, bb);
+                            w.duel.applyPreMasked(aa, bb, ra, rb, masks_a, masks_b);
                         }
                         w.duel.tick(config.max_ticks);
                         w.stats.ticks += alive;
@@ -272,7 +283,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                                     node.bandits[s].visits[v.actions[s]] -= 1;
                                     node.bandits[s].total -= 1;
                                 }
-                                node.bandits[s].update(node.choices[s].len, v.actions[s], v.probabilities[s][v.actions[s]], if (s == 0) reward else -reward, v.probabilities[s]);
+                                node.bandits[s].update(node.choices[s].len, v.actions[s], v.probabilities[s], if (s == 0) reward else -reward, config.algorithm);
                             }
                         }
                         w.stats.depth = @max(w.stats.depth, @as(u32, @intCast(lens[i])));
@@ -648,8 +659,12 @@ test "Exp3 mixes rock paper scissors and resists a pure best response" {
         const i = sample(p, 3, random);
         const j = sample(q, 3, random);
         const r: f32 = if (i == j) 0 else if ((@as(u32, i) + 1) % 3 == j) -1 else 1;
-        x.update(3, i, p[i], r, p);
-        y.update(3, j, q[j], -r, q);
+        for (0..3) |k| {
+            x.strategy[k] += p[k];
+            y.strategy[k] += q[k];
+        }
+        x.update(3, i, p[i], r, .exp3);
+        y.update(3, j, q[j], -r, .exp3);
     }
     for (0..3) |i| {
         try std.testing.expect(@abs(x.strategy[i] / 100000 - 1.0 / 3.0) < 0.06);

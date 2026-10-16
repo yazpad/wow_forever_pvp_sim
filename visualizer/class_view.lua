@@ -156,6 +156,17 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
             iconsMgr.drawAuraBadge("corruption", debX, row5Y, 20, f[19 + offset], 14.0, { 0.95, 0.5, 0.2, 1 })
             debX = debX + 24
         end
+        if (f[93 + offset] or 0) > 0 then
+            iconsMgr.drawAuraBadge("siphonlife", debX, row5Y, 20, f[93 + offset], 30.0, { 0.3, 0.9, 0.65, 1 })
+            debX = debX + 24
+        end
+        if (f[95 + offset] or 0) > 0 then
+            iconsMgr.drawAuraBadge("immolate", debX, row5Y, 20, f[95 + offset], 15.0, { 1.0, 0.35, 0.1, 1 })
+            debX = debX + 24
+        end
+    end
+    if (f[47 + offset] or 0) > 0 then
+        iconsMgr.drawAuraBadge("counterspell", debX, row5Y, 20, f[47 + offset], 4.0, { 1.0, 0.2, 0.2, 1 })
     end
 end
 return view

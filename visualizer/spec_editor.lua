@@ -87,7 +87,7 @@ local function selectedActionPet()
     if currentClass ~= "warlock" then return "none" end
     local sacrificeRank = talents_data.getRank(currentBuild and currentBuild.Demonology, "105900")
     local pactRank = talents_data.getRank(currentBuild and currentBuild.Demonology, "105890")
-    if sacrificeRank > 0 and (pactRank == 0 or warlockPet == sacrificePet) then return "none" end
+    if sacrificeRank > 0 and sacrificePet ~= "none" and (pactRank == 0 or warlockPet == sacrificePet) then return "none" end
     return warlockPet
 end
 
@@ -242,14 +242,8 @@ function spec_editor.loadSpec(specObj)
     currentBuild = talents_data.cloneBuild(specObj.trees)
     actionLoadout = cloneActionLoadout(specObj.action_loadout, currentClass, currentBuild)
     actionSlots = cloneActionSlots(specObj.action_slots, currentClass, currentBuild, specObj.action_loadout)
-    local hasSacrifice = talents_data.getRank(currentBuild.Demonology, "105900") > 0
-    if hasSacrifice then
-        sacrificePet = specObj.sacrifice_pet or specObj.pet or "imp"
-        warlockPet = specObj.sacrifice_pet and (specObj.pet or "none") or "none"
-    else
-        sacrificePet = specObj.sacrifice_pet or "imp"
-        warlockPet = specObj.pet or "imp"
-    end
+    sacrificePet = specObj.sacrifice_pet or "none"
+    warlockPet = specObj.pet or "imp"
     specName = specObj.name or "Custom Build"
     specDesc = specObj.description or ""
     noticeText = "Loaded spec: " .. specName
@@ -281,7 +275,7 @@ function spec_editor.getCurrentSpecConfig()
         trees = talents_data.cloneBuild(currentBuild),
         action_loadout = actionsFromSlots(cloneActionSlots(actionSlots, currentClass, currentBuild)),
         action_slots = cloneActionSlots(actionSlots, currentClass, currentBuild),
-        pet = currentClass == "warlock" and (sacrificeRank > 0 and pactRank == 0 and "none" or (sacrificeRank > 0 and warlockPet == sacrificePet and "none" or warlockPet)) or "none",
+        pet = currentClass == "warlock" and (sacrificeRank > 0 and sacrificePet ~= "none" and pactRank == 0 and "none" or (sacrificeRank > 0 and sacrificePet ~= "none" and warlockPet == sacrificePet and "none" or warlockPet)) or "none",
         sacrifice_pet = currentClass == "warlock" and sacrificeRank > 0 and sacrificePet or "none",
     }
 end
@@ -1021,15 +1015,15 @@ function spec_editor.draw(trainingController)
             end
         end
         if sacrificeRank > 0 then
-            if pactRank > 0 then
-                drawPetRow("Demonic Sacrifice:", sacrificePet, panelY + 78, function(pet)
-                    sacrificePet = pet
-                    if warlockPet == pet then warlockPet = "none" end
-                end)
-                drawPetRow("Active demon:", warlockPet == sacrificePet and "none" or warlockPet, panelY + 108, function(pet) warlockPet = pet end, sacrificePet)
-            else
-                drawPetRow("Demonic Sacrifice:", sacrificePet, panelY + 92, function(pet) sacrificePet = pet end)
-            end
+            drawPetRow("Demonic Sacrifice:", sacrificePet, panelY + 78, function(pet)
+                sacrificePet = pet
+                if pactRank > 0 and pet ~= "none" and warlockPet == pet then
+                    warlockPet = "none"
+                end
+            end)
+            drawPetRow("Active demon:", warlockPet, panelY + 108, function(pet)
+                warlockPet = pet
+            end, (pactRank > 0 and sacrificePet ~= "none") and sacrificePet or nil)
         else
             drawPetRow("Active demon:", warlockPet, panelY + 92, function(pet) warlockPet = pet end)
         end

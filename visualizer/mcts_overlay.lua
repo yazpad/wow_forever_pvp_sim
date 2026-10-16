@@ -121,11 +121,14 @@ function mcts_overlay.draw(currentTime, meta)
     local rollouts = stats.rollouts or 0
     local depth = stats.depth or 0
     local nodes = stats.nodes or 0
-    local decTimeMs = (dec.seconds or 0) * 1000.0
+    local decSecs = dec.seconds or 0
+    local decTimeMs = decSecs * 1000.0
+    local rps = decSecs > 0.0001 and (rollouts / decSecs) or 0
+    local rpsStr = rps >= 1000 and string.format("%.1fk/s", rps / 1000.0) or string.format("%d/s", math.floor(rps))
 
     g.setColor(0.65, 0.75, 0.85, 1.0)
-    g.print(string.format("Tick: %d (%.2fs) | Depth: %d | Time: %.1fms", dec.tick or 0, (dec.tick or 0)*0.01, depth, decTimeMs), panelX + 12, panelY + 28)
-    g.print(string.format("Rollouts: %d | Nodes: %d", rollouts, nodes), panelX + 12, panelY + 44)
+    g.print(string.format("Tick: %d (%.2fs) | Depth: %d | %.1fms", dec.tick or 0, (dec.tick or 0)*0.01, depth, decTimeMs), panelX + 12, panelY + 28)
+    g.print(string.format("Rollouts: %d (%s) | Nodes: %d", rollouts, rpsStr, nodes), panelX + 12, panelY + 44)
 
     -- Separator
     g.setColor(0.15, 0.22, 0.32, 0.8)
@@ -168,34 +171,40 @@ function mcts_overlay.draw(currentTime, meta)
 
         local rowY = panelY + 86
         local maxRows = 5
+        local committed = dec.actions and dec.actions[side]
         for idx = 1, math.min(#candidates, maxRows) do
             local cand = candidates[idx]
             local act = cand.action
             local prob = cand.prob
+            local isChosen = committed and committed.ability == act.ability and math.abs((committed.movement or 0) - (act.movement or 0)) < 0.1
 
             local spellName = class_view.name(meta, side - 1, act.ability)
-            local moveStr = ""
+            local moveStr = " ·"
             if act.movement and act.movement < -0.5 then
-                moveStr = "<"
+                moveStr = " ▲"
             elseif act.movement and act.movement > 0.5 then
-                moveStr = ">"
+                moveStr = " ▼"
             end
 
             -- Probability bar
-            local barW = colW - 40
+            local barW = colW - 38
             local barH = 16
-            g.setColor(0.12, 0.16, 0.24, 0.9)
+            g.setColor(0.10, 0.14, 0.22, 0.92)
             g.rectangle("fill", colX, rowY, barW, barH, 2)
 
-            g.setColor(colHeader[1] * 0.7, colHeader[2] * 0.7, colHeader[3] * 0.7, 0.85)
+            g.setColor(colHeader[1] * (isChosen and 0.85 or 0.62), colHeader[2] * (isChosen and 0.85 or 0.62), colHeader[3] * (isChosen and 0.85 or 0.62), 0.90)
             g.rectangle("fill", colX, rowY, barW * math.min(1.0, prob), barH, 2)
+            if isChosen then
+                g.setColor(0.98, 0.82, 0.30, 0.90)
+                g.rectangle("line", colX, rowY, barW, barH, 2)
+            end
 
             g.setColor(1, 1, 1, 1)
-            local label = string.format("%s%s", spellName:sub(1, 10), moveStr)
+            local label = string.format("%s%s", spellName:sub(1, 9), moveStr)
             g.print(label, colX + 3, rowY + 1)
 
             -- Percentage
-            g.setColor(0.9, 0.95, 1.0, 1.0)
+            g.setColor(isChosen and 1.0 or 0.88, isChosen and 0.88 or 0.94, isChosen and 0.38 or 1.0, 1.0)
             g.printf(string.format("%d%%", math.floor(prob * 100 + 0.5)), colX + barW + 2, rowY + 1, 36, "left")
 
             rowY = rowY + 20
@@ -218,7 +227,7 @@ function mcts_overlay.draw(currentTime, meta)
         g.setColor(0.15, 0.22, 0.32, 0.8)
         g.line(panelX + 8, footY - 4, panelX + panelW - 8, footY - 4)
 
-        g.setColor(0.8, 0.85, 0.95, 1.0)
+        g.setColor(0.85, 0.90, 0.98, 1.0)
         local actAName = committedA and class_view.name(meta, 0, committedA.ability) or "None"
         local actBName = committedB and class_view.name(meta, 1, committedB.ability) or "None"
         g.print(string.format("Committed: A [%s] | B [%s]", actAName, actBName), panelX + 12, footY)
@@ -320,7 +329,7 @@ function mcts_overlay.drawTuningDrawer(screenW, screenH)
     curY = curY + 26
 
     -- 5. Evaluator
-    drawDrawerSelector("Evaluator:", { "heuristic", "rollout" }, cfg.evaluator, curY, function(v) cfg.evaluator = v end, function(v) return v == "heuristic" and "Heur" or "Rollout" end)
+    drawDrawerSelector("Evaluator:", { "rollout", "heuristic" }, cfg.evaluator, curY, function(v) cfg.evaluator = v end, function(v) return v == "heuristic" and "Heur" or "Rollout" end)
     curY = curY + 30
 
     -- Re-Simulate Button

@@ -41,6 +41,7 @@ fn resolveTicks(state: anytype, comptime side: bool, i: usize, ticks: V, interva
 // Channel pushback shortens the expiry, never advances tick phase. Only actual
 // time spent channeling can earn a tick; removed tail time produces no ticks.
 pub fn channel(state: anytype, comptime side: bool, i: usize, time_left: V, dt: f32, comptime duration: f32, comptime interval: f32, dps: V, hps: V, mask: B, profile: resolution.Profile) Tick {
+    if (!@reduce(.Or, mask)) return .{};
     const elapsed = @field(state, "channel_elapsed" ++ (if (side) "_a" else "_b"));
     const old: V = elapsed[i..][0..16].*;
     const next = @min(v(duration), @round((old + @min(v(dt), @max(v(0), time_left))) * v(100000)) / v(100000));

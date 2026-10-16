@@ -151,6 +151,20 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             };
             self.ticks[lane] = s.tick;
         }
+        pub fn restoreAll(self: *Self, s: Snapshot) void {
+            @setEvalBranchQuota(40000);
+            inline for (fields[3..], 0..) |f, j| {
+                if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_")) {
+                    const T = std.meta.Child(f.type);
+                    const val: T = @bitCast(s.words[snapshotIndex(j)]);
+                    @field(self.arena.combat(), f.name)[0..16].* = @as(@Vector(16, T), @splat(val));
+                }
+            }
+            if (@hasField(Arena, "extras")) inline for (0..10) |j| {
+                self.arena.extras[j * 16 ..][0..16].* = @as(@Vector(16, f32), @splat(s.extras[j]));
+            };
+            self.ticks = @splat(s.tick);
+        }
         pub fn ready(self: *Self, comptime side: bool) @Vector(16, bool) {
             const result = if (side) self.arena.needsDecisionA(0) else self.arena.needsDecisionB(0);
             return @select(bool, result, self.arena.combat().is_active[0..16].* != @as(@Vector(16, u32), @splat(0)), @as(@Vector(16, bool), @splat(false)));
@@ -220,25 +234,43 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             self.applyMasked(aa, bb, self.readyTactical(true), self.readyTactical(false));
         }
         pub fn applyMasked(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool)) void {
-            // A lane-specific split would still run both SIMD action kernels.
-            // Bypass staging only when an entire side of the batch is idle.
             const any_a = @reduce(.Or, ra);
             const any_b = @reduce(.Or, rb);
-            if (any_a and !any_b) return self.applyOneSided(true, aa, ra);
-            if (any_b and !any_a) return self.applyOneSided(false, bb, rb);
-            self.applyMaskedStagingBaseline(aa, bb, ra, rb);
+            if (any_a and !any_b) return self.applyOneSidedWithMask(true, aa, ra, self.getActionMaskA(0));
+            if (any_b and !any_a) return self.applyOneSidedWithMask(false, bb, rb, self.getActionMaskB(0));
+            self.applyMaskedImpl(aa, bb, ra, rb, self.getActionMaskA(0), self.getActionMaskB(0), true);
+        }
+        pub fn applyPreMasked(
+            self: *Self,
+            aa: [16]Action,
+            bb: [16]Action,
+            ra: @Vector(16, bool),
+            rb: @Vector(16, bool),
+            legal_a: [combat.WarlockAction.COUNT]@Vector(16, bool),
+            legal_b: [combat.WarlockAction.COUNT]@Vector(16, bool),
+        ) void {
+            const any_a = @reduce(.Or, ra);
+            const any_b = @reduce(.Or, rb);
+            if (any_a and !any_b) return self.applyOneSidedWithMask(true, aa, ra, legal_a);
+            if (any_b and !any_a) return self.applyOneSidedWithMask(false, bb, rb, legal_b);
+            self.applyMaskedImpl(aa, bb, ra, rb, legal_a, legal_b, true);
         }
         /// Suggestion 1 baseline, without the one-sided dispatch.
         pub fn applyMaskedStagingBaseline(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool)) void {
-            self.applyMaskedImpl(aa, bb, ra, rb, true);
+            self.applyMaskedImpl(aa, bb, ra, rb, self.getActionMaskA(0), self.getActionMaskB(0), true);
         }
         // Retain the full merge as a correctness oracle and timing baseline.
         pub fn applyMaskedReference(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool)) void {
-            self.applyMaskedImpl(aa, bb, ra, rb, false);
+            self.applyMaskedImpl(aa, bb, ra, rb, self.getActionMaskA(0), self.getActionMaskB(0), false);
         }
-        fn applyOneSided(self: *Self, comptime side_a: bool, requested: [16]Action, ready_mask: @Vector(16, bool)) void {
+        fn applyOneSidedWithMask(
+            self: *Self,
+            comptime side_a: bool,
+            requested: [16]Action,
+            ready_mask: @Vector(16, bool),
+            legal: [combat.WarlockAction.COUNT]@Vector(16, bool),
+        ) void {
             @setEvalBranchQuota(40000);
-            const legal = if (side_a) self.getActionMaskA(0) else self.getActionMaskB(0);
             var actions: @Vector(16, u32) = undefined;
             var movement: @Vector(16, f32) = undefined;
             for (0..16) |lane| {
@@ -283,12 +315,19 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 self.arena.extras[j * 16 ..][0..16].* = value;
             };
         }
-        fn applyMaskedImpl(self: *Self, aa: [16]Action, bb: [16]Action, ra: @Vector(16, bool), rb: @Vector(16, bool), comptime optimized: bool) void {
+        fn applyMaskedImpl(
+            self: *Self,
+            aa: [16]Action,
+            bb: [16]Action,
+            ra: @Vector(16, bool),
+            rb: @Vector(16, bool),
+            legal_a: [combat.WarlockAction.COUNT]@Vector(16, bool),
+            legal_b: [combat.WarlockAction.COUNT]@Vector(16, bool),
+            comptime optimized: bool,
+        ) void {
             @setEvalBranchQuota(40000);
             const cast_before_a = self.arena.combat().cast_id_a[0..16].*;
             const cast_before_b = self.arena.combat().cast_id_b[0..16].*;
-            const legal_a = self.getActionMaskA(0);
-            const legal_b = self.getActionMaskB(0);
             var va: @Vector(16, u32) = undefined;
             var vb: @Vector(16, u32) = undefined;
             var ma: @Vector(16, f32) = undefined;
