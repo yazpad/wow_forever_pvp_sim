@@ -18,10 +18,13 @@ SPEC_B="frost_mage"
 PRESET="standard"
 NO_GUI=false
 EXTRA_ARGS=()
+ROLLOUTS_OVERRIDE=""
+WORKERS_OVERRIDE=""
+EVALUATOR_OVERRIDE=""
 
 ROLLOUTS=4096
 WORKERS=8
-EVALUATOR="heuristic"
+EVALUATOR="rollout"
 ALGORITHM="puct"
 BOUNDARY="event"
 OUTPUT="matches/latest.lua"
@@ -47,15 +50,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --rollouts)
-            ROLLOUTS="$2"
+            ROLLOUTS_OVERRIDE="$2"
             shift 2
             ;;
         --workers)
-            WORKERS="$2"
+            WORKERS_OVERRIDE="$2"
             shift 2
             ;;
         --evaluator)
-            EVALUATOR="$2"
+            EVALUATOR_OVERRIDE="$2"
             shift 2
             ;;
         --algorithm)
@@ -71,9 +74,9 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Specs: warlock, frost_mage"
             echo "Presets:"
-            echo "  --fast      ~0.3s compute (1,024 rollouts, 4 workers, heuristic)"
-            echo "  --standard  ~1.0s compute (4,096 rollouts, 8 workers, heuristic) [DEFAULT]"
-            echo "  --deep      ~5.0s compute (16,384 rollouts, 16 workers, terminal rollout)"
+            echo "  --fast      1,024 rollouts, 4 workers, terminal rollout"
+            echo "  --standard  4,096 rollouts, 8 workers, terminal rollout [DEFAULT]"
+            echo "  --deep      16,384 rollouts, 16 workers, terminal rollout"
             echo ""
             echo "Flags:"
             echo "  --no-gui    Generate match replay without launching LÖVE visualizer"
@@ -105,12 +108,12 @@ case "$PRESET" in
     fast)
         ROLLOUTS=1024
         WORKERS=4
-        EVALUATOR="heuristic"
+        EVALUATOR="rollout"
         ;;
     standard)
         ROLLOUTS=4096
         WORKERS=8
-        EVALUATOR="heuristic"
+        EVALUATOR="rollout"
         ;;
     deep)
         ROLLOUTS=16384
@@ -118,6 +121,11 @@ case "$PRESET" in
         EVALUATOR="rollout"
         ;;
 esac
+
+# Explicit flags take precedence over presets, regardless of argument order.
+ROLLOUTS="${ROLLOUTS_OVERRIDE:-$ROLLOUTS}"
+WORKERS="${WORKERS_OVERRIDE:-$WORKERS}"
+EVALUATOR="${EVALUATOR_OVERRIDE:-$EVALUATOR}"
 
 # Ensure binaries are built
 if [[ ! -f "zig-out/bin/mcts_fight" ]]; then

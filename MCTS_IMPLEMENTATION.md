@@ -16,7 +16,9 @@ zig-out/bin/mcts_fight --spec-a warlock --spec-b frost_mage \
 The budget counts complete joint simulations, combined across workers; it is not
 multiplied by two players. The executable supports `--help`. Important options:
 
-- `--algorithm exp3|uct`: independent adversarial bandits at simultaneous nodes.
+- `--evaluator rollout|heuristic`: defaults to terminal win/loss/draw (`rollout`);
+  `heuristic` explicitly enables intermediate leaf scoring.
+- `--algorithm exp3|uct|puct` (default `puct`): independent adversarial bandits at simultaneous nodes.
 - `--rollouts N`: fixed per-boundary budget; `--ms N` adds a wall-clock deadline.
   To use primarily a time budget, set a large rollout ceiling too. The deadline
   is checked between batches; one batch of 16 terminal simulations may overrun it.

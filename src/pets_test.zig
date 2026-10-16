@@ -253,3 +253,49 @@ test "Aftermath scales Immolate projectile hits in mirrors and mixed matchups on
         }
     }
 }
+
+test "pet utility talents apply by lane and side in mirrors and mixed combat" {
+    inline for (.{ .{ .warlock, .warlock }, .{ .warlock, .frost_mage }, .{ .frost_mage, .warlock } }) |pair| {
+        inline for (.{ true, false }) |side| {
+            if ((if (side) pair[0] else pair[1]) != .warlock) continue;
+            const Arena = multi.ArenaPool(pair[0], pair[1]);
+            var arena = try Arena.init(std.testing.allocator, 16);
+            defer arena.deinit();
+            const state = arena.combat();
+            const owner = if (side) "_a" else "_b";
+            const target = if (side) "_b" else "_a";
+            @memset(state.distance, 15);
+            for (0..16) |lane| {
+                const ranks = @import("spec.zig").WarlockTalentRanks{ .improved_sayaad = @intCast(lane % 4), .improved_felhunter = @intCast(lane % 4) };
+                @field(state, "talent_ranks" ++ owner)[lane] = @truncate(ranks.encode());
+                @field(state, "talent_flags" ++ owner)[lane] = @truncate(ranks.encode() >> 32);
+                pets.set(state, side, lane, .succubus);
+                @field(state, "pet_timer" ++ owner)[lane] = 100;
+                @field(state, "seduction_cast" ++ owner)[lane] = 0.001;
+                @field(state, "seduction_dr_tier" ++ target)[lane] = @floatFromInt(lane / 4);
+                @field(state, "seduction_dr_timer" ++ target)[lane] = 15;
+            }
+            _ = arena.tickPhysics16(0.01, 0);
+            for (0..16) |lane| {
+                const dr: f32 = switch (lane / 4) {
+                    0 => 1,
+                    1 => 0.5,
+                    2 => 0.25,
+                    else => 0,
+                };
+                const expected = 15 * (1 + 0.1 * @as(f32, @floatFromInt(lane % 4))) * dr;
+                try std.testing.expectApproxEqAbs(expected, @field(state, "seduction_timer" ++ target)[lane], 0.001);
+                @field(state, "seduction_timer" ++ target)[lane] = 0;
+                pets.set(state, side, lane, .felhunter);
+                // Slot 4 is Shadow Bolt for Warlock and Frostbolt for Mage.
+                @field(state, "cast_id" ++ target)[lane] = 4;
+                @field(state, "cast_timer" ++ target)[lane] = 1;
+            }
+            if (side) arena.applyActionA(0, @splat(15), @splat(0)) else arena.applyActionB(0, @splat(15), @splat(0));
+            for (0..16) |lane| {
+                try std.testing.expectEqual(24 - 2 * @as(f32, @floatFromInt(lane % 4)), @field(state, "seduction_cd" ++ owner)[lane]);
+                try std.testing.expectEqual(@as(u32, 0), @field(state, "cast_id" ++ target)[lane]);
+            }
+        }
+    }
+}

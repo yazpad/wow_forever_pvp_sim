@@ -21,7 +21,7 @@ fn interruptedSchool(comptime caster: Spec, cast_id: u32) u32 {
 }
 const Options = struct {
     config: mcts.Config = .{
-        .evaluator = .heuristic,
+        .evaluator = .rollout,
         .algorithm = .puct,
         .boundary = .event,
     },
@@ -33,6 +33,8 @@ const Options = struct {
     name_b: ?[]const u8 = null,
     spec_id_a: ?[]const u8 = null,
     spec_id_b: ?[]const u8 = null,
+    combat_stats_a: @import("spell_resolution.zig").Stats = .{},
+    combat_stats_b: @import("spell_resolution.zig").Stats = .{},
     warlock_talents_a: WarlockTalentRanks = .{},
     warlock_talents_b: WarlockTalentRanks = .{},
     action_mask_a: u32 = std.math.maxInt(u32),
@@ -60,7 +62,7 @@ pub fn main() !void {
             continue;
         }
         if (std.mem.eql(u8, arg, "--help")) {
-            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH]\nAdversarial simultaneous MCTS search on both ends. Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages have no pet. MVP pets use basic attacks only and cannot be targeted.\n");
+            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages have no pet. MVP pets use basic attacks only and cannot be targeted.\n");
             return;
         }
         const value = args.next() orelse return error.MissingValue;
@@ -81,6 +83,7 @@ pub fn main() !void {
     if (o.spec_id_a) |id_a| {
         if (spec_mod.resolveSpec(std.heap.page_allocator, id_a)) |cfg_a| {
             o.a = cfg_a.class;
+            o.combat_stats_a = cfg_a.combat_stats;
             o.warlock_talents_a = cfg_a.warlock_talents;
             o.action_mask_a = cfg_a.action_mask;
             if (o.pet_a == null) o.pet_a = cfg_a.pet;
@@ -90,6 +93,7 @@ pub fn main() !void {
     if (o.spec_id_b) |id_b| {
         if (spec_mod.resolveSpec(std.heap.page_allocator, id_b)) |cfg_b| {
             o.b = cfg_b.class;
+            o.combat_stats_b = cfg_b.combat_stats;
             o.warlock_talents_b = cfg_b.warlock_talents;
             o.action_mask_b = cfg_b.action_mask;
             if (o.pet_b == null) o.pet_b = cfg_b.pet;
@@ -125,6 +129,12 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     state.distance[0] = o.distance;
     state.pos_x_a[0] = -o.distance * 0.5;
     state.pos_x_b[0] = o.distance * 0.5;
+    state.spell_rng_a[0] = @as(u32, @truncate(o.config.seed)) ^ 0x6d2b79f5;
+    state.spell_rng_b[0] = @as(u32, @truncate(o.config.seed >> 32)) ^ @as(u32, @truncate(o.config.seed)) ^ 0xa341316c;
+    state.pushback_rng_a[0] = state.spell_rng_a[0] ^ 0xc2b2ae35;
+    state.pushback_rng_b[0] = state.spell_rng_b[0] ^ 0x27d4eb2f;
+    state.pet_rng_a[0] = state.spell_rng_a[0] ^ 0x9e3779b9;
+    state.pet_rng_b[0] = state.spell_rng_b[0] ^ 0x85ebca6b;
     state.hp_a[0] = o.hp_a;
     state.hp_b[0] = o.hp_b;
     const active_pet_a = if (a == .warlock and o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact == 0) pets.Kind.none else o.pet_a.?;
@@ -133,6 +143,8 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     pets.set(state, false, 0, active_pet_b);
     d.setWarlockTalentRanksA(if (a == .warlock) o.warlock_talents_a.encode() else 0);
     d.setWarlockTalentRanksB(if (b == .warlock) o.warlock_talents_b.encode() else 0);
+    try d.setCombatStats(true, o.combat_stats_a);
+    try d.setCombatStats(false, o.combat_stats_b);
     d.setActionMaskA(o.action_mask_a);
     d.setActionMaskB(o.action_mask_b);
     var rng = std.Random.DefaultPrng.init(o.config.seed ^ 0xbadc0ffee);

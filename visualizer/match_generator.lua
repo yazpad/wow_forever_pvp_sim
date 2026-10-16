@@ -29,7 +29,7 @@ end
 refreshSavedSpecs()
 
 local rolloutsOptions = { 1024, 4096, 16384, 65536 }
-local workersOptions = { 1, 2, 4, 8, 16 }
+local workersOptions = { 1, 2, 4, 8, 16, 32 }
 local algorithms = { "puct", "uct", "exp3" }
 local evaluators = { "heuristic", "rollout" }
 local distances = { 10, 20, 25, 35 }
@@ -44,7 +44,7 @@ local config = {
     workers = 8,
     algorithm = "puct",
     c_puct = 1.414,
-    evaluator = "heuristic",
+    evaluator = "rollout",
     distance = 25,
     hp_a = 2000,
     hp_b = 2000,
@@ -194,9 +194,9 @@ function match_generator.drawModal(panelX, panelY, panelW, panelH)
         g.setColor(0.65, 0.75, 0.85, 1.0)
         g.print(label, panelX + 20, rowY + 3)
         local startX = panelX + 170
-        local btnW = 90
         local btnH = 24
         local gap = 8
+        local btnW = math.min(90, (panelW - 190 - math.max(0, #options - 1) * gap) / math.max(1, #options))
         for i, opt in ipairs(options) do
             local bx = startX + (i - 1) * (btnW + gap)
             local isSel = (opt == selectedVal)
@@ -276,8 +276,8 @@ function match_generator.drawModal(panelX, panelY, panelW, panelH)
     local presetW = 95
     local pY = curY
     local presets = {
-        { name = "Fast (1k)", rollouts = 1024, workers = 4, eval = "heuristic" },
-        { name = "Standard (4k)", rollouts = 4096, workers = 8, eval = "heuristic" },
+        { name = "Fast (1k)", rollouts = 1024, workers = 4, eval = "rollout" },
+        { name = "Standard (4k)", rollouts = 4096, workers = 8, eval = "rollout" },
         { name = "Deep (16k)", rollouts = 16384, workers = 16, eval = "rollout" },
     }
     g.setColor(0.65, 0.75, 0.85, 1.0)

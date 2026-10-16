@@ -5,9 +5,12 @@ const Spec = @import("spec.zig").Spec;
 const WarlockActionCount = @import("combat_spec.zig").WarlockAction.COUNT;
 const MaxChoices = @import("action_catalog_generated.zig").MaxChoices;
 pub const Algorithm = enum { exp3, uct, puct };
-pub const EvaluatorType = enum { rollout, heuristic };
+pub const EvaluatorType = enum { rollout, heuristic, learned };
+const learned = @import("learned_value.zig");
 pub const BoundaryMode = enum { tick, event };
 pub const Config = struct {
+    model: ?*const learned.Bundle = null,
+    learned_mix: f32 = 0.5,
     rollouts: usize = 1024,
     workers: usize = 1,
     nodes: usize = 4096,
@@ -19,7 +22,7 @@ pub const Config = struct {
     milliseconds: u64 = 0,
     algorithm: Algorithm = .puct,
     random_rollout: bool = false,
-    evaluator: EvaluatorType = .heuristic,
+    evaluator: EvaluatorType = .rollout,
     c_puct: f32 = 1.414,
     truncation_ticks: u32 = 30,
     boundary: BoundaryMode = .event,
@@ -212,9 +215,9 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                                             w.nodes[parent].first = child;
                                         }
                                         leaf[i] = true;
-                                        if (config.evaluator == .heuristic and config.truncation_ticks == 0) {
+                                        if (config.evaluator != .rollout and config.truncation_ticks == 0) {
                                             leaf_evaluated[i] = true;
-                                            leaf_values[i] = evaluateHeuristic(a, b, &w.duel, i);
+                                            leaf_values[i] = evaluateLeaf(a, b, &w.duel, i, config);
                                         }
                                     } else current[i] = child;
                                 }
@@ -250,11 +253,11 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                         w.stats.vector_ticks += 1;
 
                         for (0..count) |i| {
-                            if (leaf[i] and !leaf_evaluated[i] and config.evaluator == .heuristic) {
+                            if (leaf[i] and !leaf_evaluated[i] and config.evaluator != .rollout) {
                                 leaf_ticks[i] += 1;
                                 if (leaf_ticks[i] >= config.truncation_ticks or state.hp_a[i] <= 0 or state.hp_b[i] <= 0) {
                                     leaf_evaluated[i] = true;
-                                    leaf_values[i] = evaluateHeuristic(a, b, &w.duel, i);
+                                    leaf_values[i] = evaluateLeaf(a, b, &w.duel, i, config);
                                     state.is_active[i] = 0;
                                 }
                             }
@@ -284,6 +287,8 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
         workers: []Worker,
         pool: std.Thread.Pool,
         pub fn init(allocator: std.mem.Allocator, config: Config) !*Self {
+            if (config.evaluator == .learned and config.model == null) return error.MissingLearnedModel;
+            if (!std.math.isFinite(config.learned_mix) or config.learned_mix < 0 or config.learned_mix > 1) return error.InvalidLearnedMix;
             if (config.workers == 0 or config.depth == 0 or config.nodes == 0 or config.rollouts == 0 or config.max_ticks == 0) return error.InvalidSearchConfig;
             const node_bytes = try std.math.mul(usize, config.nodes, @sizeOf(Node));
             const path_bytes = try std.math.mul(usize, config.depth, 16 * @sizeOf(Visit));
@@ -443,6 +448,18 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     const dist = s.distance[lane];
     const mv: f32 = if (dist > 25.0) -1.0 else if (dist < 15.0) 1.0 else 0.0;
     return .{ .ability = id, .movement = mv };
+}
+
+pub fn evaluateLeaf(comptime a: Spec, comptime b: Spec, d: anytype, lane: usize, config: Config) f32 {
+    const heuristic = evaluateHeuristic(a, b, d, lane);
+    if (config.evaluator != .learned) return heuristic;
+    const state = d.arena.combat();
+    if (state.hp_a[lane] <= 0 or state.hp_b[lane] <= 0) return d.reward(lane);
+    if (d.ticks[lane] >= config.max_ticks) return 0;
+    const model = config.model.?;
+    const va = model.predict(a, learned.features(a, b, true, d, lane, config.max_ticks));
+    const vb = model.predict(b, learned.features(a, b, false, d, lane, config.max_ticks));
+    return (1 - config.learned_mix) * heuristic + config.learned_mix * (va - vb) * 0.5;
 }
 
 pub fn evaluateHeuristic(comptime spec_a: Spec, comptime spec_b: Spec, d: anytype, lane: usize) f32 {

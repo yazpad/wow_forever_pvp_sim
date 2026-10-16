@@ -212,8 +212,10 @@ pub const WarlockArenaPool = struct {
     move_intent_a: []align(ALIGNMENT) f32, // -1 (advance), 0 (stationary), +1 (kite)
 
     cast_id_a: []align(ALIGNMENT) u32, // 0 = none, 3 = Fear, 4 = ShadowBolt, 5 = DrainLife
+    cast_pushback_count_a: []align(ALIGNMENT) u32, // successful pushbacks, saturates at 4
     cast_timer_a: []align(ALIGNMENT) f32, // remaining seconds on active cast
     cast_total_a: []align(ALIGNMENT) f32, // total duration of cast
+    channel_elapsed_a: []align(ALIGNMENT) f32, // natural channel time; independent of shortened expiry
 
     // Debuffs on A (inflicted by B)
     agony_timer_a: []align(ALIGNMENT) f32,
@@ -236,6 +238,27 @@ pub const WarlockArenaPool = struct {
     shadow_flame_timer_a: []align(ALIGNMENT) f32,
     impact_conflagrate_a: []align(ALIGNMENT) f32,
     conflagrate_rng_a: []align(ALIGNMENT) u32,
+    spell_rng_a: []align(ALIGNMENT) u32,
+    pushback_rng_a: []align(ALIGNMENT) u32,
+    pet_rng_a: []align(ALIGNMENT) u32,
+    spell_outcome_a: []align(ALIGNMENT) u32,
+    pet_outcome_a: []align(ALIGNMENT) u32,
+    spell_hit_chance_a: []align(ALIGNMENT) f32,
+    level_a: []align(ALIGNMENT) f32,
+    spell_penetration_a: []align(ALIGNMENT) f32,
+    shadow_resistance_a: []align(ALIGNMENT) f32,
+    fire_resistance_a: []align(ALIGNMENT) f32,
+    frost_resistance_a: []align(ALIGNMENT) f32,
+    arcane_resistance_a: []align(ALIGNMENT) f32,
+    pet_hit_chance_a: []align(ALIGNMENT) f32,
+    pet_crit_chance_a: []align(ALIGNMENT) f32,
+    melee_avoidance_chance_a: []align(ALIGNMENT) f32,
+    armor_damage_reduction_a: []align(ALIGNMENT) f32,
+    spell_crit_chance_a: []align(ALIGNMENT) f32,
+    shadow_resist_chance_a: []align(ALIGNMENT) f32,
+    fire_resist_chance_a: []align(ALIGNMENT) f32,
+    frost_resist_chance_a: []align(ALIGNMENT) f32,
+    arcane_resist_chance_a: []align(ALIGNMENT) f32,
     seduction_cd_a: []align(ALIGNMENT) f32,
     shadow_lockout_a: []align(ALIGNMENT) f32,
     fire_lockout_a: []align(ALIGNMENT) f32,
@@ -259,8 +282,10 @@ pub const WarlockArenaPool = struct {
     move_intent_b: []align(ALIGNMENT) f32,
 
     cast_id_b: []align(ALIGNMENT) u32,
+    cast_pushback_count_b: []align(ALIGNMENT) u32,
     cast_timer_b: []align(ALIGNMENT) f32,
     cast_total_b: []align(ALIGNMENT) f32,
+    channel_elapsed_b: []align(ALIGNMENT) f32,
 
     // Debuffs on B (inflicted by A)
     agony_timer_b: []align(ALIGNMENT) f32,
@@ -283,6 +308,27 @@ pub const WarlockArenaPool = struct {
     shadow_flame_timer_b: []align(ALIGNMENT) f32,
     impact_conflagrate_b: []align(ALIGNMENT) f32,
     conflagrate_rng_b: []align(ALIGNMENT) u32,
+    spell_rng_b: []align(ALIGNMENT) u32,
+    pushback_rng_b: []align(ALIGNMENT) u32,
+    pet_rng_b: []align(ALIGNMENT) u32,
+    spell_outcome_b: []align(ALIGNMENT) u32,
+    pet_outcome_b: []align(ALIGNMENT) u32,
+    spell_hit_chance_b: []align(ALIGNMENT) f32,
+    level_b: []align(ALIGNMENT) f32,
+    spell_penetration_b: []align(ALIGNMENT) f32,
+    shadow_resistance_b: []align(ALIGNMENT) f32,
+    fire_resistance_b: []align(ALIGNMENT) f32,
+    frost_resistance_b: []align(ALIGNMENT) f32,
+    arcane_resistance_b: []align(ALIGNMENT) f32,
+    pet_hit_chance_b: []align(ALIGNMENT) f32,
+    pet_crit_chance_b: []align(ALIGNMENT) f32,
+    melee_avoidance_chance_b: []align(ALIGNMENT) f32,
+    armor_damage_reduction_b: []align(ALIGNMENT) f32,
+    spell_crit_chance_b: []align(ALIGNMENT) f32,
+    shadow_resist_chance_b: []align(ALIGNMENT) f32,
+    fire_resist_chance_b: []align(ALIGNMENT) f32,
+    frost_resist_chance_b: []align(ALIGNMENT) f32,
+    arcane_resist_chance_b: []align(ALIGNMENT) f32,
     seduction_cd_b: []align(ALIGNMENT) f32,
     shadow_lockout_b: []align(ALIGNMENT) f32,
     fire_lockout_b: []align(ALIGNMENT) f32,
@@ -495,6 +541,52 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(impact_conflagrate_a);
         const conflagrate_rng_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
         errdefer allocator.free(conflagrate_rng_a);
+        const spell_rng_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_rng_a);
+        const cast_pushback_count_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(cast_pushback_count_a);
+        const channel_elapsed_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(channel_elapsed_a);
+        const pushback_rng_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pushback_rng_a);
+        const pet_rng_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_rng_a);
+        const spell_outcome_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_outcome_a);
+        const pet_outcome_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_outcome_a);
+        const spell_hit_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_hit_chance_a);
+        const level_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(level_a);
+        const spell_penetration_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_penetration_a);
+        const shadow_resistance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(shadow_resistance_a);
+        const fire_resistance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(fire_resistance_a);
+        const frost_resistance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(frost_resistance_a);
+        const arcane_resistance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(arcane_resistance_a);
+        const pet_hit_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_hit_chance_a);
+        const pet_crit_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_crit_chance_a);
+        const melee_avoidance_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(melee_avoidance_chance_a);
+        const armor_damage_reduction_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(armor_damage_reduction_a);
+        const spell_crit_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_crit_chance_a);
+        const shadow_resist_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(shadow_resist_chance_a);
+        const fire_resist_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(fire_resist_chance_a);
+        const frost_resist_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(frost_resist_chance_a);
+        const arcane_resist_chance_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(arcane_resist_chance_a);
         const seduction_cd_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(seduction_cd_a);
         const shadow_lockout_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -576,6 +668,52 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(impact_conflagrate_b);
         const conflagrate_rng_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
         errdefer allocator.free(conflagrate_rng_b);
+        const spell_rng_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_rng_b);
+        const cast_pushback_count_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(cast_pushback_count_b);
+        const channel_elapsed_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(channel_elapsed_b);
+        const pushback_rng_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pushback_rng_b);
+        const pet_rng_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_rng_b);
+        const spell_outcome_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_outcome_b);
+        const pet_outcome_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_outcome_b);
+        const spell_hit_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_hit_chance_b);
+        const level_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(level_b);
+        const spell_penetration_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_penetration_b);
+        const shadow_resistance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(shadow_resistance_b);
+        const fire_resistance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(fire_resistance_b);
+        const frost_resistance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(frost_resistance_b);
+        const arcane_resistance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(arcane_resistance_b);
+        const pet_hit_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_hit_chance_b);
+        const pet_crit_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(pet_crit_chance_b);
+        const melee_avoidance_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(melee_avoidance_chance_b);
+        const armor_damage_reduction_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(armor_damage_reduction_b);
+        const spell_crit_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(spell_crit_chance_b);
+        const shadow_resist_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(shadow_resist_chance_b);
+        const fire_resist_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(fire_resist_chance_b);
+        const frost_resist_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(frost_resist_chance_b);
+        const arcane_resist_chance_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(arcane_resist_chance_b);
         const seduction_cd_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(seduction_cd_b);
         const shadow_lockout_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -666,8 +804,10 @@ pub const WarlockArenaPool = struct {
             .react_timer_a = react_a,
             .move_intent_a = move_a,
             .cast_id_a = cid_a,
+            .cast_pushback_count_a = cast_pushback_count_a,
             .cast_timer_a = ctmr_a,
             .cast_total_a = ctot_a,
+            .channel_elapsed_a = channel_elapsed_a,
             .agony_timer_a = ago_a,
             .immolate_timer_a = immolate_a,
             .corruption_timer_a = crp_a,
@@ -686,6 +826,27 @@ pub const WarlockArenaPool = struct {
             .shadow_flame_timer_a = shadow_flame_timer_a,
             .impact_conflagrate_a = impact_conflagrate_a,
             .conflagrate_rng_a = conflagrate_rng_a,
+            .spell_rng_a = spell_rng_a,
+            .pushback_rng_a = pushback_rng_a,
+            .pet_rng_a = pet_rng_a,
+            .spell_outcome_a = spell_outcome_a,
+            .pet_outcome_a = pet_outcome_a,
+            .spell_hit_chance_a = spell_hit_chance_a,
+            .level_a = level_a,
+            .spell_penetration_a = spell_penetration_a,
+            .shadow_resistance_a = shadow_resistance_a,
+            .fire_resistance_a = fire_resistance_a,
+            .frost_resistance_a = frost_resistance_a,
+            .arcane_resistance_a = arcane_resistance_a,
+            .pet_hit_chance_a = pet_hit_chance_a,
+            .pet_crit_chance_a = pet_crit_chance_a,
+            .melee_avoidance_chance_a = melee_avoidance_chance_a,
+            .armor_damage_reduction_a = armor_damage_reduction_a,
+            .spell_crit_chance_a = spell_crit_chance_a,
+            .shadow_resist_chance_a = shadow_resist_chance_a,
+            .fire_resist_chance_a = fire_resist_chance_a,
+            .frost_resist_chance_a = frost_resist_chance_a,
+            .arcane_resist_chance_a = arcane_resist_chance_a,
             .seduction_cd_a = seduction_cd_a,
             .shadow_lockout_a = shadow_lockout_a,
             .fire_lockout_a = fire_lockout_a,
@@ -705,8 +866,10 @@ pub const WarlockArenaPool = struct {
             .react_timer_b = react_b,
             .move_intent_b = move_b,
             .cast_id_b = cid_b,
+            .cast_pushback_count_b = cast_pushback_count_b,
             .cast_timer_b = ctmr_b,
             .cast_total_b = ctot_b,
+            .channel_elapsed_b = channel_elapsed_b,
             .agony_timer_b = ago_b,
             .immolate_timer_b = immolate_b,
             .corruption_timer_b = crp_b,
@@ -725,6 +888,27 @@ pub const WarlockArenaPool = struct {
             .shadow_flame_timer_b = shadow_flame_timer_b,
             .impact_conflagrate_b = impact_conflagrate_b,
             .conflagrate_rng_b = conflagrate_rng_b,
+            .spell_rng_b = spell_rng_b,
+            .pushback_rng_b = pushback_rng_b,
+            .pet_rng_b = pet_rng_b,
+            .spell_outcome_b = spell_outcome_b,
+            .pet_outcome_b = pet_outcome_b,
+            .spell_hit_chance_b = spell_hit_chance_b,
+            .level_b = level_b,
+            .spell_penetration_b = spell_penetration_b,
+            .shadow_resistance_b = shadow_resistance_b,
+            .fire_resistance_b = fire_resistance_b,
+            .frost_resistance_b = frost_resistance_b,
+            .arcane_resistance_b = arcane_resistance_b,
+            .pet_hit_chance_b = pet_hit_chance_b,
+            .pet_crit_chance_b = pet_crit_chance_b,
+            .melee_avoidance_chance_b = melee_avoidance_chance_b,
+            .armor_damage_reduction_b = armor_damage_reduction_b,
+            .spell_crit_chance_b = spell_crit_chance_b,
+            .shadow_resist_chance_b = shadow_resist_chance_b,
+            .fire_resist_chance_b = fire_resist_chance_b,
+            .frost_resist_chance_b = frost_resist_chance_b,
+            .arcane_resist_chance_b = arcane_resist_chance_b,
             .seduction_cd_b = seduction_cd_b,
             .shadow_lockout_b = shadow_lockout_b,
             .fire_lockout_b = fire_lockout_b,
@@ -839,8 +1023,10 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.react_timer_a);
         self.allocator.free(self.move_intent_a);
         self.allocator.free(self.cast_id_a);
+        self.allocator.free(self.cast_pushback_count_a);
         self.allocator.free(self.cast_timer_a);
         self.allocator.free(self.cast_total_a);
+        self.allocator.free(self.channel_elapsed_a);
         self.allocator.free(self.agony_timer_a);
         self.allocator.free(self.immolate_timer_a);
         self.allocator.free(self.corruption_timer_a);
@@ -859,6 +1045,27 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.shadow_flame_timer_a);
         self.allocator.free(self.impact_conflagrate_a);
         self.allocator.free(self.conflagrate_rng_a);
+        self.allocator.free(self.spell_rng_a);
+        self.allocator.free(self.pushback_rng_a);
+        self.allocator.free(self.pet_rng_a);
+        self.allocator.free(self.spell_outcome_a);
+        self.allocator.free(self.pet_outcome_a);
+        self.allocator.free(self.spell_hit_chance_a);
+        self.allocator.free(self.level_a);
+        self.allocator.free(self.spell_penetration_a);
+        self.allocator.free(self.shadow_resistance_a);
+        self.allocator.free(self.fire_resistance_a);
+        self.allocator.free(self.frost_resistance_a);
+        self.allocator.free(self.arcane_resistance_a);
+        self.allocator.free(self.pet_hit_chance_a);
+        self.allocator.free(self.pet_crit_chance_a);
+        self.allocator.free(self.melee_avoidance_chance_a);
+        self.allocator.free(self.armor_damage_reduction_a);
+        self.allocator.free(self.spell_crit_chance_a);
+        self.allocator.free(self.shadow_resist_chance_a);
+        self.allocator.free(self.fire_resist_chance_a);
+        self.allocator.free(self.frost_resist_chance_a);
+        self.allocator.free(self.arcane_resist_chance_a);
         self.allocator.free(self.seduction_cd_a);
         self.allocator.free(self.shadow_lockout_a);
         self.allocator.free(self.fire_lockout_a);
@@ -878,8 +1085,10 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.react_timer_b);
         self.allocator.free(self.move_intent_b);
         self.allocator.free(self.cast_id_b);
+        self.allocator.free(self.cast_pushback_count_b);
         self.allocator.free(self.cast_timer_b);
         self.allocator.free(self.cast_total_b);
+        self.allocator.free(self.channel_elapsed_b);
         self.allocator.free(self.agony_timer_b);
         self.allocator.free(self.immolate_timer_b);
         self.allocator.free(self.corruption_timer_b);
@@ -898,6 +1107,27 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.shadow_flame_timer_b);
         self.allocator.free(self.impact_conflagrate_b);
         self.allocator.free(self.conflagrate_rng_b);
+        self.allocator.free(self.spell_rng_b);
+        self.allocator.free(self.pushback_rng_b);
+        self.allocator.free(self.pet_rng_b);
+        self.allocator.free(self.spell_outcome_b);
+        self.allocator.free(self.pet_outcome_b);
+        self.allocator.free(self.spell_hit_chance_b);
+        self.allocator.free(self.level_b);
+        self.allocator.free(self.spell_penetration_b);
+        self.allocator.free(self.shadow_resistance_b);
+        self.allocator.free(self.fire_resistance_b);
+        self.allocator.free(self.frost_resistance_b);
+        self.allocator.free(self.arcane_resistance_b);
+        self.allocator.free(self.pet_hit_chance_b);
+        self.allocator.free(self.pet_crit_chance_b);
+        self.allocator.free(self.melee_avoidance_chance_b);
+        self.allocator.free(self.armor_damage_reduction_b);
+        self.allocator.free(self.spell_crit_chance_b);
+        self.allocator.free(self.shadow_resist_chance_b);
+        self.allocator.free(self.fire_resist_chance_b);
+        self.allocator.free(self.frost_resist_chance_b);
+        self.allocator.free(self.arcane_resist_chance_b);
         self.allocator.free(self.seduction_cd_b);
         self.allocator.free(self.shadow_lockout_b);
         self.allocator.free(self.fire_lockout_b);
@@ -987,8 +1217,10 @@ pub const WarlockArenaPool = struct {
         @memset(self.react_timer_a, 0.0);
         @memset(self.move_intent_a, 0.0);
         @memset(self.cast_id_a, 0);
+        @memset(self.cast_pushback_count_a, 0);
         @memset(self.cast_timer_a, 0.0);
         @memset(self.cast_total_a, 0.0);
+        @memset(self.channel_elapsed_a, 0.0);
         @memset(self.agony_timer_a, 0.0);
         @memset(self.immolate_timer_a, 0.0);
         @memset(self.corruption_timer_a, 0.0);
@@ -1007,6 +1239,27 @@ pub const WarlockArenaPool = struct {
         @memset(self.shadow_flame_timer_a, 0.0);
         @memset(self.impact_conflagrate_a, 0.0);
         @memset(self.conflagrate_rng_a, 0x12345678);
+        @memset(self.spell_rng_a, 0x6d2b79f5);
+        @memset(self.pushback_rng_a, 0x6d2b79f5);
+        @memset(self.pet_rng_a, 0x6d2b79f5);
+        @memset(self.spell_outcome_a, 0);
+        @memset(self.pet_outcome_a, 0);
+        @memset(self.spell_hit_chance_a, 1);
+        @memset(self.level_a, 60);
+        @memset(self.spell_penetration_a, 0);
+        @memset(self.shadow_resistance_a, 0);
+        @memset(self.fire_resistance_a, 0);
+        @memset(self.frost_resistance_a, 0);
+        @memset(self.arcane_resistance_a, 0);
+        @memset(self.pet_hit_chance_a, 1);
+        @memset(self.pet_crit_chance_a, 0);
+        @memset(self.melee_avoidance_chance_a, 0);
+        @memset(self.armor_damage_reduction_a, 0);
+        @memset(self.spell_crit_chance_a, 0);
+        @memset(self.shadow_resist_chance_a, 0);
+        @memset(self.fire_resist_chance_a, 0);
+        @memset(self.frost_resist_chance_a, 0);
+        @memset(self.arcane_resist_chance_a, 0);
         @memset(self.seduction_cd_a, 0.0);
         @memset(self.shadow_lockout_a, 0.0);
         @memset(self.fire_lockout_a, 0.0);
@@ -1026,8 +1279,10 @@ pub const WarlockArenaPool = struct {
         @memset(self.react_timer_b, 0.0);
         @memset(self.move_intent_b, 0.0);
         @memset(self.cast_id_b, 0);
+        @memset(self.cast_pushback_count_b, 0);
         @memset(self.cast_timer_b, 0.0);
         @memset(self.cast_total_b, 0.0);
+        @memset(self.channel_elapsed_b, 0.0);
         @memset(self.agony_timer_b, 0.0);
         @memset(self.immolate_timer_b, 0.0);
         @memset(self.corruption_timer_b, 0.0);
@@ -1046,6 +1301,27 @@ pub const WarlockArenaPool = struct {
         @memset(self.shadow_flame_timer_b, 0.0);
         @memset(self.impact_conflagrate_b, 0.0);
         @memset(self.conflagrate_rng_b, 0x12345678);
+        @memset(self.spell_rng_b, 0xa341316c);
+        @memset(self.pushback_rng_b, 0xa341316c);
+        @memset(self.pet_rng_b, 0xa341316c);
+        @memset(self.spell_outcome_b, 0);
+        @memset(self.pet_outcome_b, 0);
+        @memset(self.spell_hit_chance_b, 1);
+        @memset(self.level_b, 60);
+        @memset(self.spell_penetration_b, 0);
+        @memset(self.shadow_resistance_b, 0);
+        @memset(self.fire_resistance_b, 0);
+        @memset(self.frost_resistance_b, 0);
+        @memset(self.arcane_resistance_b, 0);
+        @memset(self.pet_hit_chance_b, 1);
+        @memset(self.pet_crit_chance_b, 0);
+        @memset(self.melee_avoidance_chance_b, 0);
+        @memset(self.armor_damage_reduction_b, 0);
+        @memset(self.spell_crit_chance_b, 0);
+        @memset(self.shadow_resist_chance_b, 0);
+        @memset(self.fire_resist_chance_b, 0);
+        @memset(self.frost_resist_chance_b, 0);
+        @memset(self.arcane_resist_chance_b, 0);
         @memset(self.seduction_cd_b, 0.0);
         @memset(self.shadow_lockout_b, 0.0);
         @memset(self.fire_lockout_b, 0.0);
@@ -1128,8 +1404,10 @@ pub const WarlockArenaPool = struct {
         self.react_timer_a[i] = 0.0;
         self.move_intent_a[i] = 0.0;
         self.cast_id_a[i] = 0;
+        self.cast_pushback_count_a[i] = 0;
         self.cast_timer_a[i] = 0.0;
         self.cast_total_a[i] = 0.0;
+        self.channel_elapsed_a[i] = 0.0;
         self.agony_timer_a[i] = 0.0;
         self.immolate_timer_a[i] = 0.0;
         self.corruption_timer_a[i] = 0.0;
@@ -1148,6 +1426,27 @@ pub const WarlockArenaPool = struct {
         self.shadow_flame_timer_a[i] = 0.0;
         self.impact_conflagrate_a[i] = 0.0;
         self.conflagrate_rng_a[i] = 0x12345678;
+        self.spell_rng_a[i] = 0x6d2b79f5;
+        self.pushback_rng_a[i] = 0x6d2b79f5;
+        self.pet_rng_a[i] = 0x6d2b79f5;
+        self.spell_outcome_a[i] = 0;
+        self.pet_outcome_a[i] = 0;
+        self.spell_hit_chance_a[i] = 1;
+        self.level_a[i] = 60;
+        self.spell_penetration_a[i] = 0;
+        self.shadow_resistance_a[i] = 0;
+        self.fire_resistance_a[i] = 0;
+        self.frost_resistance_a[i] = 0;
+        self.arcane_resistance_a[i] = 0;
+        self.pet_hit_chance_a[i] = 1;
+        self.pet_crit_chance_a[i] = 0;
+        self.melee_avoidance_chance_a[i] = 0;
+        self.armor_damage_reduction_a[i] = 0;
+        self.spell_crit_chance_a[i] = 0;
+        self.shadow_resist_chance_a[i] = 0;
+        self.fire_resist_chance_a[i] = 0;
+        self.frost_resist_chance_a[i] = 0;
+        self.arcane_resist_chance_a[i] = 0;
         self.seduction_cd_a[i] = 0.0;
         self.shadow_lockout_a[i] = 0.0;
         self.fire_lockout_a[i] = 0.0;
@@ -1167,8 +1466,10 @@ pub const WarlockArenaPool = struct {
         self.react_timer_b[i] = 0.0;
         self.move_intent_b[i] = 0.0;
         self.cast_id_b[i] = 0;
+        self.cast_pushback_count_b[i] = 0;
         self.cast_timer_b[i] = 0.0;
         self.cast_total_b[i] = 0.0;
+        self.channel_elapsed_b[i] = 0.0;
         self.agony_timer_b[i] = 0.0;
         self.immolate_timer_b[i] = 0.0;
         self.corruption_timer_b[i] = 0.0;
@@ -1187,6 +1488,27 @@ pub const WarlockArenaPool = struct {
         self.shadow_flame_timer_b[i] = 0.0;
         self.impact_conflagrate_b[i] = 0.0;
         self.conflagrate_rng_b[i] = 0x12345678;
+        self.spell_rng_b[i] = 0xa341316c;
+        self.pushback_rng_b[i] = 0xa341316c;
+        self.pet_rng_b[i] = 0xa341316c;
+        self.spell_outcome_b[i] = 0;
+        self.pet_outcome_b[i] = 0;
+        self.spell_hit_chance_b[i] = 1;
+        self.level_b[i] = 60;
+        self.spell_penetration_b[i] = 0;
+        self.shadow_resistance_b[i] = 0;
+        self.fire_resistance_b[i] = 0;
+        self.frost_resistance_b[i] = 0;
+        self.arcane_resistance_b[i] = 0;
+        self.pet_hit_chance_b[i] = 1;
+        self.pet_crit_chance_b[i] = 0;
+        self.melee_avoidance_chance_b[i] = 0;
+        self.armor_damage_reduction_b[i] = 0;
+        self.spell_crit_chance_b[i] = 0;
+        self.shadow_resist_chance_b[i] = 0;
+        self.fire_resist_chance_b[i] = 0;
+        self.frost_resist_chance_b[i] = 0;
+        self.arcane_resist_chance_b[i] = 0;
         self.seduction_cd_b[i] = 0.0;
         self.shadow_lockout_b[i] = 0.0;
         self.fire_lockout_b[i] = 0.0;
@@ -1633,6 +1955,8 @@ pub const WarlockArenaPool = struct {
 
         // Reset reaction timer upon choosing an action
         self.react_timer_a[i..][0..VEC_LEN].* = v_react_std;
+        const starts_cast = vOr16(vAnd16(actions >= @as(u32x16, @splat(3)), actions <= @as(u32x16, @splat(5))), vAnd16(actions >= @as(u32x16, @splat(10)), actions <= @as(u32x16, @splat(13))));
+        @import("pushback.zig").reset(self, true, i, starts_cast);
 
         // 1. Maneuver intent:
         const was_casting_a = cast_id > v_zeros_u32;
@@ -1647,13 +1971,13 @@ pub const WarlockArenaPool = struct {
 
         // Action 1: Agony (Instant while moving)
         const is_act1: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Agony)));
-        ago_b = select16(is_act1, @as(f32x16, @splat(WarlockConstants.AgonyDuration)), ago_b);
+        ago_b = select16(@import("periodic.zig").application(self, true, i, is_act1, effects_a.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.AgonyDuration)), ago_b);
         mana_a = select16(is_act1, mana_a - @as(f32x16, @splat(WarlockConstants.AgonyMana)), mana_a);
         gcd_a = select16(is_act1, v_gcd_std, gcd_a);
 
         // Action 2: Corruption (Instant while moving)
         const is_act2: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Corruption)));
-        crp_b = select16(is_act2, @as(f32x16, @splat(WarlockConstants.CorruptionDuration)), crp_b);
+        crp_b = select16(@import("periodic.zig").application(self, true, i, is_act2, effects_a.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.CorruptionDuration)), crp_b);
         mana_a = select16(is_act2, mana_a - @as(f32x16, @splat(WarlockConstants.CorruptionMana)), mana_a);
         gcd_a = select16(is_act2, v_gcd_std, gcd_a);
 
@@ -1677,9 +2001,10 @@ pub const WarlockArenaPool = struct {
 
         // Action 5: Drain Life (3.0s Channel, stationary)
         const is_act5: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.DrainLife)));
-        cast_id = @select(u32, is_act5, @as(u32x16, @splat(5)), cast_id);
-        cast_tmr = select16(is_act5, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tmr);
-        cast_tot = select16(is_act5, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tot);
+        const drain_landed_a = @import("periodic.zig").application(self, true, i, is_act5, effects_a.spell_hit_bonus, .shadow);
+        cast_id = @select(u32, drain_landed_a, @as(u32x16, @splat(5)), cast_id);
+        cast_tmr = select16(drain_landed_a, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tmr);
+        cast_tot = select16(drain_landed_a, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tot);
         mana_a = select16(is_act5, mana_a - @as(f32x16, @splat(WarlockConstants.DrainLifeMana)), mana_a);
         gcd_a = select16(is_act5, v_gcd_std, gcd_a);
         move_a = select16(is_act5, v_zeros, move_a);
@@ -1695,11 +2020,11 @@ pub const WarlockArenaPool = struct {
         gcd_a = select16(is_act_dc, v_gcd_std, gcd_a);
         dc_cd_a = select16(is_act_dc, @as(f32x16, @splat(WarlockConstants.DeathCoilCooldown)), dc_cd_a);
 
-        @import("projectiles.zig").launch(self, true, i, 7, @as(f32x16, @splat(WarlockConstants.DeathCoilDamage)) * effects_a.shadow_damage, is_act_dc);
+        @import("projectiles.zig").launchClass(self, true, i, 7, @as(f32x16, @splat(WarlockConstants.DeathCoilDamage)) * effects_a.shadow_damage, is_act_dc, .warlock);
 
         // Action 8: Siphon Life (Instant DOT, castable while moving)
         const is_act_siph: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SiphonLife)));
-        siph_b = select16(is_act_siph, @as(f32x16, @splat(WarlockConstants.SiphonLifeDuration)), siph_b);
+        siph_b = select16(@import("periodic.zig").application(self, true, i, is_act_siph, effects_a.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.SiphonLifeDuration)), siph_b);
         mana_a = select16(is_act_siph, mana_a - @as(f32x16, @splat(WarlockConstants.SiphonLifeMana)), mana_a);
         gcd_a = select16(is_act_siph, v_gcd_std, gcd_a);
 
@@ -1708,7 +2033,7 @@ pub const WarlockArenaPool = struct {
         gcd_a = select16(is_act_shadowburn, v_gcd_std, gcd_a);
         sb_cd_a = select16(is_act_shadowburn, @as(f32x16, @splat(WarlockConstants.ShadowburnCooldown)), sb_cd_a);
         shards_a = select16(is_act_shadowburn, @max(v_zeros, shards_a - @as(f32x16, @splat(1.0)) + effects_a.shadowburn_shard_refund), shards_a);
-        @import("projectiles.zig").launch(self, true, i, 9, @as(f32x16, @splat(WarlockConstants.ShadowburnDamage)) * effects_a.shadow_damage, is_act_shadowburn);
+        @import("projectiles.zig").launchClass(self, true, i, 9, @as(f32x16, @splat(WarlockConstants.ShadowburnDamage)) * effects_a.shadow_damage, is_act_shadowburn, .warlock);
 
         const is_sp = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SearingPain)));
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
@@ -1761,8 +2086,8 @@ pub const WarlockArenaPool = struct {
         self.seduction_cast_a[i..][0..VEC_LEN].* = select16(seduce_a, @as(f32x16, @splat(WarlockConstants.SeductionCastTime)), self.seduction_cast_a[i..][0..VEC_LEN].*);
         self.seduction_cd_a[i..][0..VEC_LEN].* = select16(seduce_a, @as(f32x16, @splat(WarlockConstants.SeductionCooldown)), self.seduction_cd_a[i..][0..VEC_LEN].*);
         const spell_lock_a = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SpellLock)));
-        self.seduction_cd_a[i..][0..VEC_LEN].* = select16(spell_lock_a, @as(f32x16, @splat(WarlockConstants.SpellLockCooldown)), self.seduction_cd_a[i..][0..VEC_LEN].*);
-        const interrupted_b = vAnd16(spell_lock_a, self.cast_id_b[i..][0..VEC_LEN].* != v_zeros_u32);
+        self.seduction_cd_a[i..][0..VEC_LEN].* = select16(spell_lock_a, effects_a.spell_lock_cooldown, self.seduction_cd_a[i..][0..VEC_LEN].*);
+        const interrupted_b = @import("periodic.zig").control(self, true, i, vAnd16(spell_lock_a, self.cast_id_b[i..][0..VEC_LEN].* != v_zeros_u32), @as(f32x16, @splat(0)), .shadow, true);
         self.applySpellLock(false, i, interrupted_b);
         self.cast_id_b[i..][0..VEC_LEN].* = @select(u32, interrupted_b, v_zeros_u32, self.cast_id_b[i..][0..VEC_LEN].*);
         self.cast_timer_b[i..][0..VEC_LEN].* = select16(interrupted_b, v_zeros, self.cast_timer_b[i..][0..VEC_LEN].*);
@@ -1830,6 +2155,8 @@ pub const WarlockArenaPool = struct {
         const horror_dr_tmr_a = self.horror_dr_timer_a[i..][0..VEC_LEN].*;
 
         self.react_timer_b[i..][0..VEC_LEN].* = v_react_std;
+        const starts_cast = vOr16(vAnd16(actions >= @as(u32x16, @splat(3)), actions <= @as(u32x16, @splat(5))), vAnd16(actions >= @as(u32x16, @splat(10)), actions <= @as(u32x16, @splat(13))));
+        @import("pushback.zig").reset(self, false, i, starts_cast);
 
         const was_casting_b = cast_id > v_zeros_u32;
         const is_act_cancel: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.CancelCast)));
@@ -1843,13 +2170,13 @@ pub const WarlockArenaPool = struct {
 
         // Agony
         const is_act1: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Agony)));
-        ago_a = select16(is_act1, @as(f32x16, @splat(WarlockConstants.AgonyDuration)), ago_a);
+        ago_a = select16(@import("periodic.zig").application(self, false, i, is_act1, effects_b.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.AgonyDuration)), ago_a);
         mana_b = select16(is_act1, mana_b - @as(f32x16, @splat(WarlockConstants.AgonyMana)), mana_b);
         gcd_b = select16(is_act1, v_gcd_std, gcd_b);
 
         // Corruption
         const is_act2: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Corruption)));
-        crp_a = select16(is_act2, @as(f32x16, @splat(WarlockConstants.CorruptionDuration)), crp_a);
+        crp_a = select16(@import("periodic.zig").application(self, false, i, is_act2, effects_b.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.CorruptionDuration)), crp_a);
         mana_b = select16(is_act2, mana_b - @as(f32x16, @splat(WarlockConstants.CorruptionMana)), mana_b);
         gcd_b = select16(is_act2, v_gcd_std, gcd_b);
 
@@ -1873,9 +2200,10 @@ pub const WarlockArenaPool = struct {
 
         // Drain Life
         const is_act5: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.DrainLife)));
-        cast_id = @select(u32, is_act5, @as(u32x16, @splat(5)), cast_id);
-        cast_tmr = select16(is_act5, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tmr);
-        cast_tot = select16(is_act5, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tot);
+        const drain_landed_b = @import("periodic.zig").application(self, false, i, is_act5, effects_b.spell_hit_bonus, .shadow);
+        cast_id = @select(u32, drain_landed_b, @as(u32x16, @splat(5)), cast_id);
+        cast_tmr = select16(drain_landed_b, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tmr);
+        cast_tot = select16(drain_landed_b, @as(f32x16, @splat(WarlockConstants.DrainLifeDuration)), cast_tot);
         mana_b = select16(is_act5, mana_b - @as(f32x16, @splat(WarlockConstants.DrainLifeMana)), mana_b);
         gcd_b = select16(is_act5, v_gcd_std, gcd_b);
         move_b = select16(is_act5, v_zeros, move_b);
@@ -1891,11 +2219,11 @@ pub const WarlockArenaPool = struct {
         gcd_b = select16(is_act_dc, v_gcd_std, gcd_b);
         dc_cd_b = select16(is_act_dc, @as(f32x16, @splat(WarlockConstants.DeathCoilCooldown)), dc_cd_b);
 
-        @import("projectiles.zig").launch(self, false, i, 7, @as(f32x16, @splat(WarlockConstants.DeathCoilDamage)) * effects_b.shadow_damage, is_act_dc);
+        @import("projectiles.zig").launchClass(self, false, i, 7, @as(f32x16, @splat(WarlockConstants.DeathCoilDamage)) * effects_b.shadow_damage, is_act_dc, .warlock);
 
         // Siphon Life
         const is_act_siph: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SiphonLife)));
-        siph_a = select16(is_act_siph, @as(f32x16, @splat(WarlockConstants.SiphonLifeDuration)), siph_a);
+        siph_a = select16(@import("periodic.zig").application(self, false, i, is_act_siph, effects_b.spell_hit_bonus, .shadow), @as(f32x16, @splat(WarlockConstants.SiphonLifeDuration)), siph_a);
         mana_b = select16(is_act_siph, mana_b - @as(f32x16, @splat(WarlockConstants.SiphonLifeMana)), mana_b);
         gcd_b = select16(is_act_siph, v_gcd_std, gcd_b);
 
@@ -1904,7 +2232,7 @@ pub const WarlockArenaPool = struct {
         gcd_b = select16(is_act_shadowburn, v_gcd_std, gcd_b);
         sb_cd_b = select16(is_act_shadowburn, @as(f32x16, @splat(WarlockConstants.ShadowburnCooldown)), sb_cd_b);
         shards_b = select16(is_act_shadowburn, @max(v_zeros, shards_b - @as(f32x16, @splat(1.0)) + effects_b.shadowburn_shard_refund), shards_b);
-        @import("projectiles.zig").launch(self, false, i, 9, @as(f32x16, @splat(WarlockConstants.ShadowburnDamage)) * effects_b.shadow_damage, is_act_shadowburn);
+        @import("projectiles.zig").launchClass(self, false, i, 9, @as(f32x16, @splat(WarlockConstants.ShadowburnDamage)) * effects_b.shadow_damage, is_act_shadowburn, .warlock);
 
         const is_sp = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SearingPain)));
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
@@ -1957,8 +2285,8 @@ pub const WarlockArenaPool = struct {
         self.seduction_cast_b[i..][0..VEC_LEN].* = select16(seduce_b, @as(f32x16, @splat(WarlockConstants.SeductionCastTime)), self.seduction_cast_b[i..][0..VEC_LEN].*);
         self.seduction_cd_b[i..][0..VEC_LEN].* = select16(seduce_b, @as(f32x16, @splat(WarlockConstants.SeductionCooldown)), self.seduction_cd_b[i..][0..VEC_LEN].*);
         const spell_lock_b = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.SpellLock)));
-        self.seduction_cd_b[i..][0..VEC_LEN].* = select16(spell_lock_b, @as(f32x16, @splat(WarlockConstants.SpellLockCooldown)), self.seduction_cd_b[i..][0..VEC_LEN].*);
-        const interrupted_a = vAnd16(spell_lock_b, self.cast_id_a[i..][0..VEC_LEN].* != v_zeros_u32);
+        self.seduction_cd_b[i..][0..VEC_LEN].* = select16(spell_lock_b, effects_b.spell_lock_cooldown, self.seduction_cd_b[i..][0..VEC_LEN].*);
+        const interrupted_a = @import("periodic.zig").control(self, false, i, vAnd16(spell_lock_b, self.cast_id_a[i..][0..VEC_LEN].* != v_zeros_u32), @as(f32x16, @splat(0)), .shadow, true);
         self.applySpellLock(true, i, interrupted_a);
         self.cast_id_a[i..][0..VEC_LEN].* = @select(u32, interrupted_a, v_zeros_u32, self.cast_id_a[i..][0..VEC_LEN].*);
         self.cast_timer_a[i..][0..VEC_LEN].* = select16(interrupted_a, v_zeros, self.cast_timer_a[i..][0..VEC_LEN].*);
@@ -2135,8 +2463,7 @@ pub const WarlockArenaPool = struct {
             seduction_b = @max(v_zeros, seduction_b - v_dt);
             seduced_a = @select(u32, seduction_a > v_zeros, seduced_a, v_zeros_u32);
             seduced_b = @select(u32, seduction_b > v_zeros, seduced_b, v_zeros_u32);
-            immolate_a = @max(v_zeros, immolate_a - v_dt);
-            immolate_b = @max(v_zeros, immolate_b - v_dt);
+
             horror_a = @max(v_zeros, horror_a - v_dt);
             horror_b = @max(v_zeros, horror_b - v_dt);
 
@@ -2242,60 +2569,56 @@ pub const WarlockArenaPool = struct {
                 r_tmr_a = select16(coil_cancel_a, v_zeros, r_tmr_a);
             }
 
-            // 5. DOT Ticking:
-            const has_ago_a = ago_a > v_zeros;
-            ago_a = @max(v_zeros, ago_a - v_dt);
-            const dmg_ago_a = select16(has_ago_a, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * effects_b.agony_damage * mit_a, v_zeros);
+            // Direct impacts can delay a live cast before it completes this step.
+            const pet_a = @import("pets.zig").tick(self, true, i, dt, effects_a.imp_firebolt_damage) * effects_a.pet_damage;
+            const pet_b = @import("pets.zig").tick(self, false, i, dt, effects_b.imp_firebolt_damage) * effects_b.pet_damage;
+            @import("pushback.zig").apply(self, true, true, i, hits_b, pet_b, mit_a, v_zeros, effects_a, c_id_a, &c_tmr_a, c_tot_a);
+            @import("pushback.zig").apply(self, false, true, i, hits_a, pet_a, mit_b, v_zeros, effects_b, c_id_b, &c_tmr_b, c_tot_b);
 
-            const has_crp_a = crp_a > v_zeros;
-            crp_a = @max(v_zeros, crp_a - v_dt);
-            const dmg_crp_a = select16(has_crp_a, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_b.corruption_damage * mit_a, v_zeros);
-            const dmg_immolate_a = select16(immolate_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_b.periodic_damage * effects_b.fire_damage * mit_a, v_zeros);
-
-            const has_siph_a = siph_a > v_zeros;
-            siph_a = @max(v_zeros, siph_a - v_dt);
-            const dmg_siph_a = select16(has_siph_a, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps * dt)) * effects_b.siphon_life_damage * mit_a, v_zeros);
-            const heal_siph_b = select16(has_siph_a, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps * dt)) * effects_b.siphon_life_healing, v_zeros);
-            hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + heal_siph_b);
-
-            const has_ago_b = ago_b > v_zeros;
-            ago_b = @max(v_zeros, ago_b - v_dt);
-            const dmg_ago_b = select16(has_ago_b, @as(f32x16, @splat(WarlockConstants.AgonyDps * dt)) * effects_a.agony_damage * mit_b, v_zeros);
-
-            const has_crp_b = crp_b > v_zeros;
-            crp_b = @max(v_zeros, crp_b - v_dt);
-            const dmg_crp_b = select16(has_crp_b, @as(f32x16, @splat(WarlockConstants.CorruptionDps * dt)) * effects_a.corruption_damage * mit_b, v_zeros);
-            const dmg_immolate_b = select16(immolate_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ImmolateDps * dt)) * effects_a.periodic_damage * effects_a.fire_damage * mit_b, v_zeros);
-
-            const has_siph_b = siph_b > v_zeros;
-            siph_b = @max(v_zeros, siph_b - v_dt);
-            const dmg_siph_b = select16(has_siph_b, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps * dt)) * effects_a.siphon_life_damage * mit_b, v_zeros);
-            const heal_siph_a = select16(has_siph_b, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps * dt)) * effects_a.siphon_life_healing, v_zeros);
-            hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + heal_siph_a);
+            // 5. Discrete periodic ticks (first tick after one full interval).
+            const tick_ago_a = @import("periodic.zig").advance(self, false, i, &ago_a, dt, WarlockConstants.AgonyDuration, 2, @as(f32x16, @splat(WarlockConstants.AgonyDps)) * effects_b.agony_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_b));
+            const dmg_ago_a = tick_ago_a.damage * mit_a;
+            const tick_crp_a = @import("periodic.zig").advance(self, false, i, &crp_a, dt, WarlockConstants.CorruptionDuration, 2, @as(f32x16, @splat(WarlockConstants.CorruptionDps)) * effects_b.corruption_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_b));
+            const dmg_crp_a = tick_crp_a.damage * mit_a;
+            const tick_immolate_a = @import("periodic.zig").advance(self, false, i, &immolate_a, dt, WarlockConstants.ImmolateDuration, 3, @as(f32x16, @splat(WarlockConstants.ImmolateDps)) * effects_b.periodic_damage * effects_b.fire_damage, v_zeros, active_mask, .{ .school = .fire, .crit_multiplier = effects_b.destruction_crit_multiplier });
+            const dmg_immolate_a = tick_immolate_a.damage * mit_a;
+            const tick_siph_a = @import("periodic.zig").advance(self, false, i, &siph_a, dt, WarlockConstants.SiphonLifeDuration, 3, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) * effects_b.siphon_life_damage, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) * effects_b.siphon_life_healing, active_mask, @import("periodic.zig").shadowProfile(effects_b));
+            const dmg_siph_a = tick_siph_a.damage * mit_a;
+            hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + tick_siph_a.healing);
+            const tick_ago_b = @import("periodic.zig").advance(self, true, i, &ago_b, dt, WarlockConstants.AgonyDuration, 2, @as(f32x16, @splat(WarlockConstants.AgonyDps)) * effects_a.agony_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_a));
+            const dmg_ago_b = tick_ago_b.damage * mit_b;
+            const tick_crp_b = @import("periodic.zig").advance(self, true, i, &crp_b, dt, WarlockConstants.CorruptionDuration, 2, @as(f32x16, @splat(WarlockConstants.CorruptionDps)) * effects_a.corruption_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_a));
+            const dmg_crp_b = tick_crp_b.damage * mit_b;
+            const tick_immolate_b = @import("periodic.zig").advance(self, true, i, &immolate_b, dt, WarlockConstants.ImmolateDuration, 3, @as(f32x16, @splat(WarlockConstants.ImmolateDps)) * effects_a.periodic_damage * effects_a.fire_damage, v_zeros, active_mask, .{ .school = .fire, .crit_multiplier = effects_a.destruction_crit_multiplier });
+            const dmg_immolate_b = tick_immolate_b.damage * mit_b;
+            const tick_siph_b = @import("periodic.zig").advance(self, true, i, &siph_b, dt, WarlockConstants.SiphonLifeDuration, 3, @as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) * effects_a.siphon_life_damage, @as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) * effects_a.siphon_life_healing, active_mask, @import("periodic.zig").shadowProfile(effects_a));
+            const dmg_siph_b = tick_siph_b.damage * mit_b;
+            hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + tick_siph_b.healing);
 
             // 6. Cast Execution & Drain Life Channeling:
             // --- Unit A Cast Progress ---
             const a_casting = c_id_a > v_zeros_u32;
-            c_tmr_a = select16(a_casting, c_tmr_a - v_dt, v_zeros);
+            const drain_clock_a: f32x16 = c_tmr_a;
+            c_tmr_a = select16(a_casting, @import("periodic.zig").remaining(c_tmr_a, dt), v_zeros);
             const a_cast_finished = vAnd16(a_casting, c_tmr_a <= v_zeros);
 
             const a_drain_active = vAnd16(a_casting, c_id_a == @as(u32x16, @splat(5)));
-            const a_drain_dmg = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * effects_a.drain_life_damage * mit_b, v_zeros);
-            const a_drain_heal = select16(a_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)) * effects_a.drain_life_healing, v_zeros);
-            hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + a_drain_heal);
+            const drain_tick_a = @import("periodic.zig").channel(self, true, i, drain_clock_a, dt, WarlockConstants.DrainLifeDuration, 1, @as(f32x16, @splat(WarlockConstants.DrainLifeDps)) * effects_a.drain_life_damage, @as(f32x16, @splat(WarlockConstants.DrainLifeHps)) * effects_a.drain_life_healing, a_drain_active, @import("periodic.zig").shadowProfile(effects_a));
+            const a_drain_dmg = drain_tick_a.damage * mit_b;
+            hp_a = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_a + drain_tick_a.healing);
 
             const a_sb_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(4)));
-            @import("projectiles.zig").launch(self, true, i, 4, @as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) * effects_a.shadow_damage, a_sb_hit);
+            @import("projectiles.zig").launchClass(self, true, i, 4, @as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) * effects_a.shadow_damage, a_sb_hit, .warlock);
             const a_sp_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(11)));
-            @import("projectiles.zig").launch(self, true, i, 11, @as(f32x16, @splat(WarlockConstants.SearingPainDamage)) * effects_a.fire_damage, a_sp_hit);
+            @import("projectiles.zig").launchClass(self, true, i, 11, @as(f32x16, @splat(WarlockConstants.SearingPainDamage)) * effects_a.fire_damage, a_sp_hit, .warlock);
             const a_inc_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(12)));
             const a_inc_bonus = select16(immolate_b > v_zeros, @as(f32x16, @splat(1.25)), @as(f32x16, @splat(1.0)));
-            @import("projectiles.zig").launch(self, true, i, 12, @as(f32x16, @splat(WarlockConstants.IncinerateDamage)) * a_inc_bonus * effects_a.fire_damage, a_inc_hit);
+            @import("projectiles.zig").launchClass(self, true, i, 12, @as(f32x16, @splat(WarlockConstants.IncinerateDamage)) * a_inc_bonus * effects_a.fire_damage, a_inc_hit, .warlock);
             const a_immolate_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(13)));
-            @import("projectiles.zig").launch(self, true, i, 13, @as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) * effects_a.immolate_initial_damage, a_immolate_hit);
+            @import("projectiles.zig").launchClass(self, true, i, 13, @as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) * effects_a.immolate_initial_damage, a_immolate_hit, .warlock);
             const a_sb_dmg = (hits_a.bolt + hits_a.lance + hits_a.coil + hits_a.conflagrate) * mit_b;
 
-            const a_fear_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(3)));
+            const a_fear_hit = @import("periodic.zig").control(self, true, i, vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(3))), effects_a.spell_hit_bonus, .shadow, false);
             const a_fear_dr_mult = getDrMultiplier(fear_dr_t_b);
             const a_fear_dur = @as(f32x16, @splat(WarlockConstants.FearDuration)) * a_fear_dr_mult;
             fear_b = select16(a_fear_hit, a_fear_dur, fear_b);
@@ -2310,26 +2633,27 @@ pub const WarlockArenaPool = struct {
 
             // --- Unit B Cast Progress ---
             const b_casting = c_id_b > v_zeros_u32;
-            c_tmr_b = select16(b_casting, c_tmr_b - v_dt, v_zeros);
+            const drain_clock_b: f32x16 = c_tmr_b;
+            c_tmr_b = select16(b_casting, @import("periodic.zig").remaining(c_tmr_b, dt), v_zeros);
             const b_cast_finished = vAnd16(b_casting, c_tmr_b <= v_zeros);
 
             const b_drain_active = vAnd16(b_casting, c_id_b == @as(u32x16, @splat(5)));
-            const b_drain_dmg = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeDps * dt)) * effects_b.drain_life_damage * mit_a, v_zeros);
-            const b_drain_heal = select16(b_drain_active, @as(f32x16, @splat(WarlockConstants.DrainLifeHps * dt)) * effects_b.drain_life_healing, v_zeros);
-            hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + b_drain_heal);
+            const drain_tick_b = @import("periodic.zig").channel(self, false, i, drain_clock_b, dt, WarlockConstants.DrainLifeDuration, 1, @as(f32x16, @splat(WarlockConstants.DrainLifeDps)) * effects_b.drain_life_damage, @as(f32x16, @splat(WarlockConstants.DrainLifeHps)) * effects_b.drain_life_healing, b_drain_active, @import("periodic.zig").shadowProfile(effects_b));
+            const b_drain_dmg = drain_tick_b.damage * mit_a;
+            hp_b = @min(@as(f32x16, @splat(WarlockConstants.MaxHp)), hp_b + drain_tick_b.healing);
 
             const b_sb_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(4)));
-            @import("projectiles.zig").launch(self, false, i, 4, @as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) * effects_b.shadow_damage, b_sb_hit);
+            @import("projectiles.zig").launchClass(self, false, i, 4, @as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) * effects_b.shadow_damage, b_sb_hit, .warlock);
             const b_sp_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(11)));
-            @import("projectiles.zig").launch(self, false, i, 11, @as(f32x16, @splat(WarlockConstants.SearingPainDamage)) * effects_b.fire_damage, b_sp_hit);
+            @import("projectiles.zig").launchClass(self, false, i, 11, @as(f32x16, @splat(WarlockConstants.SearingPainDamage)) * effects_b.fire_damage, b_sp_hit, .warlock);
             const b_inc_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(12)));
             const b_inc_bonus = select16(immolate_a > v_zeros, @as(f32x16, @splat(1.25)), @as(f32x16, @splat(1.0)));
-            @import("projectiles.zig").launch(self, false, i, 12, @as(f32x16, @splat(WarlockConstants.IncinerateDamage)) * b_inc_bonus * effects_b.fire_damage, b_inc_hit);
+            @import("projectiles.zig").launchClass(self, false, i, 12, @as(f32x16, @splat(WarlockConstants.IncinerateDamage)) * b_inc_bonus * effects_b.fire_damage, b_inc_hit, .warlock);
             const b_immolate_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(13)));
-            @import("projectiles.zig").launch(self, false, i, 13, @as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) * effects_b.immolate_initial_damage, b_immolate_hit);
+            @import("projectiles.zig").launchClass(self, false, i, 13, @as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) * effects_b.immolate_initial_damage, b_immolate_hit, .warlock);
             const b_sb_dmg = (hits_b.bolt + hits_b.lance + hits_b.coil + hits_b.conflagrate) * mit_a;
 
-            const b_fear_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(3)));
+            const b_fear_hit = @import("periodic.zig").control(self, false, i, vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(3))), effects_b.spell_hit_bonus, .shadow, false);
             const b_fear_dr_mult = getDrMultiplier(fear_dr_t_a);
             const b_fear_dur = @as(f32x16, @splat(WarlockConstants.FearDuration)) * b_fear_dr_mult;
             fear_a = select16(b_fear_hit, b_fear_dur, fear_a);
@@ -2343,10 +2667,10 @@ pub const WarlockArenaPool = struct {
             r_tmr_b = select16(b_cast_finished, v_zeros, r_tmr_b);
 
             const succubus_kind = @import("pets.zig").Kind.succubus;
-            const seduce_hit_a = vAnd16(seduction_cast_done_a, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.SeductionRange)), vAnd16(self.pet_kind_a[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(succubus_kind))), self.pet_hp_a[i..][0..VEC_LEN].* > v_zeros)));
-            const seduce_hit_b = vAnd16(seduction_cast_done_b, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.SeductionRange)), vAnd16(self.pet_kind_b[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(succubus_kind))), self.pet_hp_b[i..][0..VEC_LEN].* > v_zeros)));
-            const seduce_dur_a = @as(f32x16, @splat(WarlockConstants.SeductionDuration)) * getDrMultiplier(seduction_dr_t_b);
-            const seduce_dur_b = @as(f32x16, @splat(WarlockConstants.SeductionDuration)) * getDrMultiplier(seduction_dr_t_a);
+            const seduce_hit_a = @import("periodic.zig").control(self, true, i, vAnd16(seduction_cast_done_a, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.SeductionRange)), vAnd16(self.pet_kind_a[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(succubus_kind))), self.pet_hp_a[i..][0..VEC_LEN].* > v_zeros))), @as(f32x16, @splat(0)), .shadow, true);
+            const seduce_hit_b = @import("periodic.zig").control(self, false, i, vAnd16(seduction_cast_done_b, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.SeductionRange)), vAnd16(self.pet_kind_b[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(succubus_kind))), self.pet_hp_b[i..][0..VEC_LEN].* > v_zeros))), @as(f32x16, @splat(0)), .shadow, true);
+            const seduce_dur_a = @as(f32x16, @splat(WarlockConstants.SeductionDuration)) * effects_a.seduction_duration_mult * getDrMultiplier(seduction_dr_t_b);
+            const seduce_dur_b = @as(f32x16, @splat(WarlockConstants.SeductionDuration)) * effects_b.seduction_duration_mult * getDrMultiplier(seduction_dr_t_a);
             const seduce_applied_a = vAnd16(seduce_hit_a, seduce_dur_a > v_zeros);
             const seduce_applied_b = vAnd16(seduce_hit_b, seduce_dur_b > v_zeros);
             seduction_b = select16(seduce_applied_a, seduce_dur_a, seduction_b);
@@ -2363,9 +2687,6 @@ pub const WarlockArenaPool = struct {
             c_id_a = @select(u32, seduce_applied_b, v_zeros_u32, c_id_a);
             c_tmr_a = select16(seduce_applied_b, v_zeros, c_tmr_a);
             c_tot_a = select16(seduce_applied_b, v_zeros, c_tot_a);
-
-            const pet_a = @import("pets.zig").tick(self, true, i, dt, effects_a.imp_firebolt_damage) * effects_a.pet_damage;
-            const pet_b = @import("pets.zig").tick(self, false, i, dt, effects_b.imp_firebolt_damage) * effects_b.pet_damage;
 
             // 7. Apply Damage to HP
             const total_dmg_to_a = dmg_ago_a + dmg_crp_a + dmg_immolate_a + hits_b.immolate * mit_a + dmg_siph_a + b_drain_dmg + b_sb_dmg + pet_b * mit_a;
@@ -2405,6 +2726,9 @@ pub const WarlockArenaPool = struct {
 
             fear_dmg_b = fear_dmg_b + total_dmg_to_b;
             fear_b = select16(fear_dmg_b >= @as(f32x16, @splat(WarlockConstants.FearBreakDmgThreshold)), v_zeros, fear_b);
+
+            @import("pushback.zig").reset(self, true, i, c_id_a == v_zeros_u32);
+            @import("pushback.zig").reset(self, false, i, c_id_b == v_zeros_u32);
 
             // 8. Duel Liveness & Writeback
             const duel_alive = vAnd16(hp_a > v_zeros, hp_b > v_zeros);
@@ -2512,7 +2836,7 @@ test "projectile speed delays damage according to distance" {
         @memset(pool.distance, distance);
         @memset(pool.pos_x_a, -distance * 0.5);
         @memset(pool.pos_x_b, distance * 0.5);
-        @import("projectiles.zig").launch(&pool, true, 0, 4, @splat(240), @splat(true));
+        @import("projectiles.zig").launchClass(&pool, true, 0, 4, @splat(240), @splat(true), .warlock);
         _ = pool.tickPhysics16(0.3, 0);
         try std.testing.expectEqual(@as(f32, 2000), pool.hp_b[0]);
         try std.testing.expectApproxEqAbs(-distance * 0.5 + 9, pool.projectile_0_x_a[0], 0.0001);
@@ -2526,7 +2850,7 @@ test "projectile speed delays damage according to distance" {
 test "missiles home in 2D and retain constant speed after target displacement" {
     var pool = try WarlockArenaPool.init(std.testing.allocator, 32);
     defer pool.deinit();
-    @import("projectiles.zig").launch(&pool, true, 0, 4, @splat(240), @splat(true));
+    @import("projectiles.zig").launchClass(&pool, true, 0, 4, @splat(240), @splat(true), .warlock);
     _ = pool.tickPhysics16(0.1, 0);
     pool.pos_y_b[0] = 10;
     _ = @import("movement_2d.zig").refresh(&pool, 0, true);
@@ -2576,7 +2900,7 @@ test "healthstone is unavailable at full health and heals up to 1200" {
 test "fixed projectile queue masks launches when full and frees slots on impact" {
     var pool = try WarlockArenaPool.init(std.testing.allocator, 16);
     defer pool.deinit();
-    for (0..4) |_| @import("projectiles.zig").launch(&pool, true, 0, 4, @splat(240), @splat(true));
+    for (0..4) |_| @import("projectiles.zig").launchClass(&pool, true, 0, 4, @splat(240), @splat(true), .warlock);
     try std.testing.expectEqual(@as(f32, 4), pool.projectile_count_a[0]);
     try std.testing.expect(!pool.getActionMaskA(0)[4][0]);
     try std.testing.expect(!pool.getActionMaskA(0)[7][0]);

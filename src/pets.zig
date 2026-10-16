@@ -72,7 +72,10 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
     next = @select(f32, hit, v(AttackInterval), next);
     timer.* = @select(f32, live, next, timer.*);
     const damage = @select(f32, imp, v(60), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.succubus))), v(50), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.felhunter))), v(40), v(30))));
-    return @select(f32, hit, @select(f32, imp, imp_firebolt_damage, damage), v(0));
+    const resolution = @import("spell_resolution.zig");
+    const fire = resolution.resolve(state, side, i, imp_firebolt_damage, simd.vAnd16(hit, imp), .{ .school = .fire, .pet = true });
+    const melee = resolution.petMelee(state, side, i, damage, simd.vAnd16(hit, simd.vNot16(imp)));
+    return fire.damage + melee;
 }
 // Same proportional shield/overkill accounting used by player missiles.
 pub fn recordDamage(state: anytype, comptime side: bool, i: usize, mitigated: V, incoming: V, applied: V) void {

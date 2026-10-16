@@ -28,6 +28,26 @@ local treeData = nil
 local currentBuild = nil
 local specName = "Custom Build"
 local specDesc = "Custom 51-point level 60 talent build."
+local STAT_FIELDS = {
+    { "spell_hit_chance", "Spell hit", 1 }, { "spell_crit_chance", "Spell crit", 0 },
+    { "shadow_resist_chance", "Shadow full resist", 0 }, { "fire_resist_chance", "Fire full resist", 0 },
+    { "frost_resist_chance", "Frost full resist", 0 }, { "arcane_resist_chance", "Arcane full resist", 0 },
+    { "level", "Level", 60, 1, 100 }, { "spell_penetration", "Spell penetration", 0, 0, 10000 },
+    { "shadow_resistance", "Shadow resistance", 0, 0, 10000 }, { "fire_resistance", "Fire resistance", 0, 0, 10000 },
+    { "frost_resistance", "Frost resistance", 0, 0, 10000 }, { "arcane_resistance", "Arcane resistance", 0, 0, 10000 },
+    { "pet_hit_chance", "Pet hit", 1 }, { "pet_crit_chance", "Pet crit", 0 },
+    { "melee_avoidance_chance", "Melee avoidance", 0 }, { "armor_damage_reduction", "Armor reduction", 0 },
+}
+local function copyCombatStats(source)
+    local result = {}
+    for _, field in ipairs(STAT_FIELDS) do
+        local value = source and source[field[1]]
+        result[field[1]] = value == nil and field[3] or value
+    end
+    return result
+end
+local combatStats = copyCombatStats()
+local statsDraft, statsIndex, statsButtons = nil, 1, {}
 local savedSpecs = {}
 local selectedSavedIdx = 1
 local actionLoadout = nil
@@ -195,6 +215,7 @@ function spec_editor.setClass(newClass)
     local cls = (newClass or "warlock"):lower()
     if cls == "mage" then cls = "frost_mage" end
     currentClass = cls
+    combatStats = copyCombatStats()
     treeData = talents_data.load(cls)
     currentBuild = talents_data.newEmptyBuild(cls)
     actionLoadout = defaultActionLoadout(cls, currentBuild)
@@ -217,6 +238,7 @@ function spec_editor.loadSpec(specObj)
         currentClass = sc
         treeData = talents_data.load(sc)
     end
+    combatStats = copyCombatStats(specObj.combat_stats)
     currentBuild = talents_data.cloneBuild(specObj.trees)
     actionLoadout = cloneActionLoadout(specObj.action_loadout, currentClass, currentBuild)
     actionSlots = cloneActionSlots(specObj.action_slots, currentClass, currentBuild, specObj.action_loadout)
@@ -253,6 +275,7 @@ function spec_editor.getCurrentSpecConfig()
         class = currentClass,
         level = 60,
         description = specDesc,
+        combat_stats = copyCombatStats(combatStats),
         talents_summary = summary,
         hash = hash,
         trees = talents_data.cloneBuild(currentBuild),
@@ -272,7 +295,33 @@ function spec_editor.update(dt)
     end
 end
 
+local function commitStat(text)
+    local field = STAT_FIELDS[statsIndex]
+    local value = tonumber(text)
+    if not value or value ~= value or value == math.huge or value == -math.huge or
+        value < (field[4] or 0) or value > (field[5] or 1) or (field[1] == "level" and value % 1 ~= 0) then
+        noticeText = field[2] .. ": enter a value from " .. (field[4] or 0) .. " to " .. (field[5] or 1)
+        noticeTimer = 4
+        return false
+    end
+    statsDraft[field[1]] = value
+    return true
+end
+
 function spec_editor.keypressed(key)
+    if modalMode == "stats" then
+        if key == "escape" then modalMode = nil; return true end
+        if key == "backspace" then modalInputText = modalInputText:sub(1, -2); return true end
+        if key == "return" or key == "kpenter" then
+            if commitStat(modalInputText) then combatStats = copyCombatStats(statsDraft); modalMode = nil end
+        elseif key == "tab" or key == "down" or key == "up" then
+            if commitStat(modalInputText) then
+                statsIndex = (statsIndex - 1 + (key == "up" and -1 or 1)) % #STAT_FIELDS + 1
+                modalInputText = tostring(statsDraft[STAT_FIELDS[statsIndex][1]])
+            end
+        end
+        return true
+    end
     if modalMode then
         if key == "escape" then
             modalMode = nil
@@ -338,6 +387,24 @@ end
 function spec_editor.mousepressed(x, y, button)
     if not treeData then return false end
 
+    if modalMode == "stats" then
+        if button == 1 then
+            for _, btn in ipairs(statsButtons) do
+                if x >= btn.x and x <= btn.x + btn.w and y >= btn.y and y <= btn.y + btn.h and commitStat(modalInputText) then
+                    if btn.preset then
+                        statsDraft = copyCombatStats()
+                        if btn.preset == "example" then
+                            statsDraft.spell_hit_chance, statsDraft.spell_crit_chance = 0.96, 0.05
+                            statsDraft.pet_hit_chance, statsDraft.pet_crit_chance = 0.95, 0.05
+                        end
+                    else statsIndex = btn.index end
+                    modalInputText = tostring(statsDraft[STAT_FIELDS[statsIndex][1]])
+                    return true
+                end
+            end
+        end
+        return true
+    end
     -- Modal clicks take precedence
     if modalMode then
         -- Cancel or Close click outside
@@ -994,6 +1061,13 @@ function spec_editor.draw(trainingController)
     end
     g.setColor(0.85, 0.68, 0.42, 1.0)
     g.print("Movement is controlled separately.", treesAreaX + 14, panelY + actionPanelH - 19)
+    local statsX, statsY = treesAreaX + treesAreaW - 165, panelY + actionPanelH - 24
+    g.setColor(0.4, 0.75, 1, 1)
+    g.print("Combat stats...", statsX, statsY + 3)
+    table.insert(buttons, { x = statsX, y = statsY, w = 155, h = 24, action = function()
+        statsDraft, statsIndex = copyCombatStats(combatStats), 1
+        modalMode, modalInputText = "stats", tostring(combatStats[STAT_FIELDS[1][1]])
+    end })
     ui.resetFont()
 
     -- Draw Prerequisite Arrows connecting talents
@@ -1076,7 +1150,37 @@ function spec_editor.draw(trainingController)
     end
 
     -- 7. Modals (Save, Import, Export)
-    if modalMode then
+    if modalMode == "stats" then
+        statsButtons = {}
+        local w, h = math.min(790, screenW - 32), 420
+        local x0, y0 = (screenW - w) / 2, (screenH - h) / 2
+        g.setColor(0, 0, 0, 0.8); g.rectangle("fill", 0, 0, screenW, screenH)
+        g.setColor(0.06, 0.09, 0.15, 1); g.rectangle("fill", x0, y0, w, h, 8)
+        ui.setFont("small")
+        g.setColor(1, 1, 1, 1); g.print("COMBAT STATS", x0 + 16, y0 + 14)
+        g.setColor(0.7, 0.8, 0.9, 1)
+        g.print("Chances and armor reduction: 0 to 1. Resistance and penetration: raw points.", x0 + 16, y0 + 38)
+        for index, field in ipairs(STAT_FIELDS) do
+            local col, row = math.floor((index - 1) / 8), (index - 1) % 8
+            local x, y = x0 + 16 + col * (w / 2), y0 + 73 + row * 32
+            g.setColor(0.8, 0.85, 0.95, 1); g.print(field[2], x, y + 5)
+            g.setColor(index == statsIndex and 0.2 or 0.1, 0.22, 0.32, 1)
+            g.rectangle("fill", x + w / 2 - 140, y, 105, 26, 3)
+            g.setColor(1, 1, 1, 1)
+            g.print(index == statsIndex and (modalInputText .. "|") or tostring(statsDraft[field[1]]), x + w / 2 - 132, y + 5)
+            table.insert(statsButtons, { x = x, y = y, w = w / 2 - 30, h = 28, index = index })
+        end
+        for index, preset in ipairs({ { "compact", "Compact defaults" }, { "example", "Level 60 example" } }) do
+            local x, y = x0 + 16 + (index - 1) * 180, y0 + 340
+            g.setColor(0.14, 0.28, 0.4, 1); g.rectangle("fill", x, y, 168, 26, 3)
+            g.setColor(1, 1, 1, 1); g.print(preset[2], x + 8, y + 5)
+            table.insert(statsButtons, { x = x, y = y, w = 168, h = 26, preset = preset[1] })
+        end
+        g.setColor(0.7, 0.8, 0.9, 1)
+        g.print("Example values are editable assumptions; talent bonuses apply separately.", x0 + 16, y0 + 375)
+        g.print("Tab / arrows: next field    Enter: apply    Esc: cancel", x0 + 16, y0 + 396)
+        ui.resetFont()
+    elseif modalMode then
         local mw = 440
         local mh = 160
         local mx0 = math.floor((screenW - mw) * 0.5)

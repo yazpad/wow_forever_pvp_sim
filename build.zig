@@ -52,6 +52,15 @@ pub fn build(b: *std.Build) void {
     analysis.step.dependOn(&generate_identity.step);
     b.installArtifact(analysis);
 
+    const learning = b.addExecutable(.{
+        .name = "learning_arena",
+        .root_source_file = b.path("src/learning_arena.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    learning.step.dependOn(&generate_identity.step);
+    b.installArtifact(learning);
+
     const test_step = b.step("test", "Run library tests");
     const tests = b.addTest(.{
         .root_source_file = b.path("src/tests.zig"),

@@ -282,9 +282,9 @@ function mcts_overlay.drawTuningDrawer(screenW, screenH)
         g.setColor(0.65, 0.75, 0.85, 1.0)
         g.print(label, drawerX + 12, rowY + 2)
         local startX = drawerX + 120
-        local btnW = 48
         local btnH = 20
         local gap = 4
+        local btnW = math.min(48, (drawerW - 132 - math.max(0, #options - 1) * gap) / math.max(1, #options))
         for i, opt in ipairs(options) do
             local bx = startX + (i - 1) * (btnW + gap)
             local isSel = (opt == selectedVal)
@@ -308,7 +308,7 @@ function mcts_overlay.drawTuningDrawer(screenW, screenH)
     curY = curY + 26
 
     -- 2. Workers
-    drawDrawerSelector("Workers:", { 1, 2, 4, 8, 16 }, cfg.workers, curY, function(v) cfg.workers = v end)
+    drawDrawerSelector("Workers:", { 1, 2, 4, 8, 16, 32 }, cfg.workers, curY, function(v) cfg.workers = v end)
     curY = curY + 26
 
     -- 3. Algorithm

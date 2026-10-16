@@ -18,12 +18,13 @@ const ActionWrite = enum { unchanged, owner, shared };
 // physics-only CC bookkeeping are never changed by an action. Geometry remains
 // shared because launch synchronization and Blink can move both positions.
 fn actionWrite(comptime name: []const u8) ActionWrite {
+    if ((std.mem.startsWith(u8, name, "pet_rng_") or std.mem.startsWith(u8, name, "pet_outcome_"))) return .owner;
     if (std.mem.startsWith(u8, name, "pet_") or std.mem.startsWith(u8, name, "impact_") or std.mem.eql(u8, name, "is_active")) return .unchanged;
     if (std.mem.startsWith(u8, name, "talent_ranks_") or std.mem.startsWith(u8, name, "talent_flags_")) return .unchanged;
     inline for (.{ "fear_timer_", "fear_accum_dmg_", "fear_dr_", "horror_timer_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .unchanged;
     }
-    inline for (.{ "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "shadow_flame_timer_" }) |prefix| {
+    inline for (.{ "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "spell_rng_", "spell_outcome_", "shadow_flame_timer_", "cast_pushback_count_", "channel_elapsed_", "pushback_rng_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .owner;
     }
     return .shared;
@@ -100,6 +101,12 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 @memset(state.soul_link_b[0..16], @intFromBool((encoded & (@as(u64, 1) << 17)) != 0));
             }
             self.warlock_effects_b = warlock_talents.decode(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)));
+        }
+        pub fn setCombatStats(self: *Self, comptime side: bool, stats: @import("spell_resolution.zig").Stats) !void {
+            try stats.validate();
+            inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
+                for (0..16) |lane| @import("spell_resolution.zig").setStats(pool.combat(), side, lane, stats);
+            }
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
             self.allowed_actions_a = mask | reservedActionBits(a);
@@ -287,7 +294,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             var ma: @Vector(16, f32) = undefined;
             var mb: @Vector(16, f32) = undefined;
             inline for (fields[3..]) |f| {
-                if (!optimized or (!std.mem.startsWith(u8, f.name, "impact_") and !std.mem.startsWith(u8, f.name, "pet_")))
+                if (!optimized or !std.mem.startsWith(u8, f.name, "impact_"))
                     @memcpy(@field(self.scratch.combat(), f.name), @field(self.arena.combat(), f.name));
                 if (!optimized or actionWrite(f.name) != .unchanged)
                     @memcpy(@field(self.original.combat(), f.name), @field(self.arena.combat(), f.name));
@@ -323,8 +330,10 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 _ = @import("movement_2d.zig").refresh(self.arena.combat(), 0, true);
             // Interrupt is an event even when its reset timer already equals zero.
             for (0..16) |i| {
-                if (b == .frost_mage and rb[i] and vb[i] == 7 and cast_before_a[i] != 0) self.arena.combat().react_timer_a[i] = 0;
-                if (a == .frost_mage and ra[i] and va[i] == 7 and cast_before_b[i] != 0) self.arena.combat().react_timer_b[i] = 0;
+                if (b == .warlock and rb[i] and vb[i] == 15 and cast_before_a[i] != 0 and self.scratch.combat().pet_outcome_b[i] == @intFromEnum(@import("spell_resolution.zig").Outcome.hit)) self.arena.combat().react_timer_a[i] = 0;
+                if (a == .warlock and ra[i] and va[i] == 15 and cast_before_b[i] != 0 and self.arena.combat().pet_outcome_a[i] == @intFromEnum(@import("spell_resolution.zig").Outcome.hit)) self.arena.combat().react_timer_b[i] = 0;
+                if (b == .frost_mage and rb[i] and vb[i] == 7 and cast_before_a[i] != 0 and self.scratch.combat().spell_outcome_b[i] == @intFromEnum(@import("spell_resolution.zig").Outcome.hit)) self.arena.combat().react_timer_a[i] = 0;
+                if (a == .frost_mage and ra[i] and va[i] == 7 and cast_before_b[i] != 0 and self.arena.combat().spell_outcome_a[i] == @intFromEnum(@import("spell_resolution.zig").Outcome.hit)) self.arena.combat().react_timer_b[i] = 0;
             }
             if (@hasField(Arena, "extras")) inline for (0..10) |j| {
                 const V = @Vector(16, f32);
@@ -479,6 +488,13 @@ test "simultaneous swaps preserve mirror states, including overlapping instant e
         defer x.deinit();
         var y = try Duel(spec, spec).init(std.testing.allocator);
         defer y.deinit();
+        // Random streams belong to fighters and must swap with their state.
+        @memcpy(y.arena.combat().spell_rng_a, x.arena.combat().spell_rng_b);
+        @memcpy(y.arena.combat().spell_rng_b, x.arena.combat().spell_rng_a);
+        @memcpy(y.arena.combat().pet_rng_a, x.arena.combat().pet_rng_b);
+        @memcpy(y.arena.combat().pet_rng_b, x.arena.combat().pet_rng_a);
+        @memcpy(y.arena.combat().pushback_rng_a, x.arena.combat().pushback_rng_b);
+        @memcpy(y.arena.combat().pushback_rng_b, x.arena.combat().pushback_rng_a);
         var rng = std.Random.DefaultPrng.init(104);
         const random = rng.random();
         for (0..1200) |_| {

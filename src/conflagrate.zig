@@ -31,17 +31,23 @@ fn roll(state: anytype, comptime side: bool, i: usize, mask: B) V {
 }
 pub fn apply(state: anytype, comptime side: bool, i: usize, mask: B, effects: talents.Effects, immolate: *V) void {
     if (!@reduce(.Or, mask)) return;
+    const resolved = @import("spell_resolution.zig").resolve(state, side, i, v(C.ConflagrateDamage), mask, .{
+        .school = .fire,
+        .hit_bonus = effects.spell_hit_bonus,
+        .crit_bonus = effects.conflagrate_crit_bonus,
+        .crit_multiplier = effects.destruction_crit_multiplier,
+    });
     const talent_flags = flags(state, side, i);
     const aftermath: V = @floatFromInt((talent_flags >> @as(@Vector(16, u5), @splat(5))) & @as(U, @splat(7)));
     const ranks: U = @field(state, "talent_ranks" ++ (if (side) "_a" else "_b"))[i..][0..16].*;
     const shadow_flame: V = @floatFromInt(ranks >> @as(@Vector(16, u5), @splat(29)));
     const preserve = roll(state, side, i, mask) < shadow_flame * v(0.2);
     immolate.* = @select(f32, simd.vAnd16(mask, simd.vNot16(preserve)), v(0), immolate.*);
-    const daze = simd.vAnd16(mask, roll(state, side, i, mask) < aftermath * v(0.2));
+    const daze = simd.vAnd16(resolved.landed, roll(state, side, i, mask) < aftermath * v(0.2));
     const daze_timer = col(state, "daze_timer", !side, i);
     daze_timer.* = @select(f32, daze, v(5), daze_timer.*);
     const buff = col(state, "shadow_flame_timer", side, i);
-    buff.* = @select(f32, simd.vAnd16(mask, shadow_flame > v(0)), v(20), buff.*);
+    buff.* = @select(f32, simd.vAnd16(resolved.landed, shadow_flame > v(0)), v(20), buff.*);
     const cd = col(state, "conflagrate_cd", side, i);
     cd.* = @select(f32, mask, v(C.ConflagrateCooldown), cd.*);
     // Queue immediate damage for the next physics boundary, where shields,
@@ -49,7 +55,7 @@ pub fn apply(state: anytype, comptime side: bool, i: usize, mask: B, effects: ta
     const pending = col(state, "conflagrate_pending", side, i);
     const sacrificed_succubus = simd.vAnd16(effects.demonic_sacrifice > v(0), effects.demonic_sacrifice_pet == v(@floatFromInt(@intFromEnum(@import("pets.zig").Kind.succubus))));
     const sacrifice = @select(f32, sacrificed_succubus, v(1.15), v(1));
-    pending.* += @select(f32, mask, v(C.ConflagrateDamage) * effects.fire_damage * sacrifice, v(0));
+    pending.* += @select(f32, mask, resolved.damage * effects.fire_damage * sacrifice, v(0));
 }
 pub fn buffEffects(state: anytype, comptime side: bool, i: usize, effects: *talents.Effects) void {
     const buff = col(state, "shadow_flame_timer", side, i);

@@ -147,3 +147,7 @@ Shadow Bolt and Frostbolt travel at 30 m/s, Ice Lance at 40 m/s, and Death Coil 
 Missiles home toward the target's current 2D position, including after Blink. Damage, Frostbolt slow, Death Coil healing/Horror/interrupts, shield absorption, and damage-based control breaks occur on impact. Ice Lance's frozen damage bonus is selected at launch. Fear and Polymorph remain direct effects on cast completion; DOT applications and Drain Life remain direct/channeled effects.
 
 Each caster has four fixed projectile slots in aligned SoA arrays, with no per-shot heap allocation. Empty queues skip flight math. Queues and positions are included in MCTS snapshots. New replay columns 51–82 store four `spell, damage, x, y` slots per side; playback uses these recorded positions and emits impact effects at the recorded arrival time. Older replays keep their legacy cosmetic projectile effects.
+
+## Learned MCTS experiment
+
+See [the fresh value-learning strategy](LEARNED_MCTS_STRATEGY.md) for class-specific versus shared models, the frozen bare-MCTS control, validation gates, and reproducible commands. Measured pilot outcomes are recorded in [learning results](benchmarks/learning/RESULTS.md). The experimental arena is separate from normal fight generation.

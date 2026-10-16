@@ -6,6 +6,13 @@ const V = simd.f32x16;
 const U = simd.u32x16;
 
 pub const Effects = struct {
+    spell_hit_bonus: V,
+    shadow_crit_bonus: V,
+    affliction_crit_multiplier: V,
+    fel_concentration_resist: V,
+    intensity_resist: V,
+    destruction_crit_multiplier: V,
+    conflagrate_crit_bonus: V,
     agony_damage: V,
     corruption_damage: V,
     periodic_damage: V,
@@ -22,6 +29,8 @@ pub const Effects = struct {
     pet_damage: V,
     imp_firebolt_damage: V,
     shadowburn_shard_refund: V,
+    seduction_duration_mult: V,
+    spell_lock_cooldown: V,
     demonic_sacrifice: V,
     demonic_sacrifice_pet: V,
 };
@@ -41,6 +50,9 @@ pub fn shadowburnUnlocked(encoded: U) @Vector(16, bool) {
     return (encoded & @as(U, @splat(@as(u32, 1) << 28))) != @as(U, @splat(0));
 }
 
+pub fn pushbackResistance(encoded_rank: U) V {
+    return @select(f32, encoded_rank == @as(U, @splat(1)), @as(V, @splat(0.23)), @select(f32, encoded_rank == @as(U, @splat(2)), @as(V, @splat(0.47)), @select(f32, encoded_rank == @as(U, @splat(3)), @as(V, @splat(0.70)), @as(V, @splat(0)))));
+}
 pub fn decode(encoded: U, flags: U) Effects {
     const corruption = rank(encoded, 0, 3);
     const malediction = rank(encoded, 3, 3);
@@ -66,6 +78,14 @@ pub fn decode(encoded: U, flags: U) Effects {
     const siphon_life_transfer_mult = shadow_mult * periodic_mult;
 
     return .{
+        .fel_concentration_resist = pushbackResistance(rank(flags, 26, 2)),
+        .intensity_resist = pushbackResistance(rank(flags, 28, 2)),
+        .affliction_crit_multiplier = @as(V, @splat(1.5)) + @as(V, @splat(0.5)) *
+            @select(f32, rank(flags, 24, 2) == @as(U, @splat(1)), @as(V, @splat(0.33)), @select(f32, rank(flags, 24, 2) == @as(U, @splat(2)), @as(V, @splat(0.67)), @select(f32, rank(flags, 24, 2) == @as(U, @splat(3)), @as(V, @splat(1)), @as(V, @splat(0))))),
+        .spell_hit_bonus = @as(V, @splat(0.01)) * asFloat(rank(flags, 13, 3)),
+        .shadow_crit_bonus = @as(V, @splat(0.01)) * asFloat(rank(flags, 16, 3)),
+        .destruction_crit_multiplier = @as(V, @splat(1.5)) + @as(V, @splat(0.10)) * asFloat(rank(flags, 19, 3)),
+        .conflagrate_crit_bonus = @select(f32, rank(flags, 22, 2) == @as(U, @splat(1)), @as(V, @splat(0.08)), @select(f32, rank(flags, 22, 2) == @as(U, @splat(2)), @as(V, @splat(0.17)), @select(f32, rank(flags, 22, 2) == @as(U, @splat(3)), @as(V, @splat(0.25)), @as(V, @splat(0))))),
         .agony_damage = shadow_mult * periodic_mult * (@as(V, @splat(1.0)) + @as(V, @splat(0.05)) * asFloat(agony)),
         .corruption_damage = shadow_mult * periodic_mult * (@as(V, @splat(1.0)) + @as(V, @splat(0.02)) * asFloat(corruption)),
         .periodic_damage = periodic_mult,
@@ -89,6 +109,8 @@ pub fn decode(encoded: U, flags: U) Effects {
         .imp_firebolt_damage = @as(V, @splat(60.0)) * (@as(V, @splat(1.0)) + @as(V, @splat(0.10)) * asFloat(improved_imp)) *
             (@as(V, @splat(1.0)) + @as(V, @splat(0.02)) * asFloat(shadow_and_flame)),
         .shadowburn_shard_refund = asFloat(shadow_and_flame) * @as(V, @splat(0.2)),
+        .seduction_duration_mult = @as(V, @splat(1.0)) + @as(V, @splat(0.10)) * asFloat(rank(flags, 9, 2)),
+        .spell_lock_cooldown = @as(V, @splat(24.0)) - @as(V, @splat(2.0)) * asFloat(rank(flags, 11, 2)),
         .demonic_sacrifice = demonic_sacrifice,
         .demonic_sacrifice_pet = demonic_sacrifice_pet,
     };
@@ -132,6 +154,26 @@ test "Aftermath packed ranks match scalar modifiers and only amplify the initial
         try std.testing.expectApproxEqAbs(scalar.immolate_initial_damage_mult, effects.immolate_initial_damage[lane], 0.0001);
         try std.testing.expectApproxEqAbs(@as(f32, 1.1), effects.fire_damage[lane], 0.0001);
         try std.testing.expectEqual(@as(f32, 1), effects.periodic_damage[lane]);
+        try std.testing.expectEqual(@as(f32, 4), effects.demonic_sacrifice_pet[lane]);
+    }
+}
+
+test "pet utility ranks preserve packed neighbors and match scalar effects" {
+    const std = @import("std");
+    const spec = @import("spec.zig");
+    var encoded: U = @splat(0);
+    var flags: U = @splat(0);
+    for (0..16) |lane| {
+        const ranks = spec.WarlockTalentRanks{ .improved_sayaad = @intCast(lane % 4), .improved_felhunter = @intCast(lane / 4), .conflagrate = 1, .aftermath = 5, .demonic_sacrifice_pet = 4 };
+        encoded[lane] = @truncate(ranks.encode());
+        flags[lane] = @truncate(ranks.encode() >> 32);
+    }
+    const effects = decode(encoded, flags);
+    for (0..16) |lane| {
+        const scalar = spec.CombatModifiers.fromWarlockRanks(.{ .improved_sayaad = @intCast(lane % 4), .improved_felhunter = @intCast(lane / 4) });
+        try std.testing.expectApproxEqAbs(scalar.seduction_duration_mult, effects.seduction_duration_mult[lane], 0.0001);
+        try std.testing.expectEqual(scalar.spell_lock_cooldown, effects.spell_lock_cooldown[lane]);
+        try std.testing.expectApproxEqAbs(@as(f32, 1.5), effects.immolate_initial_damage[lane], 0.0001);
         try std.testing.expectEqual(@as(f32, 4), effects.demonic_sacrifice_pet[lane]);
     }
 }

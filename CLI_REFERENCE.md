@@ -4,15 +4,15 @@
 
 ### 🤖 Spec vs Spec Simultaneous MCTS Engine
 
-New fights give player A a 10 ms opening lead: A can act at time zero, and B becomes ready one physics tick later. Cast speeds are unchanged. The opening delay is part of the combat snapshot used by MCTS.
+New fights give player A a 10 ms opening lead: A can act at time zero, and B becomes ready one physics tick later. Pure Rollout is the default leaf scorer in the CLI, presets, and visualizer: simulations return terminal win/loss/draw outcomes. Use `--evaluator heuristic` to opt into the shorter heuristic evaluation. Cast speeds are unchanged. The opening delay is part of the combat snapshot used by MCTS.
 ```bash
 # Run a fight between Warlock and Frost Mage using MCTS PUCT
 ./run_fight.sh warlock frost_mage
 
-# Fast preset (~0.3s compute, 1,024 rollouts per decision)
+# Fast preset (1,024 terminal rollouts per decision)
 ./run_fight.sh warlock frost_mage --fast
 
-# Deep preset (~5.0s compute, 16,384 rollouts per decision)
+# Deep preset (16,384 terminal rollouts per decision)
 ./run_fight.sh warlock frost_mage --deep
 
 # Generate replay without launching visualizer GUI
@@ -101,3 +101,147 @@ CLI decision indices start at zero; player A is side 0 and B is side 1.
 The analyzer writes progress beside its output as `.progress.json`. The
 visualizer runs it in a separate process and snapshots the input file, so
 playback and new fight generation can continue independently.
+
+
+### Combat probabilities, resistance, and periodic timing
+
+Saved specs loaded with `--spec-id-a` / `--spec-id-b` may include `combat_stats`.
+The spec editor's **Combat stats...** dialog edits and saves the same fields.
+
+```json
+"combat_stats": {
+  "level": 60,
+  "spell_hit_chance": 0.96,
+  "spell_crit_chance": 0.05,
+  "shadow_resist_chance": 0.0,
+  "fire_resist_chance": 0.0,
+  "frost_resist_chance": 0.0,
+  "arcane_resist_chance": 0.0,
+  "spell_penetration": 0,
+  "shadow_resistance": 0,
+  "fire_resistance": 0,
+  "frost_resistance": 0,
+  "arcane_resistance": 0,
+  "pet_hit_chance": 0.95,
+  "pet_crit_chance": 0.05,
+  "melee_avoidance_chance": 0,
+  "armor_damage_reduction": 0
+}
+```
+
+Hit, crit, full-resist chances, melee avoidance, and armor reduction are fractions
+in [0, 1]. School resistance and penetration are raw points in [0, 10000]; level
+is an integer in [1, 100]. Unsupported fields (including combat rating inputs),
+non-finite values, and out-of-range values are rejected by the simulator.
+
+The **Level 60 example** preset uses the probabilities above. These are editable
+simulation assumptions, not verified Forever naked-character or gear-derived
+stats. Base/gear probabilities are separate from talent bonuses. Omitted fields
+preserve the legacy compact baseline: level 60, 100% owner/pet hit, zero base
+crit, resistance, penetration, avoidance, and armor reduction.
+
+Owner direct damage, DoT applications, channel starts, crowd control, and
+interrupts now resolve hit/full resist. A failed action still spends mana, GCD,
+cooldown, and reagents; failed refreshes leave the old effect and its tick phase
+intact. Crowd control and interrupts use binary (all-or-nothing) resistance and
+failed effects do not advance diminishing returns. Death Coil is noncritical
+and binary. Direct missiles resolve at launch and retain their damage payload.
+Conflagrate keeps its existing consumption/preservation rules.
+
+The compact resistance model defines:
+
+```
+effective = max(0, target_school_resistance - caster_penetration)
+          + 5 * max(0, target_level - caster_level)
+mean_resisted = min(0.75, 0.75 * effective / (5 * caster_level))
+```
+
+Damage uses a random choice between adjacent 25% resist buckets preserving that
+mean; binary effects combine the mean with the explicitly configured full-resist
+probability. Penetration cannot remove the level contribution. This distribution
+is a simulator approximation, not an authentic Forever resistance table. Level
+only affects this resistance calculation; base hit remains an explicit input.
+DoT/channel applications use the configured hit/full-resist probabilities once;
+landed ticks do not reroll hit/full resist, but do roll partial resistance.
+
+Periodic timing preserves the existing compact-kit durations and base DPS:
+
+| Effect | Duration | Tick interval | Full-duration ticks |
+| --- | --- | --- | --- |
+| Agony | 18s | 2s | 9 |
+| Corruption | 14s | 2s | 7 |
+| Immolate | 15s | 3s | 5 |
+| Siphon Life | 30s | 3s | 10 |
+| Drain Life | 3s | 1s | 3 |
+
+First ticks occur after one complete interval; expiry includes the final tick.
+Successful refreshes restart duration and phase. Cancellation, consumption, or
+interruption discards unfinished ticks. Corruption's two-second cadence preserves
+this simulator's existing 14-second compact spell; these are not level-60 rank
+tuning claims. Timers are quantized to 10 microseconds to prevent countdown drift.
+Snapshots include DoT timers, natural channel elapsed time, and RNG, with no external scheduler state. Coarse
+steps can resolve several separately rolled ticks, but the full combat engine's
+movement, interrupts, and cross-effect ordering still use physics-step boundaries.
+
+Eligible ticks crit once per tick (base 1.5x). Malevolence affects Shadow ticks;
+Pandemic increases the Affliction critical bonus by 33%/67%/100% at ranks 1/2/3.
+Immolate uses Ruin rather than Pandemic. Drain/Siphon healing uses the same crit
+and partial-resist multiplier as damage, applied to the kit's existing base HPS;
+healing is capped at maximum HP. This preserves the existing healing model,
+which does not scale healing down for target shields, Soul Link, or overkill.
+
+Pets use separate hit/crit stats, outcomes, and snapshotted RNG streams; owner-only
+Suppression, Malevolence, and Ruin do not apply. Imp Firebolt uses Fire spell
+resolution (1.5x crit). Simplified melee pets use hit, defender avoidance, 2x crit,
+and defender armor reduction; they do not use spell resistance. Full melee attack
+tables, authentic pet stats, and pet Firebolt travel remain separate work.
+
+Fight seeds initialize owner and pet RNG streams. Search continuations restore
+those streams from snapshots. Visual replays still do not label individual
+crit/miss/full/partial-resist outcomes, and crit-triggered debuffs such as Improved
+Shadow Bolt remain separate talent work.
+
+
+### Cast pushback and resistance
+
+Direct missile impacts (including Immolate's initial hit), Conflagrate, and
+autonomous pet attacks can cause pushback. **Periodic DoT/channel ticks never
+cause pushback**, including Agony, Corruption, Immolate ticks, Siphon Life, and
+Drain Life. Misses, full resists, and fully absorbed direct hits do not qualify.
+
+This simulator uses the Classic-reference sequence: each non-resisted hit pushes
+back by 1.0s, 0.8s, 0.6s, 0.4s, then 0.2s for every subsequent hit on that cast.
+Normal casts add that amount to remaining time, capped at the original cast
+length. For example, a hit 0.1s into a cast can only rewind those 0.1s. There is
+no immunity threshold near cast completion, and no automatic immunity after
+five hits. Channels subtract the same sequence from remaining duration, capped
+at zero. This follows [VMaNGOS's Classic delay sequence](https://github.com/vmangos/core/blob/development/src/game/Spells/Spell.h#L369)
+and [cast/channel handling](https://github.com/vmangos/core/blob/development/src/game/Spells/Spell.cpp#L6893),
+not the later-expansion two-hit/0.5s rule. Exact Forever overrides are unverified.
+
+The checked-in talent descriptions supply resistance probabilities:
+
+| Talent | Rank 1 | Rank 2 | Rank 3 | Currently eligible casts |
+| --- | --- | --- | --- | --- |
+| Fel Concentration | 23% | 47% | 70% | Drain Life |
+| Intensity | 23% | 47% | 70% | Shadow Bolt, Searing Pain, Incinerate, Immolate |
+
+A resistance roll prevents the whole pushback and does not advance its sequence.
+Fear receives neither talent's protection. Resistance is not protection against
+an explicit interrupt or crowd control. Future supported drain/Destruction
+spells must opt into the applicable talent when implemented.
+
+Channels track natural elapsed time separately from their shortened expiry.
+Pushback removes future tail time; it neither grants immediate ticks nor shifts
+later ticks earlier. If it ends a channel before the next tick, that tick is lost.
+New casts reset their pushback counter and channel phase. Both fields and a
+separate per-fighter resistance RNG are preserved in snapshots; fight seeds
+initialize the resistance stream.
+
+At a physics boundary, direct impacts resolve before cast completion. Each
+projectile slot, then Conflagrate, then the autonomous pet gets its own pushback
+check. For shield eligibility, these direct events consume the available shield
+before periodic damage; a simultaneous periodic tick cannot make a fully
+absorbed direct hit trigger pushback. Existing aggregate HP/shield accounting
+remains unchanged. Pet casting pushback is outside the current owner-targeted
+combat model.

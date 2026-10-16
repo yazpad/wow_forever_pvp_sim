@@ -7,7 +7,7 @@ pub const Slots = 4;
 pub const BoltSpeed: f32 = 30;
 pub const LanceSpeed: f32 = 40;
 pub const CoilSpeed: f32 = 20;
-pub const Hits = struct { conflagrate: V = @splat(0), bolt: V = @splat(0), lance: V = @splat(0), coil: V = @splat(0), immolate: V = @splat(0) };
+pub const Hits = struct { direct_events: [Slots]V = @splat(@as(V, @splat(0))), conflagrate: V = @splat(0), bolt: V = @splat(0), lance: V = @splat(0), coil: V = @splat(0), immolate: V = @splat(0) };
 fn splat(x: f32) V {
     return @splat(x);
 }
@@ -45,6 +45,28 @@ pub fn launch(state: anytype, comptime side_a: bool, i: usize, comptime spell: u
     // Action masks reserve queue capacity before mana/GCD are committed.
     std.debug.assert(!@reduce(.Or, pending));
 }
+// Resolve once at launch and snapshot the resulting payload in the queue.
+// Low-level launch remains useful for already-resolved payloads and physics tests.
+pub fn launchClass(state: anytype, comptime side_a: bool, i: usize, comptime spell: u32, damage: V, mask: B, comptime actor: anytype) void {
+    const resolution = @import("spell_resolution.zig");
+    const effects = @import("warlock_talents.zig").decode(
+        @field(state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+        @field(state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+    );
+    const shadow = spell == 4 or spell == 7 or spell == 9;
+    const profile: resolution.Profile = if (actor == .warlock) .{
+        .school = if (shadow) .shadow else .fire,
+        .hit_bonus = effects.spell_hit_bonus,
+        .crit_bonus = if (shadow) effects.shadow_crit_bonus else @splat(0),
+        .crit_multiplier = effects.destruction_crit_multiplier,
+        // Death Coil's drain/Horror is resolved as a noncritical spell.
+        .can_crit = spell != 7,
+        .binary = spell == 7,
+    } else .{ .school = .frost };
+    const active = simd.vAnd16(mask, state.is_active[i..][0..16].* != @as(simd.u32x16, @splat(0)));
+    const result = resolution.resolve(state, side_a, i, damage, active, profile);
+    launch(state, side_a, i, spell, result.damage, active);
+}
 pub fn tick(state: anytype, comptime side_a: bool, i: usize, dt: f32) Hits {
     return tickImpl(state, side_a, i, dt, false);
 }
@@ -79,6 +101,7 @@ fn tickImpl(state: anytype, comptime side_a: bool, i: usize, dt: f32, comptime o
             x.* += dx * step;
             y.* += dy * step;
             const hit = simd.vAnd16(live, distance <= speed * splat(dt));
+            hits.direct_events[slot] = select(hit, damage.*, splat(0));
             hits.immolate += select(simd.vAnd16(hit, id.* == splat(13)), damage.*, splat(0));
             hits.bolt += select(simd.vAnd16(hit, simd.vOr16(simd.vOr16(id.* == splat(4), id.* == splat(9)), simd.vOr16(id.* == splat(11), id.* == splat(12)))), damage.*, splat(0));
             hits.lance += select(simd.vAnd16(hit, id.* == splat(1)), damage.*, splat(0));
@@ -125,7 +148,7 @@ pub fn pendingEffects(state: anytype, comptime side_a: bool, lane: usize) struct
     inline for (0..Slots) |slot| {
         const prefix = std.fmt.comptimePrint("projectile_{d}_", .{slot});
         result.damage += @field(state, prefix ++ "damage_" ++ own)[lane];
-        if (@field(state, prefix ++ "spell_" ++ own)[lane] == 7) result.healing += 300;
+        if (@field(state, prefix ++ "spell_" ++ own)[lane] == 7 and @field(state, prefix ++ "damage_" ++ own)[lane] > 0) result.healing += 300;
     }
     return .{ .damage = result.damage, .healing = result.healing };
 }

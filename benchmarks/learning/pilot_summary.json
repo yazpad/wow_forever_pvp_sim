@@ -1,0 +1,903 @@
+{
+  "date": "2026-10-15",
+  "teacher": {
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+    "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 9950X 16-Core Processor\nCPU family:                              26\nModel:                                   68\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                0\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      42%\nCPU max MHz:                             5756.4521\nCPU min MHz:                             624.1940\nBogoMIPS:                                8599.98\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze\nVirtualization:                          AMD-V\nL1d cache:                               768 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                64 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; IBPB on VMEXIT only\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB on VMEXIT\n",
+    "zig": "0.14.0",
+    "fingerprint": "dd048e3aa1ed729fae888b2709aeafc03d0c2fcdbe059a8453da1f1ecda52121",
+    "teacher_games": 96,
+    "states": 12382,
+    "teacher_search_seconds": 111.098485202,
+    "teacher_wall_seconds": 111.400380528,
+    "outcomes": {
+      "-1": 53,
+      "0": 0,
+      "1": 43
+    },
+    "teacher_configuration": {
+      "rollouts": 256,
+      "workers": 1,
+      "nodes": 1024,
+      "depth": 128,
+      "max_ticks": 6000,
+      "evaluator": "heuristic",
+      "boundary": "event",
+      "algorithm": "puct",
+      "truncation_ticks": 30
+    },
+    "test_result": "71/71 ReleaseSafe tests passed",
+    "binary_sha256": "0ebfa17f7770319c1767d7d0e50053af30de31f32fe7080bea3f1b5ecab854c5",
+    "numpy": "2.5.1",
+    "models": {
+      "shared.json": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9",
+      "class.json": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78",
+      "training.json": "240e9fad8edd008be2ffa5e5cd7b488671b14ba6704b753cf9d621f620e00798"
+    }
+  },
+  "training": {
+    "schema": 1,
+    "fingerprint": "dd048e3aa1ed729fae888b2709aeafc03d0c2fcdbe059a8453da1f1ecda52121",
+    "seed": 17,
+    "data_sha256": "2b50142b082f9dcdd9aad47b9e6cd971ce4ad3840157e57ec3dc56c6ae66256f",
+    "trainer_sha256": "5fe8c73985470aa7852a1c7f43c90a2d0e544f96e7e5b86c89ea95d20e33d4e0",
+    "training_seeds": [
+      1004,
+      1008,
+      1012,
+      1016,
+      1024,
+      1028,
+      1032,
+      1036,
+      1044,
+      1048,
+      1052,
+      1056,
+      1064,
+      1068,
+      1072,
+      1076,
+      1084,
+      1088,
+      1092,
+      1005,
+      1009,
+      1013,
+      1017,
+      1025,
+      1029,
+      1033,
+      1037,
+      1045,
+      1049,
+      1053,
+      1057,
+      1065,
+      1069,
+      1073,
+      1077,
+      1085,
+      1089,
+      1093,
+      1006,
+      1010,
+      1014,
+      1018,
+      1026,
+      1030,
+      1034,
+      1038,
+      1046,
+      1050,
+      1054,
+      1058,
+      1066,
+      1070,
+      1074,
+      1078,
+      1086,
+      1090,
+      1094,
+      1007,
+      1011,
+      1015,
+      1019,
+      1027,
+      1031,
+      1035,
+      1039,
+      1047,
+      1051,
+      1055,
+      1059,
+      1067,
+      1071,
+      1075,
+      1079,
+      1087,
+      1091,
+      1095
+    ],
+    "validation_seeds": [
+      1000,
+      1020,
+      1040,
+      1060,
+      1080,
+      1001,
+      1021,
+      1041,
+      1061,
+      1081,
+      1002,
+      1022,
+      1042,
+      1062,
+      1082,
+      1003,
+      1023,
+      1043,
+      1063,
+      1083
+    ],
+    "architecture": [
+      58,
+      16,
+      1
+    ],
+    "parameters_per_network": 961,
+    "models": {
+      "shared": {
+        "networks": [
+          {
+            "validation_mse": 0.29855188727378845,
+            "training_mse": 0.20256191492080688,
+            "train_rows": 19124,
+            "validation_rows": 5640
+          }
+        ],
+        "fit_seconds": 0.4728829429986945
+      },
+      "class": {
+        "networks": [
+          {
+            "validation_mse": 0.35673707723617554,
+            "training_mse": 0.16058510541915894,
+            "train_rows": 8218,
+            "validation_rows": 2167
+          },
+          {
+            "validation_mse": 0.3241538107395172,
+            "training_mse": 0.11152949184179306,
+            "train_rows": 10906,
+            "validation_rows": 3473
+          }
+        ],
+        "fit_seconds": 0.4739046649992815
+      }
+    }
+  },
+  "integrity": {
+    "evaluation_runs/value_pilot/models/class.json": {
+      "max_absolute_native_python_error": 1.564621925354004e-06
+    },
+    "evaluation_runs/value_pilot/models/shared.json": {
+      "max_absolute_native_python_error": 4.76837158203125e-07
+    },
+    "synthetic_overfit": {
+      "validation_mse": 0.00047933938913047314,
+      "training_mse": 0.00047933938913047314,
+      "train_rows": 64,
+      "validation_rows": 64
+    },
+    "invalid_fingerprint_rejected": true,
+    "frozen_checkpoints_reproduced_exactly": true,
+    "release_safe_tests_passed": 71
+  },
+  "inference_timing": {
+    "binary_sha256": "5e93bbfe4c6365b1b7a4fcbd0138e76d8f7ad053eb77ea9d18707cdc09f5bce8",
+    "measurements": [
+      {
+        "mode": "class",
+        "predictions": 400000,
+        "seconds": 0.208208721,
+        "checksum": 40459.77357146144
+      },
+      {
+        "mode": "shared",
+        "predictions": 400000,
+        "seconds": 0.103756172,
+        "checksum": 224638.5931440452
+      },
+      {
+        "mode": "class",
+        "predictions": 400000,
+        "seconds": 0.162779385,
+        "checksum": 40459.77357146144
+      },
+      {
+        "mode": "shared",
+        "predictions": 400000,
+        "seconds": 0.081673575,
+        "checksum": 224638.5931440452
+      },
+      {
+        "mode": "class",
+        "predictions": 400000,
+        "seconds": 0.169634028,
+        "checksum": 40459.77357146144
+      },
+      {
+        "mode": "shared",
+        "predictions": 400000,
+        "seconds": 0.085016281,
+        "checksum": 224638.5931440452
+      },
+      {
+        "mode": "class",
+        "predictions": 400000,
+        "seconds": 0.161671873,
+        "checksum": 40459.77357146144
+      },
+      {
+        "mode": "shared",
+        "predictions": 400000,
+        "seconds": 0.084154892,
+        "checksum": 224638.5931440452
+      },
+      {
+        "mode": "class",
+        "predictions": 400000,
+        "seconds": 0.165389792,
+        "checksum": 40459.77357146144
+      },
+      {
+        "mode": "shared",
+        "predictions": 400000,
+        "seconds": 0.087961883,
+        "checksum": 224638.5931440452
+      }
+    ],
+    "description": "Two distinct perspective inputs per loop; five alternating repetitions."
+  },
+  "phases": {
+    "tuning": {
+      "summary": {
+        "evaluation_runs/value_pilot/tuning/class.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.59375,
+          "paired_bootstrap_95_ci": [
+            0.5,
+            0.6875
+          ],
+          "wins": 19,
+          "draws": 0,
+          "losses": 13,
+          "base_mean_decision_ms": 8.790949990525817,
+          "candidate_mean_decision_ms": 9.002642628649635,
+          "total_base_seconds": 18.55769543,
+          "total_candidate_seconds": 19.733792642,
+          "candidate_median_fight_p95_ms": 18.240433,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.875,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.5
+          }
+        },
+        "evaluation_runs/value_pilot/tuning/shared.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.625,
+          "paired_bootstrap_95_ci": [
+            0.53125,
+            0.75
+          ],
+          "wins": 20,
+          "draws": 0,
+          "losses": 12,
+          "base_mean_decision_ms": 9.15325630198537,
+          "candidate_mean_decision_ms": 9.011484761716824,
+          "total_base_seconds": 17.519332562,
+          "total_candidate_seconds": 18.266279612,
+          "candidate_median_fight_p95_ms": 18.577132,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.875,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.625
+          }
+        },
+        "paired_architecture_difference": {
+          "first": "evaluation_runs/value_pilot/tuning/class.jsonl",
+          "second": "evaluation_runs/value_pilot/tuning/shared.jsonl",
+          "mean_score_difference": -0.03125,
+          "paired_bootstrap_95_ci": [
+            -0.125,
+            0.0625
+          ]
+        }
+      },
+      "manifest": {
+        "binary_sha256": "a0b813bdbf78640e651ee0408a410663c7ba1077abf7d9c7d36824c6e8608853",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "20000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/class.json",
+              "--output",
+              "evaluation_runs/value_pilot/tuning/class.jsonl"
+            ],
+            "wall_seconds": 38.46027326900003,
+            "model_sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78"
+          },
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "20000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/shared.json",
+              "--output",
+              "evaluation_runs/value_pilot/tuning/shared.jsonl"
+            ],
+            "wall_seconds": 35.969714754999586,
+            "model_sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9"
+          }
+        ]
+      }
+    },
+    "test": {
+      "summary": {
+        "evaluation_runs/value_pilot/test/class.jsonl": {
+          "games": 64,
+          "pairs": 32,
+          "score": 0.625,
+          "paired_bootstrap_95_ci": [
+            0.5625,
+            0.703125
+          ],
+          "wins": 40,
+          "draws": 0,
+          "losses": 24,
+          "base_mean_decision_ms": 8.99436977460556,
+          "candidate_mean_decision_ms": 8.982786891764176,
+          "total_base_seconds": 35.91451851,
+          "total_candidate_seconds": 39.919504947,
+          "candidate_median_fight_p95_ms": 17.831905000000003,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.8125,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.6875
+          }
+        },
+        "evaluation_runs/value_pilot/test/shared.jsonl": {
+          "games": 64,
+          "pairs": 32,
+          "score": 0.5625,
+          "paired_bootstrap_95_ci": [
+            0.484375,
+            0.640625
+          ],
+          "wins": 36,
+          "draws": 0,
+          "losses": 28,
+          "base_mean_decision_ms": 9.042403156611673,
+          "candidate_mean_decision_ms": 9.49464143566265,
+          "total_base_seconds": 36.721199219,
+          "total_candidate_seconds": 39.402761958,
+          "candidate_median_fight_p95_ms": 19.404011999999998,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.4375,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.8125
+          }
+        },
+        "paired_architecture_difference": {
+          "first": "evaluation_runs/value_pilot/test/class.jsonl",
+          "second": "evaluation_runs/value_pilot/test/shared.jsonl",
+          "mean_score_difference": 0.0625,
+          "paired_bootstrap_95_ci": [
+            -0.015625,
+            0.140625
+          ]
+        }
+      },
+      "manifest": {
+        "binary_sha256": "0ebfa17f7770319c1767d7d0e50053af30de31f32fe7080bea3f1b5ecab854c5",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "32",
+              "--seed",
+              "30000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/class.json",
+              "--output",
+              "evaluation_runs/value_pilot/test/class.jsonl"
+            ],
+            "wall_seconds": 76.19439336399955,
+            "model_sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78"
+          },
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "32",
+              "--seed",
+              "30000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/shared.json",
+              "--output",
+              "evaluation_runs/value_pilot/test/shared.jsonl"
+            ],
+            "wall_seconds": 76.497671997,
+            "model_sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9"
+          }
+        ]
+      }
+    },
+    "time": {
+      "summary": {
+        "evaluation_runs/value_pilot/time/class.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.5,
+          "paired_bootstrap_95_ci": [
+            0.40625,
+            0.59375
+          ],
+          "wins": 16,
+          "draws": 0,
+          "losses": 16,
+          "base_mean_decision_ms": 4.130161499158722,
+          "candidate_mean_decision_ms": 3.97986200678733,
+          "total_base_seconds": 7.364077953,
+          "total_candidate_seconds": 8.795495035,
+          "candidate_median_fight_p95_ms": 5.8718225,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.5,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.5
+          }
+        },
+        "evaluation_runs/value_pilot/time/shared.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.625,
+          "paired_bootstrap_95_ci": [
+            0.53125,
+            0.75
+          ],
+          "wins": 20,
+          "draws": 0,
+          "losses": 12,
+          "base_mean_decision_ms": 4.412500188455847,
+          "candidate_mean_decision_ms": 4.103236980206541,
+          "total_base_seconds": 8.944137882000001,
+          "total_candidate_seconds": 9.535922742,
+          "candidate_median_fight_p95_ms": 5.811367,
+          "by_matchup": {
+            "frost_mage/frost_mage": 1.0,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.5
+          }
+        },
+        "paired_architecture_difference": {
+          "first": "evaluation_runs/value_pilot/time/class.jsonl",
+          "second": "evaluation_runs/value_pilot/time/shared.jsonl",
+          "mean_score_difference": -0.125,
+          "paired_bootstrap_95_ci": [
+            -0.28125,
+            0.0
+          ]
+        }
+      },
+      "manifest": {
+        "binary_sha256": "0ebfa17f7770319c1767d7d0e50053af30de31f32fe7080bea3f1b5ecab854c5",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "40000",
+              "--rollouts",
+              "100000",
+              "--baseline-rollouts",
+              "100000",
+              "--mix",
+              "0.5",
+              "--ms",
+              "5",
+              "--model",
+              "evaluation_runs/value_pilot/models/class.json",
+              "--output",
+              "evaluation_runs/value_pilot/time/class.jsonl"
+            ],
+            "wall_seconds": 16.34129911799755,
+            "model_sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78"
+          },
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "40000",
+              "--rollouts",
+              "100000",
+              "--baseline-rollouts",
+              "100000",
+              "--mix",
+              "0.5",
+              "--ms",
+              "5",
+              "--model",
+              "evaluation_runs/value_pilot/models/shared.json",
+              "--output",
+              "evaluation_runs/value_pilot/time/shared.jsonl"
+            ],
+            "wall_seconds": 18.675608662997547,
+            "model_sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9"
+          }
+        ]
+      }
+    },
+    "full_health": {
+      "summary": {
+        "evaluation_runs/value_pilot/full_health/class.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.6875,
+          "paired_bootstrap_95_ci": [
+            0.5625,
+            0.8125
+          ],
+          "wins": 22,
+          "draws": 0,
+          "losses": 10,
+          "base_mean_decision_ms": 11.328674010240427,
+          "candidate_mean_decision_ms": 12.842028597856292,
+          "total_base_seconds": 25.444201827,
+          "total_candidate_seconds": 32.349070038,
+          "candidate_median_fight_p95_ms": 22.292088500000002,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.875,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.875
+          }
+        },
+        "evaluation_runs/value_pilot/full_health/shared.jsonl": {
+          "games": 32,
+          "pairs": 16,
+          "score": 0.59375,
+          "paired_bootstrap_95_ci": [
+            0.5,
+            0.6875
+          ],
+          "wins": 19,
+          "draws": 0,
+          "losses": 13,
+          "base_mean_decision_ms": 11.540980996431758,
+          "candidate_mean_decision_ms": 12.398408066582915,
+          "total_base_seconds": 25.874879394,
+          "total_candidate_seconds": 29.607398463,
+          "candidate_median_fight_p95_ms": 22.3739845,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.75,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.625
+          }
+        },
+        "paired_architecture_difference": {
+          "first": "evaluation_runs/value_pilot/full_health/class.jsonl",
+          "second": "evaluation_runs/value_pilot/full_health/shared.jsonl",
+          "mean_score_difference": 0.09375,
+          "paired_bootstrap_95_ci": [
+            0.0,
+            0.1875
+          ]
+        }
+      },
+      "manifest": {
+        "binary_sha256": "0ebfa17f7770319c1767d7d0e50053af30de31f32fe7080bea3f1b5ecab854c5",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "50000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/class.json",
+              "--output",
+              "evaluation_runs/value_pilot/full_health/class.jsonl",
+              "--full-health"
+            ],
+            "wall_seconds": 57.991749155000434,
+            "model_sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78"
+          },
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "16",
+              "--seed",
+              "50000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/shared.json",
+              "--output",
+              "evaluation_runs/value_pilot/full_health/shared.jsonl",
+              "--full-health"
+            ],
+            "wall_seconds": 55.690029377998144,
+            "model_sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9"
+          }
+        ]
+      }
+    },
+    "zero_control": {
+      "summary": {
+        "evaluation_runs/value_pilot/zero_control/zero.jsonl": {
+          "games": 64,
+          "pairs": 32,
+          "score": 0.53125,
+          "paired_bootstrap_95_ci": [
+            0.4375,
+            0.625
+          ],
+          "wins": 34,
+          "draws": 0,
+          "losses": 30,
+          "base_mean_decision_ms": 9.538780328763941,
+          "candidate_mean_decision_ms": 8.439456335001088,
+          "total_base_seconds": 41.054910535000005,
+          "total_candidate_seconds": 38.796180772,
+          "candidate_median_fight_p95_ms": 19.422652499999998,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.375,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 0.75
+          }
+        }
+      },
+      "manifest": {
+        "binary_sha256": "5e93bbfe4c6365b1b7a4fcbd0138e76d8f7ad053eb77ea9d18707cdc09f5bce8",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "32",
+              "--seed",
+              "30000",
+              "--rollouts",
+              "256",
+              "--baseline-rollouts",
+              "256",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/zero.json",
+              "--output",
+              "evaluation_runs/value_pilot/zero_control/zero.jsonl"
+            ],
+            "wall_seconds": 80.2359979599969,
+            "model_sha256": "0d3e06aa4550e7b37448823911cc1d0e606e7f8e502a28dd007ff9da5c87b75d"
+          }
+        ]
+      }
+    },
+    "default_control": {
+      "summary": {
+        "evaluation_runs/value_pilot/default_control/class.jsonl": {
+          "games": 16,
+          "pairs": 8,
+          "score": 0.5625,
+          "paired_bootstrap_95_ci": [
+            0.375,
+            0.75
+          ],
+          "wins": 9,
+          "draws": 0,
+          "losses": 7,
+          "base_mean_decision_ms": 45.96622175362319,
+          "candidate_mean_decision_ms": 51.54193117430023,
+          "total_base_seconds": 63.43338601999999,
+          "total_candidate_seconds": 81.02391580599996,
+          "candidate_median_fight_p95_ms": 78.02804350000001,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.25,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 1.0
+          }
+        },
+        "evaluation_runs/value_pilot/default_control/shared.jsonl": {
+          "games": 16,
+          "pairs": 8,
+          "score": 0.6875,
+          "paired_bootstrap_95_ci": [
+            0.5625,
+            0.875
+          ],
+          "wins": 11,
+          "draws": 0,
+          "losses": 5,
+          "base_mean_decision_ms": 41.894748450764006,
+          "candidate_mean_decision_ms": 49.25280490643274,
+          "total_base_seconds": 49.352013674999995,
+          "total_candidate_seconds": 58.95560747299999,
+          "candidate_median_fight_p95_ms": 82.84345549999999,
+          "by_matchup": {
+            "frost_mage/frost_mage": 0.75,
+            "frost_mage/warlock": 0.5,
+            "warlock/frost_mage": 0.5,
+            "warlock/warlock": 1.0
+          }
+        },
+        "paired_architecture_difference": {
+          "first": "evaluation_runs/value_pilot/default_control/class.jsonl",
+          "second": "evaluation_runs/value_pilot/default_control/shared.jsonl",
+          "mean_score_difference": -0.125,
+          "paired_bootstrap_95_ci": [
+            -0.375,
+            0.0
+          ]
+        }
+      },
+      "manifest": {
+        "binary_sha256": "5e93bbfe4c6365b1b7a4fcbd0138e76d8f7ad053eb77ea9d18707cdc09f5bce8",
+        "commands": [
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "8",
+              "--seed",
+              "60000",
+              "--rollouts",
+              "1024",
+              "--baseline-rollouts",
+              "1024",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/class.json",
+              "--output",
+              "evaluation_runs/value_pilot/default_control/class.jsonl",
+              "--nodes",
+              "4096",
+              "--default-pets",
+              "--full-health"
+            ],
+            "wall_seconds": 144.57749425699876,
+            "model_sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78"
+          },
+          {
+            "argv": [
+              "/home/aaron-ma/pvp_sim/zig-out/bin/learning_arena",
+              "--games",
+              "8",
+              "--seed",
+              "60000",
+              "--rollouts",
+              "1024",
+              "--baseline-rollouts",
+              "1024",
+              "--mix",
+              "0.5",
+              "--ms",
+              "0",
+              "--model",
+              "evaluation_runs/value_pilot/models/shared.json",
+              "--output",
+              "evaluation_runs/value_pilot/default_control/shared.jsonl",
+              "--nodes",
+              "4096",
+              "--default-pets",
+              "--full-health"
+            ],
+            "wall_seconds": 108.41957869199905,
+            "model_sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9"
+          }
+        ]
+      }
+    }
+  },
+  "trained_vs_zero": {
+    "first": "evaluation_runs/value_pilot/test/class.jsonl",
+    "second": "evaluation_runs/value_pilot/zero_control/zero.jsonl",
+    "mean_score_difference": 0.09375,
+    "paired_bootstrap_95_ci": [
+      -0.015625,
+      0.203125
+    ]
+  },
+  "model_artifacts": {
+    "zero.json": {
+      "sha256": "0d3e06aa4550e7b37448823911cc1d0e606e7f8e502a28dd007ff9da5c87b75d",
+      "json_bytes": 9881
+    },
+    "shared.json": {
+      "sha256": "ea39cfc0480637bcbefb5a778e8c095b75338e6b66fb22b7a1c960e0174d27f9",
+      "json_bytes": 41660
+    },
+    "class.json": {
+      "sha256": "bd9ccee9b6418b8a5a4ca50349a3b0188b771d125b5fc5c9ed58b33a35929e78",
+      "json_bytes": 42181
+    }
+  }
+}

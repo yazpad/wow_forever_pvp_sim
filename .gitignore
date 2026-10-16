@@ -17,3 +17,6 @@ zig-out/
 /training_runs/
 /evaluation_runs/
 /evaluation-status.txt
+
+# Python experiment bytecode
+__pycache__/
