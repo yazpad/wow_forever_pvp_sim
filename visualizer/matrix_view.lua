@@ -596,4 +596,52 @@ function matrix_view.mousepressed(x, y, button)
     return nil
 end
 
+-- Keep batch controls and matchup results readable in the Settings column.
+function matrix_view.drawPanel(y,button,text,loadReplay)
+    if not matrixData then matrix_view.init() end
+    button(y,'Refresh Matrix / specs',function() matrix_view.refreshSpecs();matrix_view.scanMatrix() end)
+    y=y+34
+    for i,preset in ipairs(PRESETS) do
+        local idx=i
+        button(y,preset.label,function() selectedPresetIdx=idx end,i==selectedPresetIdx)
+        y=y+30
+    end
+    button(y,match_runner.isActive() and 'Simulating...' or 'Run combinations',function()
+        if not match_runner.isActive() then matrix_view.kickoffSimulations() end
+    end,true)
+    y=y+34
+    local _,cur,total,name,err=match_runner.getStatus()
+    if match_runner.isActive() then y=text(y,string.format('%d / %d · %s',cur,total,name or '')) end
+    if err or noticeText then y=text(y,err or noticeText) end
+    button(y,'Include all specs',function()
+        for _,spec in ipairs(savedSpecs) do selectedSpecs[sanitizeId(spec.filename or spec.name)]=true end
+        matrix_view.scanMatrix()
+    end)
+    y=text(y+34,'Included specs')
+    for _,spec in ipairs(savedSpecs) do
+        local id=sanitizeId(spec.filename or spec.name)
+        local checked=selectedSpecs[id]==true
+        button(y,(checked and '[x] ' or '[ ] ')..(spec.name or id),function()
+            selectedSpecs[id]=not checked;matrix_view.scanMatrix()
+        end,checked)
+        y=y+30
+    end
+    if not matrixData or #matrixData.specs==0 then return text(y,'Select specs to compare.') end
+    y=text(y,'Matchups · result from Fighter A’s side')
+    -- Each row represents a heatmap cell, with full names and replay access.
+    for r,a in ipairs(matrixData.specs) do
+        for c,b in ipairs(matrixData.specs) do
+            local cell=matrixData.grid[r][c]
+            y=text(y,(a.name or 'A')..' vs '..(b.name or 'B'))
+            if cell.duels>0 then
+                local path=cell.match_file
+                button(y,string.format('%.0f%% · %.2fs · Replay',cell.win_rate*100,cell.total_time),
+                    function() selectedRow=r;selectedCol=c;loadReplay(path) end)
+                y=y+34
+            else y=text(y,'No recorded matchup') end
+        end
+    end
+    return y+8
+end
+
 return matrix_view

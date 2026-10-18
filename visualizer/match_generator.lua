@@ -123,8 +123,8 @@ function match_generator.startFight(overrideConfig)
         binPath,
         "--spec-a", specA,
         "--spec-b", specB,
-        "--name-a", '"' .. nameA .. '"',
-        "--name-b", '"' .. nameB .. '"',
+        "--name-a", nameA,
+        "--name-b", nameB,
         "--rollouts", tostring(cfg.rollouts),
         "--workers", tostring(cfg.workers),
         "--algorithm", cfg.algorithm,
@@ -148,23 +148,41 @@ function match_generator.startFight(overrideConfig)
 
     if specIdA and #specIdA > 0 then
         table.insert(args, "--spec-id-a")
-        table.insert(args, '"' .. specIdA .. '"')
+        table.insert(args, specIdA)
     end
     if specIdB and #specIdB > 0 then
         table.insert(args, "--spec-id-b")
-        table.insert(args, '"' .. specIdB .. '"')
+        table.insert(args, specIdB)
     end
 
+    if cfg.positions then
+        for i, side in ipairs({ "a", "b" }) do
+            for _, axis in ipairs({ "x", "y" }) do
+                args[#args + 1] = "--" .. axis .. "-" .. side
+                args[#args + 1] = tostring(cfg.positions[i][axis])
+            end
+        end
+    end
+    for i, arg in ipairs(args) do
+        args[i] = "'" .. tostring(arg):gsub("'", "'\"'\"'") .. "'"
+    end
     local cmd = table.concat(args, " ")
     channel = love.thread.newChannel()
     thread = love.thread.newThread([[
-        local command, outPath, chan = ...
-        local ok, reason, code = os.execute(command .. " > /dev/null 2>&1")
+        local command, outPath, chan, temporarySpecs = ...
+        local logPath = os.tmpname()
+        local quotedLog = "'" .. logPath:gsub("'", "'\"'\"'") .. "'"
+        local ok, reason, code = os.execute(command .. " > " .. quotedLog .. " 2>&1")
+        local logFile = io.open(logPath, "r")
+        local details = logFile and logFile:read("*a") or ""
+        if logFile then logFile:close() end
+        os.remove(logPath)
+        for _, path in ipairs(temporarySpecs or {}) do os.remove(path) end
         local success = (ok == true or ok == 0)
-        chan:push({ success = success, output_path = outPath, code = code, error = reason })
+        chan:push({ success = success, output_path = outPath, code = code, error = success and nil or (details ~= "" and details:sub(-2000) or tostring(reason) .. " (exit " .. tostring(code) .. ")") })
     ]])
 
-    thread:start(cmd, outPath, channel)
+    thread:start(cmd, outPath, channel, cfg.temporary_specs or {})
     active = true
     status = "Searching..."
     errorMsg = nil

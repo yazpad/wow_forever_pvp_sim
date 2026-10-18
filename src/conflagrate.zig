@@ -15,7 +15,7 @@ fn flags(state: anytype, comptime side: bool, i: usize) U {
     return @field(state, "talent_flags" ++ (if (side) "_a" else "_b"))[i..][0..16].*;
 }
 pub fn legal(state: anytype, comptime side: bool, i: usize, free: B) B {
-    const unlocked = (flags(state, side, i) & @as(U, @splat(1 << 8))) != @as(U, @splat(0));
+    const unlocked = (flags(state, side, i) & @as(U, @splat(1 << 10))) != @as(U, @splat(0));
     return simd.vAnd16(free, simd.vAnd16(unlocked, simd.vAnd16(col(state, "immolate_timer", !side, i).* > v(0), simd.vAnd16(col(state, "conflagrate_cd", side, i).* <= v(0), simd.vAnd16(col(state, "mana", side, i).* >= v(C.ConflagrateMana), @as(V, state.distance[i..][0..16].*) <= v(C.ConflagrateRange))))));
 }
 // Integer state is part of snapshots. Only acting lanes advance, so replay and
@@ -31,14 +31,14 @@ fn roll(state: anytype, comptime side: bool, i: usize, mask: B) V {
 }
 pub fn apply(state: anytype, comptime side: bool, i: usize, mask: B, effects: talents.Effects, immolate: *V) void {
     if (!@reduce(.Or, mask)) return;
-    const resolved = @import("spell_resolution.zig").resolve(state, side, i, v(C.ConflagrateDamage), mask, .{
+    const resolved = @import("spell_resolution.zig").resolve(state, side, i, v(C.ConflagrateDamage) + @import("spell_resolution.zig").spellPower(state, side, i, .fire) * v(1.5 / 3.5), mask, .{
         .school = .fire,
         .hit_bonus = effects.spell_hit_bonus,
         .crit_bonus = effects.conflagrate_crit_bonus,
         .crit_multiplier = effects.destruction_crit_multiplier,
     });
     const talent_flags = flags(state, side, i);
-    const aftermath: V = @floatFromInt((talent_flags >> @as(@Vector(16, u5), @splat(5))) & @as(U, @splat(7)));
+    const aftermath: V = @floatFromInt((talent_flags >> @as(@Vector(16, u5), @splat(7))) & @as(U, @splat(7)));
     const ranks: U = @field(state, "talent_ranks" ++ (if (side) "_a" else "_b"))[i..][0..16].*;
     const shadow_flame: V = @floatFromInt(ranks >> @as(@Vector(16, u5), @splat(29)));
     const preserve = roll(state, side, i, mask) < shadow_flame * v(0.2);

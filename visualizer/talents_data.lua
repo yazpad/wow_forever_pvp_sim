@@ -7,6 +7,7 @@ local CLASS_TREES = {
     warlock = { "Affliction", "Demonology", "Destruction" },
     frost_mage = { "Arcane", "Fire", "Frost" },
     mage = { "Arcane", "Fire", "Frost" },
+    priest = { "Discipline", "Holy", "Shadow Magic" },
 }
 
 function talents.getClassTrees(className)
@@ -20,7 +21,7 @@ function talents.load(className)
 
     if talents.loaded[cls] then return talents.loaded[cls] end
     
-    local filename = cls == "frost_mage" and "talents_frost_mage.json" or "talents_warlock.json"
+    local filename = cls == "frost_mage" and "talents_frost_mage.json" or (cls == "priest" and "talents_priest.json" or "talents_warlock.json")
     local contents = nil
     if type(love) == "table" and love.filesystem then
         local path = "data/" .. filename

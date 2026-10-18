@@ -1,5 +1,7 @@
 # TODO: Optimized offline MCTS fights
 
+Start with [TODO.md](TODO.md) for current priorities and checklist ownership.
+
 Implementation and measurements: [MCTS_IMPLEMENTATION.md](MCTS_IMPLEMENTATION.md),
 [MCTS_RESULTS.md](MCTS_RESULTS.md), and [benchmarks/mcts/benchmark_summary.json](benchmarks/mcts/benchmark_summary.json).
 

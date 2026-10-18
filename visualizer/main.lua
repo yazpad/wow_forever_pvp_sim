@@ -1,13 +1,16 @@
 local ui = require("ui")
 local class_view = require("class_view")
+local spell_visuals = require("spell_visuals")
+local unit_frames = require("unit_frames")
+local cast_feedback = require("cast_feedback")
 -- PVP_SIM: 2D COMBAT ARENA & MCTS VISUALIZER (Love2D Native Visualizer)
 local json = require("json")
 local match_browser = require("match_browser")
 local icons = require("icons_manager")
 local mcts_overlay = require("mcts_overlay")
-local spec_editor = require("spec_editor")
 local matrix_view = require("matrix_view")
 local fight_analysis = require("fight_analysis")
+local workspace = require("workspace")
 local petNames = { "Imp", "Succubus", "Felhunter", "Voidwalker" }
 local petMaxHp = { 500, 700, 900, 1200 }
 local petIcons = { "pet_imp", "pet_succubus", "pet_felhunter", "pet_voidwalker" }
@@ -19,30 +22,14 @@ local playbackSpeed = 1.0
 local speeds = { 0.25, 0.5, 1.0, 2.0, 4.0 }
 local speedIdx = 3
 
--- View Tab: "arena" | "fights" | "specs" | "matrix"
-local currentTab = "arena"
+-- The arena workspace owns spec setup and replay playback.
+local currentTab = "setup"
 local TABS = {
-    { id = "arena", label = "Arena [F1]" },
-    { id = "fights", label = "Fights [F2]" },
-    { id = "specs", label = "Specs [F3]" },
-    { id = "matrix", label = "Matrix [F4]" },
-    { id = "analysis", label = "Analysis [F5]" },
+    { id = "setup", label = "Arena [F1]" },
 }
 
 -- Camera state for smooth zoom and pan
-local camera = {
-    x = 0.0,
-    y = 0.0,
-    zoom = 1.0,
-    minZoom = 0.45,
-    maxZoom = 3.0,
-    isDragging = false,
-    dragButton = 2,
-    dragStartX = 0,
-    dragStartY = 0,
-    origPanX = 0,
-    origPanY = 0,
-}
+local camera = require("arena_camera")
 
 local fctList = {}
 local projectiles = {}
@@ -50,8 +37,11 @@ local particles = {}
 local activeCombatLog = {}
 local drainLifeShader = nil
 local drainLifeMesh = nil
+local tokenFrameShader = nil
+local tokenFrameMesh = nil
 
 local currentMatchPath = "last_match.lua"
+local resetEventsToTime
 
 local function loadMatchFile(path)
     currentMatchPath = path
@@ -71,6 +61,10 @@ local function loadMatchFile(path)
         local fn, loadErr = loadfile(path)
         if fn then
             MATCH_DATA = fn()
+            currentTime = 0
+            isPlaying = true
+            if resetEventsToTime then resetEventsToTime(0) end
+            workspace.showReplay()
             print("Loaded match from Lua: " .. path)
             mcts_overlay.loadSearchData(path)
             fight_analysis.load(path, MATCH_DATA)
@@ -83,6 +77,10 @@ local function loadMatchFile(path)
         local content = f:read("*a")
         f:close()
         MATCH_DATA = json.decode(content)
+        currentTime = 0
+        isPlaying = true
+        if resetEventsToTime then resetEventsToTime(0) end
+        workspace.showReplay()
         print("Loaded match from JSON: " .. path)
         mcts_overlay.loadSearchData(path)
         fight_analysis.load(path, MATCH_DATA)
@@ -93,6 +91,32 @@ end
 
 function love.load(arg)
     love.graphics.setBackgroundColor(0.04, 0.06, 0.10)
+    local tokenFrameSource = [[
+        extern vec3 u_tint;
+        vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
+            vec2 p = (uv - vec2(0.5)) * 2.0;
+            float d = length(p);
+            float aa = max(fwidth(d), 0.001);
+            float distanceToRing = abs(d - 0.8);
+            float ring = 1.0 - smoothstep(0.025 - aa, 0.025 + aa, distanceToRing);
+            float halo = exp(-pow(distanceToRing / 0.085, 2.0));
+            float alpha = max(ring, halo * 0.48);
+            return vec4(u_tint, alpha) * color;
+        }
+    ]]
+    local frameOk, frameShader = pcall(love.graphics.newShader, tokenFrameSource)
+    if frameOk then
+        tokenFrameShader = frameShader
+        -- Shapes have no useful UVs; give the halo a full 0..1 UV quad.
+        tokenFrameMesh = love.graphics.newMesh({
+            { -40, -40, 0, 0 },
+            {  40, -40, 1, 0 },
+            { -40,  40, 0, 1 },
+            {  40,  40, 1, 1 },
+        }, "strip", "static")
+    else
+        print("Token frame shader unavailable; using circle outline: " .. tostring(frameShader))
+    end
     local shaderSource = [[
         extern number u_time;
         vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
@@ -130,17 +154,19 @@ function love.load(arg)
     icons.load()
 
     local path = "last_match.lua"
+    local explicitReplay = false
 
     if arg then
         for i = 1, #arg do
             if arg[i] == "--fights" then
-                currentTab = "fights"
+                workspace.toggleSettingsSection("replays")
             elseif arg[i] == "--specs" then
-                currentTab = "specs"
+                currentTab = "setup"
             elseif arg[i] == "--matrix" then
-                currentTab = "matrix"
+                workspace.toggleSettingsSection("matrix")
             elseif not arg[i]:match("^%-%-") then
                 path = arg[i]
+                explicitReplay = true
             end
         end
     end
@@ -191,6 +217,7 @@ function love.load(arg)
         end
     end
 
+    if not explicitReplay then workspace.editPositions() end
     currentTime = 0.0
     isPlaying = true
     fctList = {}
@@ -272,7 +299,7 @@ end
 
 local nextEventIdx = 1
 
-local function resetEventsToTime(t)
+resetEventsToTime = function(t)
     fctList = {}
     projectiles = {}
     particles = {}
@@ -301,7 +328,7 @@ local function addFCT(x, y, text, color, scale)
 end
 
 -- Both ground-plane axes use the same scale: grid cells are square meters.
-local WORLD_SCALE = 25.0
+local WORLD_SCALE = camera.worldScale
 local function worldToArenaX(x)
     return x * WORLD_SCALE
 end
@@ -371,8 +398,7 @@ local function checkEvents(currT, frame)
 
         if ev.k == 4 then -- Direct Hit (Shadow Bolt, Frostbolt, Ice Lance, etc.)
             local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
-            local isMage = (class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage")
-            local col = isDc and { 0.2, 0.95, 0.4 } or (isMage and { 0.3, 0.85, 1.0 } or { 0.95, 0.45, 1.0 })
+            local col = spell_visuals.color(class_view.spec(MATCH_DATA.meta, ev.s), ev.sp)
             local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
             local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or ((spName ~= "Idle" and (spName .. " -") or "-") .. string.format("%d", math.floor(ev.a + 0.5)))
             addFCT(targetX, targetY + -60, label, col, isDc and 1.6 or 1.4)
@@ -384,7 +410,7 @@ local function checkEvents(currT, frame)
                     tx = targetX, ty = targetY - 20,
                     progress = 0.0,
                     duration = 0.22,
-                    color = isMage and {0.3, 0.8, 1} or { 0.85, 0.45, 1.0 },
+                    color = col,
                 })
             end
         elseif ev.k == 10 and not frame[51] then -- Legacy Death Coil visual
@@ -397,9 +423,7 @@ local function checkEvents(currT, frame)
                 color = { 0.1, 0.95, 0.35 },
             })
         elseif ev.k == 15 then -- Simulation projectile arrival, including absorbed hits
-            local mage = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage"
-            local color = ev.sp == 7 and {0.15, 0.95, 0.35}
-                or (mage and {0.3, 0.8, 1.0} or {0.85, 0.4, 1.0})
+            local color = spell_visuals.color(class_view.spec(MATCH_DATA.meta, ev.s), ev.sp)
             for _ = 1, 12 do
                 local angle = math.random() * math.pi * 2
                 local speed = 60 + math.random() * 90
@@ -448,8 +472,10 @@ local function checkEvents(currT, frame)
                 end
             end
         elseif ev.k == 5 then -- Periodic DOT or Siphon Pulse
-            local isDrain = (ev.sp == 5)
-            local col = isDrain and { 0.55, 1.0, 0.62 } or { 1.0, 0.52, 0.72 }
+            local spec = class_view.spec(MATCH_DATA.meta, ev.s)
+            local isDrain = spec == "warlock" and ev.sp == 5
+            local col = spec == "priest" and spell_visuals.color(spec, ev.sp)
+                or (isDrain and { 0.55, 1.0, 0.62 } or { 1.0, 0.52, 0.72 })
             addFCT(targetX, targetY - 48, string.format("-%d", math.floor(ev.a + 0.5)), col, 1.0)
         elseif ev.k == 6 then -- Siphon / Death Coil Heal
             local isDc = (ev.sp == 7 and class_view.spec(MATCH_DATA.meta, ev.s) == "warlock")
@@ -483,16 +509,13 @@ function love.update(dt)
     if currentTab == "analysis" then return end
     matrix_view.update(dt)
 
-    if currentTab == "specs" then
-        spec_editor.update(dt)
-        return
-    elseif currentTab == "fights" then
+    if currentTab == "fights" then
         local matchToLoad = match_browser.update(dt)
         if matchToLoad then
             loadMatchFile(matchToLoad)
             currentTime = 0.0
             isPlaying = true
-            currentTab = "arena"
+            currentTab = "setup"
         end
         return
     elseif currentTab == "matrix" then
@@ -506,8 +529,13 @@ function love.update(dt)
         loadMatchFile(reSimMatch)
         currentTime = 0.0
         isPlaying = true
+        currentTab = "setup"
+        resetEventsToTime(0.0)
+        match_browser.scanMatchesDir("matches")
+        matrix_view.scanMatrix()
     end
 
+    if currentTab == "setup" and not workspace.isPlayback() then return end
     if not MATCH_DATA then return end
     local maxTime = MATCH_DATA.meta.total_time
 
@@ -682,9 +710,25 @@ local function drawPill(x, y, w, h, text, bgCol, textCol)
     love.graphics.printf(text, x, y + 2, w, "center")
 end
 
-local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, seduction, unDur, siphon, immolate, color, isLeft)
+local function drawTokenFrame(x, y, radius, color, alpha)
+    love.graphics.push("all")
+    if tokenFrameShader then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        tokenFrameShader:send("u_tint", color)
+        love.graphics.setShader(tokenFrameShader)
+        love.graphics.setColor(1, 1, 1, 0.95 * alpha)
+        love.graphics.draw(tokenFrameMesh, x, y, 0, radius / 32, radius / 32)
+    else
+        love.graphics.setColor(color[1], color[2], color[3], alpha)
+        love.graphics.setLineWidth(3 * radius / 32)
+        love.graphics.circle("line", x, y, radius)
+    end
+    love.graphics.pop()
+end
+
+local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, seduction, unDur, siphon, immolate, color, isLeft, meta, isbDur, isbCharges)
     local side = isLeft and 0 or 1
-    local meta = MATCH_DATA and MATCH_DATA.meta
+    if class_view.spec(meta, side) == "priest" then color = spell_visuals.priestToken end
     -- 1. Ice Barrier Shield Dome
     if unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then
         love.graphics.setColor(0.2, 0.75, 1.0, 0.20)
@@ -694,12 +738,17 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
         love.graphics.circle("line", x, y, 42)
     end
 
-    -- 2. Token Core with Class Icon (clean token, single border)
+    -- 2. Token Core with a centered class icon, clipped to the circular frame.
     love.graphics.setColor(0.10, 0.13, 0.20, 1.0)
     love.graphics.circle("fill", x, y, 32)
 
-    -- Draw Class Icon inside circular token
-    local drawnClass = icons.drawClassIcon(class_view.classIcon(meta, side), x, y, 56)
+    -- Clip square class art to the token circle, keeping its full visual scale.
+    love.graphics.stencil(function()
+        love.graphics.circle("fill", x, y, 31.5)
+    end, "replace", 1)
+    love.graphics.setStencilTest("greater", 0)
+    local drawnClass = icons.drawClassPortrait(class_view.classIcon(meta, side), x, y, 63)
+    love.graphics.setStencilTest()
     if not drawnClass then
         love.graphics.setColor(color[1], color[2], color[3], 1.0)
         local emblem = class_view.spec(meta, side) == "frost_mage" and "M" or "W"
@@ -721,36 +770,38 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
         icons.draw(class_view.aura(meta, side, "icebarrier"), x, y, 34, 0.4, 0.9, 1, 0.95)
     end
 
-    -- Token Team Border
-    love.graphics.setColor(color[1], color[2], color[3], 1.0)
-    love.graphics.setLineWidth(3)
-    love.graphics.circle("line", x, y, 32)
+    -- Shader draws the crisp team outline and a soft halo in the same pass.
+    drawTokenFrame(x, y, 32, color, 1)
+
+    if workspace.getSelected()==side+1 then
+        love.graphics.setColor(1,0.83,0.35,0.9)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle('line',x,y,39)
+    end
 
     -- Directional Eye Marker
     local isCC = (fear > 0.0 or horror > 0.0 or seduction > 0.0)
     local dir = isCC and (isLeft and -1 or 1) or (isLeft and 1 or -1)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.circle("fill", x + dir * 24, y, 4)
+    love.graphics.circle("fill", x + dir * 39, y, 4)
 
-    -- 3. Overhead Health Bar & Buffs (Clean, no mana bar in world space)
+    -- 3. Compact overhead vitals; exact values remain in the fixed unit frames.
     local barW = 110
     local halfW = barW * 0.5
     local hpY = y - 56
 
-    -- Health Bar (HP only above character)
     local hpPct = math.max(0, math.min(1.0, hp / 2000.0))
-    love.graphics.setColor(0.08, 0.10, 0.15, 0.9)
-    love.graphics.rectangle("fill", x - halfW, hpY, barW, 13, 3)
-
-    love.graphics.setColor(0.15 * (1 - hpPct) + 0.2 * hpPct, 0.85 * hpPct, 0.25 * (1 - hpPct), 1.0)
-    love.graphics.rectangle("fill", x - halfW, hpY, barW * hpPct, 13, 3)
-
-    love.graphics.setColor(0.2, 0.3, 0.4, 0.8)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", x - halfW, hpY, barW, 13, 3)
-
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(string.format("%d", math.floor(hp)), x - halfW, hpY, barW, "center")
+    local manaPct = math.max(0, math.min(1.0, mana / 1000.0))
+    love.graphics.setColor(0.04, 0.06, 0.09, 0.95)
+    love.graphics.rectangle("fill", x - halfW - 1, hpY - 1, barW + 2, 13, 2)
+    love.graphics.setColor(0.12, 0.18, 0.16, 1)
+    love.graphics.rectangle("fill", x - halfW, hpY, barW, 6, 1)
+    love.graphics.setColor(0.16, 0.60, 0.23, 1.0)
+    love.graphics.rectangle("fill", x - halfW, hpY, barW * hpPct, 6, 1)
+    love.graphics.setColor(0.07, 0.12, 0.23, 1)
+    love.graphics.rectangle("fill", x - halfW, hpY + 8, barW, 3, 1)
+    love.graphics.setColor(0.18, 0.52, 0.95, 1)
+    love.graphics.rectangle("fill", x - halfW, hpY + 8, barW * manaPct, 3, 1)
 
     -- Buffs & Debuffs with Rotating Masks (Above health bar - clean, no numbers)
     local dbY = hpY - 26
@@ -764,31 +815,30 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     if corrup > 0.0 then table.insert(auras, { icon = class_view.aura(meta, side, "corruption"), dur = corrup, maxDur = class_view.auraDuration(meta, side, "corruption"), border = { 0.95, 0.5, 0.2, 1 } }) end
     if siphon > 0.0 then table.insert(auras, { icon = "siphonlife", dur = siphon, maxDur = 30.0, border = { 0.3, 0.9, 0.65, 1 } }) end
     if immolate > 0.0 then table.insert(auras, { icon = "immolate", dur = immolate, maxDur = 15.0, border = { 1.0, 0.35, 0.1, 1 } }) end
+    if isbDur and isbDur > 0.0 then table.insert(auras, { icon = "shadowbolt", dur = isbDur, maxDur = 12.0, border = { 0.6, 0.2, 0.9, 1 }, count = isbCharges }) end
     if unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then table.insert(auras, { icon = "icebarrier", dur = unDur, maxDur = 20.0, border = { 0.2, 0.85, 1.0, 1 } }) end
 
     if #auras > 0 then
         local totalAuraW = #auras * dbSpacing - 3
         local curAuraX = x - totalAuraW * 0.5
         for _, aura in ipairs(auras) do
-            icons.drawAuraBadge(aura.icon, curAuraX, dbY, dbSize, aura.dur, aura.maxDur, aura.border)
+            icons.drawAuraBadge(aura.icon, curAuraX, dbY, dbSize, aura.dur, aura.maxDur, aura.border, aura.count)
             curAuraX = curAuraX + dbSpacing
         end
     end
 
-    -- 4. Cast Bar UNDER Characters in 2D space
+    -- Instant abilities share the cast bar, full immediately and fading in replay time.
+    local flash = cast_feedback.instant(MATCH_DATA and MATCH_DATA.events, currentTime, side, meta)
+    local castAlpha = 1
+    if not (cid > 0 and ctot > 0) and flash then
+        cid, ctmr, ctot, castAlpha = flash.id, 0, 1, flash.alpha
+    end
     if cid > 0 and ctot > 0 then
         local castY = y + 42
         local cProg = math.max(0, math.min(1.0, (ctot - ctmr) / ctot))
-        local isChannel = (cid == 5)
-        local castIconMap = {
-            [1] = "agony",
-            [2] = "corruption",
-            [3] = "fear",
-            [4] = "shadowbolt",
-            [5] = "drainlife",
-            [6] = "healthstone",
-            [7] = "deathcoil",
-        }
+        local spec = class_view.spec(meta, side)
+        local isChannel = castAlpha == 1 and ctmr > 0 and
+            ((spec == "warlock" and cid == 5) or (spec == "priest" and (cid == 5 or cid == 15)))
         local cIcon = class_view.icon(meta, side, cid)
 
         local iconSize = 16
@@ -797,10 +847,10 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
 
         -- Draw Spell Icon with rotating radial mask for remaining cast time
         if cIcon then
-            icons.drawRect(cIcon, x - halfW, castY, iconSize, iconSize)
+            icons.drawRect(cIcon, x - halfW, castY, iconSize, iconSize, 1, 1, 1, castAlpha)
             local remainRatio = math.max(0.0, math.min(1.0, ctmr / ctot))
-            icons.drawRadialCooldownMask(x - halfW, castY, iconSize, iconSize, remainRatio, 0.65)
-            love.graphics.setColor(0.4, 0.4, 0.5, 0.9)
+            icons.drawRadialCooldownMask(x - halfW, castY, iconSize, iconSize, remainRatio, 0.65 * castAlpha)
+            love.graphics.setColor(0.4, 0.4, 0.5, 0.9 * castAlpha)
             love.graphics.setLineWidth(1)
             love.graphics.rectangle("line", x - halfW, castY, iconSize, iconSize, 2)
         else
@@ -808,22 +858,22 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
             castBarW = barW
         end
 
-        love.graphics.setColor(0.08, 0.10, 0.15, 0.9)
+        love.graphics.setColor(0.08, 0.10, 0.15, 0.9 * castAlpha)
         love.graphics.rectangle("fill", castBarX, castY, castBarW, iconSize, 3)
 
         if isChannel then
-            love.graphics.setColor(0.1, 0.8, 0.85, 1.0)
+            love.graphics.setColor(0.1, 0.8, 0.85, castAlpha)
             love.graphics.rectangle("fill", castBarX, castY, castBarW * (1.0 - cProg), iconSize, 3)
         else
-            love.graphics.setColor(0.95, 0.65, 0.1, 1.0)
+            love.graphics.setColor(0.95, 0.65, 0.1, castAlpha)
             love.graphics.rectangle("fill", castBarX, castY, castBarW * cProg, iconSize, 3)
         end
 
-        love.graphics.setColor(0.25, 0.35, 0.45, 0.8)
+        love.graphics.setColor(0.25, 0.35, 0.45, 0.8 * castAlpha)
         love.graphics.setLineWidth(1)
         love.graphics.rectangle("line", castBarX, castY, castBarW, iconSize, 3)
 
-        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setColor(1, 1, 1, castAlpha)
         local castLabel = class_view.name(meta, side, cid)
         love.graphics.printf(castLabel, castBarX, castY + 1, castBarW, "center")
     end
@@ -831,7 +881,7 @@ end
 
 local function tabBounds(screenW, index)
     local startX, gap = 156, 4
-    local width = (screenW - startX - 20 - gap * (#TABS - 1)) / #TABS
+    local width = math.min(180, (screenW - startX - 20 - gap * (#TABS - 1)) / #TABS)
     return startX + (index - 1) * (width + gap), 14, width, 36
 end
 
@@ -848,7 +898,7 @@ local function drawTabBar(screenW)
     g.print("PVP_SIM", 50, 15)
     ui.setFont("small")
     g.setColor(0.40, 0.65, 0.90, 0.85)
-    g.print("Combat Arena & MCTS", 50, 35)
+    g.print("Combat & MCTS", 50, 35)
     ui.resetFont()
 
     local mx, my = love.mouse.getPosition()
@@ -859,42 +909,35 @@ local function drawTabBar(screenW)
     end
 end
 
-local function drawContent()
-    local screenW = ui.width()
-    local screenH = ui.height()
-
-    if currentTab == "analysis" then
-        fight_analysis.draw()
-        return
-    elseif currentTab == "specs" then
-        spec_editor.draw()
-        return
-    elseif currentTab == "fights" then
-        match_browser.draw()
-        return
-    elseif currentTab == "matrix" then
-        matrix_view.draw()
-        return
-    end
-
+local function drawArena(setup)
+    local MATCH_DATA = setup or MATCH_DATA
+    local projectiles = setup and {} or projectiles
+    local particles = setup and {} or particles
+    local fctList = setup and {} or fctList
+    local screenW, screenH = ui.dimensions()
     local arenaCenterY = screenH * 0.48
 
     -- ==========================================
     -- 1. SCENE RENDERING (WITH ZOOM & PAN)
     -- ==========================================
     love.graphics.push()
-    love.graphics.translate(screenW * 0.5 + camera.x, arenaCenterY + camera.y)
+    love.graphics.translate(camera.worldPoint({virtualW=screenW,virtualH=screenH},0,0))
     love.graphics.scale(camera.zoom, camera.zoom)
 
     drawWorldGrid(screenW, screenH, arenaCenterY)
 
-    local frame = getFrameAtTime(currentTime)
-    local siphonOnA = frame and siphonRemaining(0, currentTime, frame[93]) or 0
-    local siphonOnB = frame and siphonRemaining(1, currentTime, frame[94]) or 0
+    local frame = setup and setup.frame or getFrameAtTime(currentTime)
+    workspace.setTokenFrame(frame)
+    local siphonOnA = not setup and frame and siphonRemaining(0, currentTime, frame[93]) or 0
+    local siphonOnB = not setup and frame and siphonRemaining(1, currentTime, frame[94]) or 0
     local immolateOnA = frame and (frame[95] or 0) or 0
     local immolateOnB = frame and (frame[96] or 0) or 0
     local seductionOnA = frame and (frame[101] or 0) or 0
     local seductionOnB = frame and (frame[102] or 0) or 0
+    local isbOnA = frame and (frame[105] or 0) or 0
+    local isbOnB = frame and (frame[106] or 0) or 0
+    local isbChargesA = frame and (frame[107] or 0) or 0
+    local isbChargesB = frame and (frame[108] or 0) or 0
     if frame then
         local ax = worldToArenaX(frame[3])
         local bx = worldToArenaX(frame[4])
@@ -911,7 +954,8 @@ local function drawContent()
                 local py = worldToArenaY(frame[idx + 3] or 0)
                 local pTimer = frame[idx + 4] or 0
                 local alive = hp > 0
-                local r, g, b = side == 0 and 0.75 or 0.3, side == 0 and 0.45 or 0.9, 0.65
+                local teamColor = side == 0 and { 0.68, 0.35, 0.98 } or { 0.10, 0.82, 0.55 }
+                local r, g, b = teamColor[1], teamColor[2], teamColor[3]
 
                 -- 1. Pet Icon & Circular Badge (size 24x24)
                 local iconSize = 22
@@ -919,36 +963,38 @@ local function drawContent()
                 -- Dark background backing
                 love.graphics.setColor(0.04, 0.05, 0.08, alive and 0.95 or 0.4)
                 love.graphics.circle("fill", px, py, halfIcon + 3)
-                -- Team border ring
-                love.graphics.setColor(r, g, b, alive and 1.0 or 0.4)
-                love.graphics.setLineWidth(2)
-                love.graphics.circle("line", px, py, halfIcon + 2)
-
-                -- Draw actual pet icon texture
+                -- Match the player portrait's mask and border overlap at pet scale.
+                local radius = halfIcon + 2
+                local portraitRadius = radius * 31.5 / 32
+                love.graphics.stencil(function()
+                    love.graphics.circle("fill", px, py, portraitRadius)
+                end, "replace", 1)
+                love.graphics.setStencilTest("greater", 0)
                 local iconName = petIcons[kind]
                 if iconName then
-                    icons.draw(iconName, px, py, iconSize, 1, 1, 1, alive and 1.0 or 0.4)
+                    icons.drawPortrait(iconName, px, py, portraitRadius * 2, alive and 1.0 or 0.4)
                 else
                     love.graphics.setColor(r, g, b, alive and 0.95 or 0.3)
                     love.graphics.circle("fill", px, py, 10)
                 end
+                love.graphics.setStencilTest()
+                drawTokenFrame(px, py, radius, teamColor, alive and 1 or 0.4)
 
                 -- 2. HP Bar
                 local barW = 44
-                local barH = 4
+                local barH = 3
                 local barX = px - barW * 0.5
                 local hpY = py + halfIcon + 4
                 love.graphics.setColor(0.02, 0.03, 0.04, 0.9)
                 love.graphics.rectangle("fill", barX, hpY, barW, barH, 2)
-                love.graphics.setColor(r, g, b, alive and 1 or 0.4)
+                love.graphics.setColor(0.16, 0.60, 0.23, 1)
                 love.graphics.rectangle("fill", barX, hpY, barW * math.max(0, math.min(1, hp / petMaxHp[kind])), barH, 2)
 
                 -- 3. Pet Cast Bar
-                local textY = hpY + barH + 2
                 local petCastTimer = side == 0 and (frame[103] or 0) or (frame[104] or 0)
                 local petCastTime = kind == 1 and 2.0 or 1.5
                 if alive and ((kind == 1 and pTimer > 0 and pTimer < 2.0) or (kind == 2 and petCastTimer > 0)) then
-                    local castBarY = textY
+                    local castBarY = hpY + barH + 2
                     local castRemaining = kind == 1 and pTimer or petCastTimer
                     local castProg = math.max(0, math.min(1, (petCastTime - castRemaining) / petCastTime))
                     local cIconSize = 10
@@ -969,12 +1015,8 @@ local function drawContent()
                     love.graphics.setLineWidth(1)
                     love.graphics.rectangle("line", cBarX, castBarY, cBarW, cIconSize, 2)
 
-                    textY = castBarY + cIconSize + 2
                 end
 
-                -- 4. Pet Name & HP Text
-                love.graphics.setColor(0.9, 0.9, 0.95, 0.9)
-                love.graphics.printf(string.format("%s %d HP", petNames[kind], math.floor(hp)), px - 65, textY, 130, "center")
             end
         end
 
@@ -991,12 +1033,17 @@ local function drawContent()
         love.graphics.setColor(0.3, 0.7, 1.0, 1.0)
         love.graphics.printf(string.format("%.1fm", frame[2]), midX - 35, midY + 18, 70, "center")
 
-        -- Drain Life beam if active
-        if frame[11] == 5 then -- Unit A casting Drain Life
-            drawDrainLifeBeam(ax, ay, bx, by)
-        end
-        if frame[12] == 5 then -- Unit B casting Drain Life
-            drawDrainLifeBeam(bx, by, ax, ay)
+        for side = 0, 1 do
+            local spec = class_view.spec(MATCH_DATA.meta, side)
+            local channel = spell_visuals.channel(spec, frame[11 + side])
+            local sx, sy = side == 0 and ax or bx, side == 0 and ay or by
+            local tx, ty = side == 0 and bx or ax, side == 0 and by or ay
+            if channel == "drain" then
+                drawDrainLifeBeam(sx, sy, tx, ty)
+            elseif channel then
+                spell_visuals.drawChannel(love.graphics, sx, sy - 20, tx, ty - 20,
+                    currentTime, spell_visuals.color(spec, frame[11 + side]))
+            end
         end
 
         -- Recorded simulation missiles: four slots per side, spell/damage/x/y.
@@ -1008,10 +1055,9 @@ local function drawContent()
                     if spell and spell > 0 then
                         local x = worldToArenaX(frame[idx + 2])
                         local y = worldToArenaY(frame[idx + 3]) - 20
-                        local mage = class_view.spec(MATCH_DATA.meta, side) == "frost_mage"
-                        local color = spell == 7 and {0.15, 0.95, 0.35}
-                            or (mage and {0.3, 0.8, 1.0} or {0.85, 0.4, 1.0})
-                        local size = spell == 7 and 10 or (spell == 1 and 5 or 8)
+                        local spec = class_view.spec(MATCH_DATA.meta, side)
+                        local color = spell_visuals.color(spec, spell)
+                        local size = spec == "warlock" and spell == 7 and 10 or (spell == 1 and 5 or 8)
                         love.graphics.setColor(color[1], color[2], color[3], 0.2)
                         love.graphics.circle("fill", x, y, size * 2)
                         love.graphics.setColor(color[1], color[2], color[3], 1)
@@ -1060,7 +1106,8 @@ local function drawContent()
             seductionOnA, frame[25],                               -- Seduction, action6_dur_a
             siphonOnA,                                               -- Siphon Life debuff on A
             immolateOnA,                                             -- Immolate debuff on A
-            { 0.68, 0.35, 0.98 }, true
+            { 0.68, 0.35, 0.98 }, true, meta,
+            isbOnA, isbChargesA
         )
 
         drawCombatant(
@@ -1071,7 +1118,8 @@ local function drawContent()
             seductionOnB, frame[26],                               -- Seduction, action6_dur_b
             siphonOnB,                                               -- Siphon Life debuff on B
             immolateOnB,                                             -- Immolate debuff on B
-            { 0.10, 0.82, 0.55 }, false
+            { 0.10, 0.82, 0.55 }, false, meta,
+            isbOnB, isbChargesB
         )
 
         -- Floating Combat Text
@@ -1100,367 +1148,31 @@ local function drawContent()
     -- 2. FIXED HUD & UI (NOT ZOOMED)
     -- ==========================================
 
-    -- 2.1 Top Header Bar
-    ui.drawCard(16, 12, screenW - 32, 54, false, false, 8)
-
-    -- Top left PVP icon and title
-    icons.draw("pvp_banner", 34, 38, 26)
-    ui.setFont("bold")
-    love.graphics.setColor(0.96, 0.98, 1.0, 1.0)
-    love.graphics.print("PVP ARENA", 54, 20)
-    ui.setFont("small")
-    love.graphics.setColor(0.40, 0.72, 1.0, 0.9)
-    love.graphics.print(string.format("Camera: %d%%", math.floor(camera.zoom * 100 + 0.5)), 54, 39)
-    ui.resetFont()
-
-    if MATCH_DATA then
-        local meta = MATCH_DATA.meta
-        local victorStr = "IN PROGRESS"
-        local vColor = { 0.7, 0.78, 0.9 }
-        local showCrown = false
-        if meta.victor == 0 then
-            victorStr = string.format("%s VICTORIOUS", meta.name_a)
-            vColor = { 0.78, 0.45, 1.0 }
-            showCrown = true
-        elseif meta.victor == 1 then
-            victorStr = string.format("%s VICTORIOUS", meta.name_b)
-            vColor = { 0.25, 0.88, 0.55 }
-            showCrown = true
+    -- Shared classic frames use draft values in setup and recorded telemetry in playback.
+    if frame and MATCH_DATA then
+        for side=0,1 do
+            local school,remaining
+            if not setup then school,remaining=spellLockRemaining(side,currentTime) end
+            unit_frames.draw(MATCH_DATA.meta,frame,side,side==0 and 16 or screenW-336,12,
+                workspace.getSelected()==side+1,{
+                    siphon=side==0 and siphonOnA or siphonOnB,
+                    immolate=side==0 and immolateOnA or immolateOnB,
+                    lockSchool=school,lockRemaining=remaining,drawLock=drawSpellLockBadge,
+                    instant=not setup and cast_feedback.instant(MATCH_DATA.events,currentTime,side,MATCH_DATA.meta) or nil,
+                })
         end
-
-        local centerBoxX = screenW * 0.32
-        local centerBoxW = screenW * 0.36
-        if showCrown then
-            icons.draw("crown", centerBoxX + centerBoxW * 0.5 - 100, 38, 22)
-        end
-        ui.setFont("bold")
-        love.graphics.setColor(vColor[1], vColor[2], vColor[3], 1.0)
-        love.graphics.printf(victorStr, centerBoxX, 28, centerBoxW, "center")
-        ui.resetFont()
-
-        -- Time clock with clock icon
-        icons.draw("clock", screenW - 250, 38, 20)
-        ui.setFont("semibold")
-        love.graphics.setColor(0.85, 0.92, 1.0, 0.95)
-        love.graphics.printf(string.format("%.2fs / %.2fs", currentTime, meta.total_time), screenW - 225, 29, 185, "right")
-        ui.resetFont()
     end
 
-    -- Helper spell icon lookup
-    local spellIconMap = {
-        [0] = "ui_sword",
-        [1] = "agony",
-        [2] = "corruption",
-        [3] = "fear",
-        [4] = "shadowbolt",
-        [5] = "drainlife",
-        [6] = "healthstone",
-        [7] = "deathcoil",
-    }
-
-    -- 2.2 Telemetry Unit Frames (Top-left & Top-right)
-    if frame and MATCH_DATA then
-        local meta = MATCH_DATA.meta
-        -- Use frame timers, with event reconstruction for older replays.
-        local siphonA = siphonOnA
-        local siphonB = siphonOnB
-        local cdW = 22
-        local cdH = 22
-
-        local cdY, row4Y, row5Y = 132, 160, 186
-        if class_view.spec(meta, 0) == "warlock" then
-        -- Unit Frame A
-        love.graphics.setColor(0.08, 0.10, 0.16, 0.94)
-        love.graphics.rectangle("fill", 16, 74, 280, 142, 6)
-        love.graphics.setColor(0.68, 0.35, 0.98, 0.8)
-        love.graphics.rectangle("line", 16, 74, 280, 142, 6)
-
-        -- Row 1: Header (Class Icon, Name & Active Cast/Action)
-        icons.drawClassIcon("warlock", 34, 92, 28)
-        love.graphics.setColor(0.95, 0.95, 1.0, 1.0)
-        love.graphics.print(meta.name_a, 56, 82)
-
-        local actA = frame[39]
-        local castA = frame[11]
-        local actIconA = (castA > 0 and spellIconMap[castA]) or spellIconMap[actA] or "ui_sword"
-        icons.drawRect(actIconA, 264, 80, 20, 20)
-        if castA > 0 and frame[15] > 0 then
-            local castProg = math.max(0.0, math.min(1.0, frame[13] / frame[15]))
-            icons.drawRadialCooldownMask(264, 80, 20, 20, castProg, 0.65)
-            love.graphics.setColor(0.02, 0.03, 0.05, 0.9)
-            love.graphics.rectangle("fill", 228, 102, 56, 12, 2)
-            love.graphics.setColor(1.0, 0.72, 0.32, 1.0)
-            love.graphics.printf(string.format("CAST %.1fs", math.max(0, frame[15] - frame[13])), 228, 102, 56, "center")
-        end
-        love.graphics.setColor(0.3, 0.4, 0.5, 0.8)
-        love.graphics.rectangle("line", 264, 80, 20, 20, 2)
-
-        -- Row 2: Vitals Bars (HP & MP)
-        local hpPctA = math.max(0, math.min(1.0, frame[5] / 2000.0))
-        love.graphics.setColor(0.06, 0.08, 0.12, 1.0)
-        love.graphics.rectangle("fill", 56, 102, 228, 12, 2)
-        love.graphics.setColor(0.2, 0.82, 0.3, 0.95)
-        love.graphics.rectangle("fill", 56, 102, 228 * hpPctA, 12, 2)
-        love.graphics.setColor(1, 1, 1, 0.95)
-        love.graphics.printf(string.format("%d HP", math.floor(frame[5])), 56, 102, 228, "center")
-
-        local manaPctA = math.max(0, math.min(1.0, frame[7] / 1000.0))
-        love.graphics.setColor(0.06, 0.08, 0.12, 1.0)
-        love.graphics.rectangle("fill", 56, 118, 228, 8, 2)
-        love.graphics.setColor(0.15, 0.65, 0.95, 0.95)
-        love.graphics.rectangle("fill", 56, 118, 228 * manaPctA, 8, 2)
-        love.graphics.setColor(1, 1, 1, 0.85)
-        love.graphics.printf(string.format("%d MP", math.floor(frame[7])), 56, 117, 228, "center")
-
-        -- Row 3: Cooldowns Row
-        love.graphics.setColor(0.55, 0.65, 0.8, 1.0)
-        love.graphics.print("CD:", 26, 134)
-
-        -- Death Coil CD
-        local dcX = 56
-        cdY = 132
-        icons.drawRect("deathcoil", dcX, cdY, cdW, cdH)
-        if frame[29] > 0 then
-            icons.drawRadialCooldownMask(dcX, cdY, cdW, cdH, math.min(1.0, frame[29] / 45.0), 0.7)
-            love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-            love.graphics.rectangle("line", dcX, cdY, cdW, cdH, 2)
-        else
-            love.graphics.setColor(0.3, 0.9, 0.45, 1.0)
-            love.graphics.rectangle("line", dcX, cdY, cdW, cdH, 2)
-        end
-
-        -- Healthstone / Ice Barrier cooldown
-        local urX = 84
-        icons.drawRect(class_view.icon(meta, 0, 6), urX, cdY, cdW, cdH)
-        if frame[27] > 0 then
-            icons.drawRadialCooldownMask(urX, cdY, cdW, cdH, math.min(1.0, frame[27] / (class_view.spec(meta, 0) == "frost_mage" and 24.0 or 120.0)), 0.7)
-            love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-            love.graphics.rectangle("line", urX, cdY, cdW, cdH, 2)
-        else
-            love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
-            love.graphics.rectangle("line", urX, cdY, cdW, cdH, 2)
-        end
-
-        if class_view.spec(meta, 0) == "warlock" then
-            local petKind, petHp = frame[83] or 0, frame[84] or 0
-            local ability, cdMax, readyColor
-            if petHp > 0 and petKind == 2 then
-                ability, cdMax, readyColor = "seduction", 15.0, { 0.8, 0.4, 1.0, 1 }
-            elseif petHp > 0 and petKind == 3 then
-                ability, cdMax, readyColor = "spell_lock", 24.0, { 1.0, 0.35, 0.3, 1 }
-            end
-            if ability then
-                local petAbilityX = 112
-                icons.drawRect(ability, petAbilityX, cdY, cdW, cdH)
-                if (frame[99] or 0) > 0 then
-                    icons.drawRadialCooldownMask(petAbilityX, cdY, cdW, cdH, math.min(1.0, frame[99] / cdMax), 0.7)
-                    love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-                else
-                    love.graphics.setColor(unpack(readyColor))
-                end
-                love.graphics.rectangle("line", petAbilityX, cdY, cdW, cdH, 2)
-            end
-        end
-
-        -- Row 4: Buffs Row
-        love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
-        love.graphics.print("BUFF:", 26, 162)
-        local bX = 64
-        row4Y = 160
-        if frame[25] > 0 and class_view.spec(meta, 0) == "frost_mage" then
-            icons.drawAuraBadge("icebarrier", bX, row4Y, 20, frame[25], 20.0, { 0.2, 0.85, 1.0, 1 })
-            bX = bX + 24
-        end
-
-        -- Row 5: Debuffs Row
-        love.graphics.setColor(0.95, 0.45, 0.35, 1.0)
-        love.graphics.print("DEBUFF:", 26, 188)
-        local debX = 80
-        row5Y = 186
-        if frame[23] > 0 then
-            icons.drawAuraBadge("horror", debX, row5Y, 20, frame[23], 3.0, { 0.3, 0.9, 0.3, 1 })
-            debX = debX + 24
-        end
-        if (frame[101] or 0) > 0 then
-            icons.drawAuraBadge("seduction", debX, row5Y, 20, frame[101], 15.0, { 0.8, 0.4, 1.0, 1 })
-            debX = debX + 24
-        end
-        local lockSchoolA, lockRemainingA = spellLockRemaining(0, currentTime)
-        if lockSchoolA then
-            drawSpellLockBadge(debX, row5Y, lockSchoolA, lockRemainingA)
-            debX = debX + 24
-        elseif (frame[47] or 0) > 0 then
-            icons.drawAuraBadge("counterspell", debX, row5Y, 20, frame[47], 4.0, { 1.0, 0.2, 0.2, 1 })
-            debX = debX + 24
-        end
-        if frame[21] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 0, "fear"), debX, row5Y, 20, frame[21], 6.0, { 0.85, 0.4, 1.0, 1 })
-            debX = debX + 24
-        end
-        if frame[17] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 0, "agony"), debX, row5Y, 20, frame[17], 18.0, { 0.7, 0.3, 0.9, 1 })
-            debX = debX + 24
-        end
-        if frame[19] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 0, "corruption"), debX, row5Y, 20, frame[19], 14.0, { 0.95, 0.5, 0.2, 1 })
-            debX = debX + 24
-        end
-        if siphonA > 0 then
-            icons.drawAuraBadge("siphonlife", debX, row5Y, 20, siphonA, 30.0, { 0.3, 0.9, 0.65, 1 })
-            debX = debX + 24
-        end
-        if immolateOnA > 0 then
-            icons.drawAuraBadge("immolate", debX, row5Y, 20, immolateOnA, 15.0, { 1.0, 0.35, 0.1, 1 })
-            debX = debX + 24
-        end
-
-        else
-            class_view.drawMagePanel(meta, frame, 0, 16, icons)
-        end
-        -- Unit Frame B
-        local cardBx = screenW - 296
-        if class_view.spec(meta, 1) == "warlock" then
-        love.graphics.setColor(0.08, 0.10, 0.16, 0.94)
-        love.graphics.rectangle("fill", cardBx, 74, 280, 142, 6)
-        love.graphics.setColor(0.10, 0.82, 0.55, 0.8)
-        love.graphics.rectangle("line", cardBx, 74, 280, 142, 6)
-
-        -- Row 1: Header (Class Icon, Name & Active Cast/Action)
-        icons.drawClassIcon("warlock", cardBx + 18, 92, 28)
-        love.graphics.setColor(0.95, 0.95, 1.0, 1.0)
-        love.graphics.print(meta.name_b, cardBx + 40, 82)
-
-        local actB = frame[40]
-        local castB = frame[12]
-        local actIconB = (castB > 0 and spellIconMap[castB]) or spellIconMap[actB] or "ui_sword"
-        icons.drawRect(actIconB, cardBx + 248, 80, 20, 20)
-        if castB > 0 and frame[16] > 0 then
-            local castProgB = math.max(0.0, math.min(1.0, frame[14] / frame[16]))
-            icons.drawRadialCooldownMask(cardBx + 248, 80, 20, 20, castProgB, 0.65)
-            love.graphics.setColor(0.02, 0.03, 0.05, 0.9)
-            love.graphics.rectangle("fill", cardBx + 212, 102, 56, 12, 2)
-            love.graphics.setColor(1.0, 0.72, 0.32, 1.0)
-            love.graphics.printf(string.format("CAST %.1fs", math.max(0, frame[16] - frame[14])), cardBx + 212, 102, 56, "center")
-        end
-        love.graphics.setColor(0.3, 0.4, 0.5, 0.8)
-        love.graphics.rectangle("line", cardBx + 248, 80, 20, 20, 2)
-
-        -- Row 2: Vitals Bars (HP & MP)
-        local hpPctB = math.max(0, math.min(1.0, frame[6] / 2000.0))
-        love.graphics.setColor(0.06, 0.08, 0.12, 1.0)
-        love.graphics.rectangle("fill", cardBx + 40, 102, 228, 12, 2)
-        love.graphics.setColor(0.2, 0.82, 0.3, 0.95)
-        love.graphics.rectangle("fill", cardBx + 40, 102, 228 * hpPctB, 12, 2)
-        love.graphics.setColor(1, 1, 1, 0.95)
-        love.graphics.printf(string.format("%d HP", math.floor(frame[6])), cardBx + 40, 102, 228, "center")
-
-        local manaPctB = math.max(0, math.min(1.0, frame[8] / 1000.0))
-        love.graphics.setColor(0.06, 0.08, 0.12, 1.0)
-        love.graphics.rectangle("fill", cardBx + 40, 118, 228, 8, 2)
-        love.graphics.setColor(0.15, 0.65, 0.95, 0.95)
-        love.graphics.rectangle("fill", cardBx + 40, 118, 228 * manaPctB, 8, 2)
-        love.graphics.setColor(1, 1, 1, 0.85)
-        love.graphics.printf(string.format("%d MP", math.floor(frame[8])), cardBx + 40, 117, 228, "center")
-
-        -- Row 3: Cooldowns Row
-        love.graphics.setColor(0.55, 0.65, 0.8, 1.0)
-        love.graphics.print("CD:", cardBx + 10, 134)
-
-        local dcXB = cardBx + 40
-        icons.drawRect("deathcoil", dcXB, cdY, cdW, cdH)
-        if frame[30] > 0 then
-            icons.drawRadialCooldownMask(dcXB, cdY, cdW, cdH, math.min(1.0, frame[30] / 45.0), 0.7)
-            love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-            love.graphics.rectangle("line", dcXB, cdY, cdW, cdH, 2)
-        else
-            love.graphics.setColor(0.3, 0.9, 0.45, 1.0)
-            love.graphics.rectangle("line", dcXB, cdY, cdW, cdH, 2)
-        end
-
-        local urXB = cardBx + 68
-        icons.drawRect(class_view.icon(meta, 1, 6), urXB, cdY, cdW, cdH)
-        if frame[28] > 0 then
-            icons.drawRadialCooldownMask(urXB, cdY, cdW, cdH, math.min(1.0, frame[28] / (class_view.spec(meta, 1) == "frost_mage" and 24.0 or 120.0)), 0.7)
-            love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-            love.graphics.rectangle("line", urXB, cdY, cdW, cdH, 2)
-        else
-            love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
-            love.graphics.rectangle("line", urXB, cdY, cdW, cdH, 2)
-        end
-
-        if class_view.spec(meta, 1) == "warlock" then
-            local petKind, petHp = frame[88] or 0, frame[89] or 0
-            local ability, cdMax, readyColor
-            if petHp > 0 and petKind == 2 then
-                ability, cdMax, readyColor = "seduction", 15.0, { 0.8, 0.4, 1.0, 1 }
-            elseif petHp > 0 and petKind == 3 then
-                ability, cdMax, readyColor = "spell_lock", 24.0, { 1.0, 0.35, 0.3, 1 }
-            end
-            if ability then
-                local petAbilityXB = cardBx + 96
-                icons.drawRect(ability, petAbilityXB, cdY, cdW, cdH)
-                if (frame[100] or 0) > 0 then
-                    icons.drawRadialCooldownMask(petAbilityXB, cdY, cdW, cdH, math.min(1.0, frame[100] / cdMax), 0.7)
-                    love.graphics.setColor(0.95, 0.35, 0.35, 1.0)
-                else
-                    love.graphics.setColor(unpack(readyColor))
-                end
-                love.graphics.rectangle("line", petAbilityXB, cdY, cdW, cdH, 2)
-            end
-        end
-
-        -- Row 4: Buffs Row
-        love.graphics.setColor(0.35, 0.85, 1.0, 1.0)
-        love.graphics.print("BUFF:", cardBx + 10, 162)
-        local bXB = cardBx + 48
-        if frame[26] > 0 and class_view.spec(meta, 1) == "frost_mage" then
-            icons.drawAuraBadge("icebarrier", bXB, row4Y, 20, frame[26], 20.0, { 0.2, 0.85, 1.0, 1 })
-            bXB = bXB + 24
-        end
-
-        -- Row 5: Debuffs Row
-        love.graphics.setColor(0.95, 0.45, 0.35, 1.0)
-        love.graphics.print("DEBUFF:", cardBx + 10, 188)
-        local debXB = cardBx + 64
-        if frame[24] > 0 then
-            icons.drawAuraBadge("horror", debXB, row5Y, 20, frame[24], 3.0, { 0.3, 0.9, 0.3, 1 })
-            debXB = debXB + 24
-        end
-        if (frame[102] or 0) > 0 then
-            icons.drawAuraBadge("seduction", debXB, row5Y, 20, frame[102], 15.0, { 0.8, 0.4, 1.0, 1 })
-            debXB = debXB + 24
-        end
-        local lockSchoolB, lockRemainingB = spellLockRemaining(1, currentTime)
-        if lockSchoolB then
-            drawSpellLockBadge(debXB, row5Y, lockSchoolB, lockRemainingB)
-            debXB = debXB + 24
-        elseif (frame[48] or 0) > 0 then
-            icons.drawAuraBadge("counterspell", debXB, row5Y, 20, frame[48], 4.0, { 1.0, 0.2, 0.2, 1 })
-            debXB = debXB + 24
-        end
-        if frame[22] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 1, "fear"), debXB, row5Y, 20, frame[22], 6.0, { 0.85, 0.4, 1.0, 1 })
-            debXB = debXB + 24
-        end
-        if frame[18] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 1, "agony"), debXB, row5Y, 20, frame[18], 18.0, { 0.7, 0.3, 0.9, 1 })
-            debXB = debXB + 24
-        end
-        if frame[20] > 0 then
-            icons.drawAuraBadge(class_view.aura(meta, 1, "corruption"), debXB, row5Y, 20, frame[20], 14.0, { 0.95, 0.5, 0.2, 1 })
-            debXB = debXB + 24
-        end
-        if siphonB > 0 then
-            icons.drawAuraBadge("siphonlife", debXB, row5Y, 20, siphonB, 30.0, { 0.3, 0.9, 0.65, 1 })
-            debXB = debXB + 24
-        end
-        if immolateOnB > 0 then
-            icons.drawAuraBadge("immolate", debXB, row5Y, 20, immolateOnB, 15.0, { 1.0, 0.35, 0.1, 1 })
-            debXB = debXB + 24
-        end
-        else
-            class_view.drawMagePanel(meta, frame, 1, cardBx, icons)
-        end
+    -- Setup guidance sits directly on the arena; playback retains its scrubber.
+    if setup then
+        ui.setFont('normal')
+        love.graphics.setColor(ui.colors.textMuted)
+        love.graphics.printf(string.format('A: (%.1f, %.1f)    B: (%.1f, %.1f)    Distance: %.1f m',
+            frame[3],frame[49] or 0,frame[4],frame[50] or 0,frame[2]),24,screenH-52,screenW-48,'center')
+        love.graphics.printf('Drag fighters · Wheel to zoom · Right/middle drag to pan · 0 to reset camera',
+            24,screenH-30,screenW-48,'center')
+        ui.resetFont()
+        return
     end
 
     -- 2.3 Bottom Controls & Scrubber Panel
@@ -1487,6 +1199,7 @@ local function drawContent()
 
     -- Play/Pause Button
     local mx, my = love.mouse.getPosition()
+    mx, my = ui.contentPoint(mx, my)
     local btnHover = (mx >= 36 and mx <= 36 + 140 and my >= ctrlY + 36 and my <= ctrlY + 36 + 28)
     ui.button(36, ctrlY + 36, 140, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", btnHover, isPlaying)
 
@@ -1495,6 +1208,23 @@ local function drawContent()
     love.graphics.setColor(0.65, 0.75, 0.88, 0.9)
     love.graphics.print("Arrows  Step    +/-  Zoom    0  Reset    R  Reload    1–5  Speed: " .. tostring(playbackSpeed) .. "x", 190, ctrlY + 42)
     ui.resetFont()
+
+    ui.setFont('small')
+    love.graphics.setColor(ui.colors.textMuted)
+    love.graphics.printf(string.format('%.2fs / %.2fs · Camera: %d%%', currentTime,
+        MATCH_DATA and MATCH_DATA.meta.total_time or 0, math.floor(camera.zoom*100+0.5)),
+        36, ctrlY+88, screenW-72, 'right')
+    ui.resetFont()
+
+    if MATCH_DATA then
+        local meta=MATCH_DATA.meta
+        local outcome=meta.victor==0 and (meta.name_a..' victorious')
+            or meta.victor==1 and (meta.name_b..' victorious') or 'In progress'
+        love.graphics.setColor(ui.colors.textMuted)
+        ui.setFont('small')
+        love.graphics.printf(outcome,36,ctrlY+88,(screenW-72)*0.6,'left')
+        ui.resetFont()
+    end
 
     -- Combat Summary / Live Log
     if MATCH_DATA and MATCH_DATA.events then
@@ -1536,6 +1266,8 @@ local function drawContent()
                     desc = "cast Blink"
                 elseif ev.k == 14 then
                     desc = "cast Counterspell"
+                elseif ev.k == 18 then
+                    desc = string.format("Blackout stunned for %.2fs", ev.a)
                 elseif ev.k == 17 then
                     desc = string.format("locked out %s magic", LOCKOUT_SCHOOLS[ev.sp] or "unknown")
                 elseif ev.k == 16 then
@@ -1556,6 +1288,17 @@ local function drawContent()
     end
 end
 
+local function drawContent()
+    if currentTab == "setup" then
+        workspace.draw(drawArena, MATCH_DATA ~= nil, function(path)
+            loadMatchFile(path); currentTime=0; isPlaying=true; resetEventsToTime(0)
+        end)
+    elseif currentTab == "analysis" then fight_analysis.draw()
+    elseif currentTab == "fights" then match_browser.draw()
+    elseif currentTab == "matrix" then matrix_view.draw()
+    end
+end
+
 function love.draw()
     love.graphics.push("all")
     love.graphics.translate(0, ui.headerHeight)
@@ -1563,60 +1306,48 @@ function love.draw()
     drawContent()
     love.graphics.pop()
     drawTabBar(love.graphics.getWidth())
+    love.graphics.push('all')
+    love.graphics.translate(0, ui.headerHeight)
+    love.graphics.scale(ui.scale())
+    ui.drawDropdown()
+    love.graphics.pop()
 end
 
 function love.wheelmoved(x, y)
+    if ui.dropdownWheelmoved(y) then return end
     if currentTab == "analysis" then fight_analysis.wheelmoved(y); return end
-    if currentTab ~= "arena" then return end
-    local oldZoom = camera.zoom
-    if y > 0 then
-        camera.zoom = math.min(camera.maxZoom, camera.zoom * 1.15)
-    elseif y < 0 then
-        camera.zoom = math.max(camera.minZoom, camera.zoom / 1.15)
-    end
+    if currentTab ~= "setup" then return end
+    local mx, my = ui.contentPoint(love.mouse.getPosition())
+    if not workspace.arenaPoint(mx, my) then workspace.wheelmoved(y); return end
+    if y > 0 then camera.zoom = math.min(camera.maxZoom, camera.zoom * 1.15)
+    elseif y < 0 then camera.zoom = math.max(camera.minZoom, camera.zoom / 1.15) end
 end
 
 function love.keypressed(key)
+    if ui.dropdownKeypressed(key) then return end
     if key == "f11" then
         love.window.setFullscreen(not love.window.getFullscreen(), "desktop")
         return
     end
 
+    if key == "f6" or key == "f3" then currentTab = "setup"; return end
+
     -- Tab switching shortcuts
     if key == "f1" or key == "1" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = "arena"
+        currentTab = "setup"
         return
     elseif key == "f2" or key == "2" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = (currentTab == "fights") and "arena" or "fights"
-        return
-    elseif key == "f3" or key == "3" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = (currentTab == "specs") and "arena" or "specs"
-        return
+        workspace.toggleSettingsSection('replays'); return
     elseif key == "f4" or key == "4" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = (currentTab == "matrix") and "arena" or "matrix"
-        return
-    elseif key == "f5" or key == "5" and love.keyboard.isDown("lctrl", "rctrl") then
-        currentTab = "analysis"
-        return
-    elseif key == "tab" and currentTab ~= "specs" then
-        local nextTab = { arena = "fights", fights = "specs", specs = "matrix", matrix = "analysis", analysis = "arena" }
-        currentTab = nextTab[currentTab] or "arena"
-        return
+        workspace.toggleSettingsSection('matrix'); return
     end
 
     if currentTab == "analysis" then
-        if key == "escape" then currentTab = "arena" else fight_analysis.keypressed(key) end
-        return
-    elseif currentTab == "specs" then
-        if key == "escape" then
-            currentTab = "arena"
-            return
-        end
-        spec_editor.keypressed(key)
+        if key == "escape" then currentTab = "setup" else fight_analysis.keypressed(key) end
         return
     elseif currentTab == "fights" then
         if key == "escape" then
-            currentTab = "arena"
+            currentTab = "setup"
             return
         end
         local matchToLoad = match_browser.keypressed(key)
@@ -1624,12 +1355,12 @@ function love.keypressed(key)
             loadMatchFile(matchToLoad)
             currentTime = 0.0
             isPlaying = true
-            currentTab = "arena"
+            currentTab = "setup"
         end
         return
     elseif currentTab == "matrix" then
         if key == "escape" then
-            currentTab = "arena"
+            currentTab = "setup"
             return
         end
         local matchToLoad = matrix_view.keypressed(key)
@@ -1637,9 +1368,15 @@ function love.keypressed(key)
             loadMatchFile(matchToLoad)
             currentTime = 0.0
             isPlaying = true
-            currentTab = "arena"
+            currentTab = "setup"
         end
         return
+    end
+
+    if currentTab == "setup" then
+        if workspace.keypressed(key) then return end
+        if not workspace.isPlayback() and key ~= '=' and key ~= '+' and key ~= 'kp+'
+            and key ~= '-' and key ~= '_' and key ~= 'kp-' and key ~= '0' and key ~= 'kp0' then return end
     end
 
     if key == "space" then
@@ -1677,17 +1414,24 @@ function love.keypressed(key)
     elseif key == "4" then playbackSpeed = 2.0
     elseif key == "5" then playbackSpeed = 4.0
     elseif key == "escape" then
-        love.event.quit()
+        workspace.editPositions()
+        camera.isDragging = false
     end
 end
 
 function love.mousepressed(x, y, button)
+    local menuX,menuY=ui.contentPoint(x,y)
+    if ui.dropdownMousepressed(menuX,menuY,button) then
+        workspace.mousereleased(1); camera.isDragging=false; return
+    end
     local screenW = ui.width()
 
     if button == 1 then
         for idx, tab in ipairs(TABS) do
             local tx, ty, tw, th = tabBounds(love.graphics.getWidth(), idx)
             if x >= tx and x <= tx + tw and y >= ty and y <= ty + th then
+                workspace.mousereleased(1)
+                camera.isDragging = false
                 currentTab = tab.id
                 return
             end
@@ -1696,12 +1440,16 @@ function love.mousepressed(x, y, button)
     if y < ui.headerHeight then return end
     x, y = ui.contentPoint(x, y)
 
+    local replayView
+    if currentTab == "setup" then
+        if workspace.mousepressed(x, y, button) then camera.isDragging = false; return end
+        x, y, replayView = workspace.arenaPoint(x, y)
+        if not x then return end
+        screenW = replayView.virtualW
+    end
     if currentTab == "analysis" then
         local seek = fight_analysis.mousepressed(x, y, button)
-        if seek then currentTime = seek; isPlaying = false; resetEventsToTime(seek); currentTab = "arena" end
-        return
-    elseif currentTab == "specs" then
-        spec_editor.mousepressed(x, y, button)
+        if seek then currentTime = seek; isPlaying = false; resetEventsToTime(seek); workspace.showReplay(); currentTab = "setup" end
         return
     elseif currentTab == "fights" then
         local matchToLoad = match_browser.mousepressed(x, y, button)
@@ -1709,7 +1457,7 @@ function love.mousepressed(x, y, button)
             loadMatchFile(matchToLoad)
             currentTime = 0.0
             isPlaying = true
-            currentTab = "arena"
+            currentTab = "setup"
         end
         return
     elseif currentTab == "matrix" then
@@ -1718,24 +1466,24 @@ function love.mousepressed(x, y, button)
             loadMatchFile(matchToLoad)
             currentTime = 0.0
             isPlaying = true
-            currentTab = "arena"
+            currentTab = "setup"
         end
         return
     end
 
-    if currentTab == "arena" then
-        if mcts_overlay.mousepressed(x, y, button) then
+    if currentTab == "setup" then
+        if workspace.isPlayback() and mcts_overlay.mousepressed(x, y, button) then
             return
         end
     end
 
-    local screenH = ui.height()
+    local screenH = replayView and replayView.virtualH or ui.height()
     local ctrlY = screenH - 120
     local scrubX = 36
     local scrubW = screenW - 72
 
-    if button == 1 then
-        if x >= 36 and x <= 168 and y >= ctrlY + 36 and y <= ctrlY + 64 then
+    if button == 1 and workspace.isPlayback() then
+        if x >= 36 and x <= 176 and y >= ctrlY + 36 and y <= ctrlY + 64 then
             isPlaying = not isPlaying
             return
         end
@@ -1757,6 +1505,7 @@ function love.mousepressed(x, y, button)
 end
 
 function love.mousereleased(x, y, button)
+    workspace.mousereleased(button)
     if camera.isDragging and button == camera.dragButton then
         camera.isDragging = false
     end
@@ -1764,6 +1513,13 @@ end
 
 function love.mousemoved(x, y, dx, dy)
     x, y = ui.contentPoint(x, y)
+    if currentTab == "setup" then
+        workspace.mousemoved(x, y)
+        if camera.isDragging then
+            x, y = workspace.arenaPoint(x, y, true)
+            if not x then camera.isDragging = false; return end
+        else return end
+    end
     if camera.isDragging then
         camera.x = camera.origPanX + (x - camera.dragStartX)
         camera.y = camera.origPanY + (y - camera.dragStartY)
@@ -1771,9 +1527,7 @@ function love.mousemoved(x, y, dx, dy)
 end
 
 function love.textinput(text)
-    if currentTab == "specs" then
-        spec_editor.textinput(text)
-    end
+    if currentTab == "setup" then workspace.textinput(text); return end
 end
 
 function love.quit()

@@ -58,16 +58,42 @@ end
 function ui.scale()
     return math.min(1, (love.graphics.getHeight() - ui.headerHeight) / 640)
 end
-function ui.width() return love.graphics.getWidth() / ui.scale() end
-function ui.height() return (love.graphics.getHeight() - ui.headerHeight) / ui.scale() - ui.inset end
+function ui.width() return ui.viewport and ui.viewport.virtualW or love.graphics.getWidth() / ui.scale() end
+function ui.height() return ui.viewport and ui.viewport.virtualH or (love.graphics.getHeight() - ui.headerHeight) / ui.scale() - ui.inset end
 function ui.dimensions() return ui.width(), ui.height() end
 function ui.contentPoint(x, y)
-    return x / ui.scale(), (y - ui.headerHeight) / ui.scale()
+    x, y = x / ui.scale(), (y - ui.headerHeight) / ui.scale()
+    if ui.viewport then return ui.viewportPoint(ui.viewport, x, y) end
+    return x, y
+end
+-- A panel supplies a logical canvas for the existing arena renderer and controls.
+function ui.makeViewport(x, y, w, h)
+    local virtualW = math.max(960, w)
+    local scale = w / virtualW
+    return { x=x, y=y, w=w, h=h, scale=scale, virtualW=virtualW, virtualH=h/scale }
+end
+function ui.viewportPoint(view, x, y)
+    return (x-view.x)/view.scale, (y-view.y)/view.scale
 end
 function ui.scissor(x, y, w, h)
     local scale = ui.scale()
-    love.graphics.setScissor(x * scale, ui.headerHeight + (y + ui.inset) * scale,
-        w * scale, h * scale)
+    local view = ui.viewport
+    if view then
+        x, y = view.x+x*view.scale, view.y+(y+ui.inset)*view.scale
+        w, h = w*view.scale, h*view.scale
+    else y = y+ui.inset end
+    love.graphics.setScissor(x*scale, ui.headerHeight+y*scale, w*scale, h*scale)
+end
+function ui.withViewport(view, draw)
+    local previous = ui.viewport
+    love.graphics.push('all')
+    ui.scissor(view.x, view.y, view.w, view.h)
+    love.graphics.translate(view.x, view.y)
+    love.graphics.scale(view.scale)
+    ui.viewport = view
+    draw()
+    ui.viewport = previous
+    love.graphics.pop()
 end
 function ui.withInset(amount, draw)
     love.graphics.push('all')
@@ -157,6 +183,131 @@ function ui.button(x, y, w, h, label, hovered, isPrimary)
     g.setColor(hovered and 1.0 or 0.92, hovered and 1.0 or 0.94, 1.0, 1.0)
     g.printf(label, x, y + math.floor((h - g.getFont():getHeight()) / 2), w, 'center')
     ui.resetFont()
+end
+
+function ui.chevron(x,y,expanded)
+    local g=love.graphics
+    g.setColor(ui.colors.textMuted); g.setLineWidth(1.5)
+    if expanded then g.line(x-4,y-2,x,y+2,x+4,y-2)
+    else g.line(x-2,y-4,x+2,y,x-2,y+4) end
+    g.setLineWidth(1)
+end
+
+-- Header body excludes the class-icon hit area so the two actions stay distinct.
+function ui.playerHeader(x,y,w,h,title,subtitle,expanded,accent,textInset)
+    local inset=textInset or 56
+    local g=love.graphics
+    local mx,my=ui.contentPoint(love.mouse.getPosition())
+    local hover=mx>=x and mx<=x+w and my>=y and my<=y+h
+    g.setColor(hover and ui.colors.cardHover or ui.colors.cardBg);g.rectangle('fill',x,y,w,h,6)
+    g.setColor(expanded and accent or ui.colors.cardBorder);g.rectangle('line',x,y,w,h,6)
+    g.setColor(accent);g.rectangle('fill',x,y+8,3,h-16,2)
+    ui.chevron(x+w-14,y+h/2,expanded)
+    g.push('all');ui.scissor(x+inset,y+4,w-inset-26,h-8)
+    ui.setFont('bold');g.setColor(ui.colors.text);g.print(title,x+inset,y+8)
+    ui.setFont('small');g.setColor(ui.colors.textMuted);g.print(subtitle,x+inset,y+31)
+    g.pop();ui.resetFont()
+end
+
+-- Dropdown anchors and input use the same logical coordinates as panel controls.
+local menu
+local function contains(r, x, y)
+    return x >= r.x and x < r.x+r.w and y >= r.y and y < r.y+r.h
+end
+function ui.dropdownOpen() return menu ~= nil end
+function ui.closeDropdown() menu = nil end
+function ui.dropdown(id, x, y, w, h, value, choices, onSelect, format, displayValue, options)
+    options=options or {}
+    local anchor = {x=x,y=y,w=w,h=h,menuWidth=options.menuWidth}
+    if menu and menu.id == id then menu.anchor=anchor end
+    local g=love.graphics
+    if options.icon or options.race then
+        local mx,my=ui.contentPoint(love.mouse.getPosition())
+        ui.drawCard(x,y,w,h,contains(anchor,mx,my),menu and menu.id==id,6)
+        if options.race then require('races').draw(options.race,x+w/2,y+h/2,math.min(w,h)-6)
+        else require('icons_manager').drawClassIcon(options.icon,x+w/2,y+h/2,math.min(w,h)-6) end
+        g.setColor(ui.colors.accentGold)
+        g.polygon('fill',x+w-10,y+h-6,x+w-4,y+h-6,x+w-7,y+h-3)
+    else
+        ui.button(x,y,w,h,'',false,false)
+        ui.setFont('normal')
+        g.setColor(ui.colors.text)
+        g.push('all'); ui.scissor(x+10,y,w-38,h)
+        g.print(displayValue or (format and format(value) or tostring(value)),x+10,y+math.floor((h-g.getFont():getHeight())/2))
+        g.pop()
+        local cx,cy=x+w-15,y+h/2
+        local direction=(menu and menu.id==id) and -1 or 1
+        g.setColor(ui.colors.textMuted)
+        g.setLineWidth(1.5)
+        g.line(cx-4,cy-2*direction,cx,cy+2*direction,cx+4,cy-2*direction)
+        g.setLineWidth(1)
+        ui.resetFont()
+    end
+    return function()
+        if menu and menu.id == id then menu=nil; return end
+        if #choices==0 then return end
+        menu={id=id,anchor=anchor,value=value,choices=choices,onSelect=onSelect,format=format,offset=0}
+    end
+end
+function ui.dropdownBounds()
+    if not menu then return nil end
+    local w,h=ui.dimensions()
+    local mw=math.min(menu.anchor.menuWidth or menu.anchor.w,w-16)
+    local row=26
+    local rows=math.min(#menu.choices,math.max(1,math.floor((h-24)/row)))
+    menu.offset=math.max(0,math.min(menu.offset,#menu.choices-rows))
+    local mh=rows*row+8
+    local x=math.max(8,math.min(menu.anchor.x,w-mw-8))
+    local y=menu.anchor.y+menu.anchor.h+4
+    if y+mh>h-8 then y=menu.anchor.y-mh-4 end
+    y=math.max(8,math.min(y,h-mh-8))
+    return {x=x,y=y,w=mw,h=mh,row=row,rows=rows}
+end
+function ui.drawDropdown()
+    if not menu then return end
+    local g=love.graphics
+    local r=ui.dropdownBounds()
+    local mx,my=ui.contentPoint(love.mouse.getPosition())
+    g.push('all'); g.setScissor()
+    g.setColor(0.06,0.09,0.15,1); g.rectangle('fill',r.x,r.y,r.w,r.h,5)
+    g.setColor(ui.colors.cardBorderActive); g.rectangle('line',r.x,r.y,r.w,r.h,5)
+    ui.setFont('normal')
+    ui.scissor(r.x+3,r.y+4,r.w-6,r.h-8)
+    for slot=1,r.rows do
+        local value=menu.choices[menu.offset+slot]
+        local y=r.y+4+(slot-1)*r.row
+        local hovered=contains({x=r.x,y=y,w=r.w,h=r.row},mx,my)
+        if hovered or value==menu.value then
+            g.setColor(hovered and ui.colors.cardHover or ui.colors.cardBorder)
+            g.rectangle('fill',r.x+3,y,r.w-6,r.row,3)
+        end
+        g.setColor(value==menu.value and ui.colors.accentGold or ui.colors.text)
+        g.print((value==menu.value and '*  ' or '   ')..(menu.format and menu.format(value) or tostring(value)),r.x+8,y+5)
+    end
+    g.pop()
+end
+function ui.dropdownMousepressed(x,y,button)
+    if not menu then return false end
+    local current=menu
+    local r=ui.dropdownBounds()
+    menu=nil
+    if button==1 and contains(r,x,y) then
+        local slot=math.floor((y-r.y-4)/r.row)+1
+        local i=current.offset+slot
+        if slot>=1 and slot<=r.rows and current.choices[i] then current.onSelect(current.choices[i]) end
+    end
+    return true
+end
+function ui.dropdownWheelmoved(y)
+    if not menu then return false end
+    local r=ui.dropdownBounds()
+    menu.offset=math.max(0,math.min(#menu.choices-r.rows,menu.offset-(y>0 and math.ceil(y) or math.floor(y))))
+    return true
+end
+function ui.dropdownKeypressed(key)
+    if not menu then return false end
+    if key=='escape' then menu=nil end
+    return true
 end
 
 return ui

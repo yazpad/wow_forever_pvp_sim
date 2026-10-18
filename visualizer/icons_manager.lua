@@ -23,6 +23,12 @@ local CLASS_COORDS = {
 }
 
 local ICON_FILES = {
+    -- Race portraits (Wowhead/ZAM achievement_character_<race>_male icons).
+    race_human = "icons/race_human.jpg",
+    race_gnome = "icons/race_gnome.jpg",
+    race_orc = "icons/race_orc.jpg",
+    race_undead = "icons/race_undead.jpg",
+    race_troll = "icons/race_troll.jpg",
     -- Classes
     warlock = "icons/class_warlock.png",
     warrior = "icons/class_warrior.png",
@@ -66,6 +72,12 @@ local ICON_FILES = {
     pet_felhunter   = "icons/spell_shadow_summonfelhunter.png",
     pet_voidwalker  = "icons/spell_shadow_summonvoidwalker.png",
     firebolt        = "icons/spell_fire_fireball02.png",
+
+    -- Warlock Buffs
+    soul_link       = "icons/spell_shadow_gathershadows.png",
+    spell_shadow_gathershadows = "icons/spell_shadow_gathershadows.png",
+    demonic_sacrifice = "icons/spell_shadow_psychicscream.png",
+    spell_shadow_psychicscream = "icons/spell_shadow_psychicscream.png",
 }
 
 function icons.load()
@@ -168,6 +180,25 @@ function icons.drawRect(name, x, y, w, h, r, g, b, a)
     return true
 end
 
+-- Arena portraits use square art so the caller's circular mask defines the edge.
+-- Crop the baked square frame off the standalone icons before scaling.
+local portraitQuads = {}
+function icons.drawPortrait(className, x, y, size, alpha)
+    local cls = (className or "warlock"):lower()
+    local img = loadedImages[cls]
+    if not img then return false end
+    local iw, ih = img:getDimensions()
+    local inset = math.min(iw, ih) / 16
+    if not portraitQuads[cls] then
+        portraitQuads[cls] = love.graphics.newQuad(inset, inset, iw - inset * 2, ih - inset * 2, iw, ih)
+    end
+    local w, h = iw - inset * 2, ih - inset * 2
+    love.graphics.setColor(1, 1, 1, alpha or 1)
+    love.graphics.draw(img, portraitQuads[cls], x, y, 0, size / w, size / h, w / 2, h / 2)
+    return true
+end
+icons.drawClassPortrait = icons.drawPortrait
+
 --- Draw class circular icon (from circular texture or standalone icon)
 function icons.drawClassIcon(className, x, y, size, r, g, b, a)
     local cls = (className or "warlock"):lower()
@@ -242,7 +273,7 @@ end
 --- Draw a polished aura/buff/debuff badge with WoW icon, rotating mask, and border
 -- duration: current remaining duration
 -- maxDuration: full duration (e.g. 18.0s for Agony, 6.0s for Shield)
-function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, borderCol)
+function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, borderCol, count)
     local img = loadedImages[iconName]
     if not img and not frostSymbols[iconName] then return end
 
@@ -265,6 +296,20 @@ function icons.drawAuraBadge(iconName, x, y, size, duration, maxDuration, border
     love.graphics.setColor(bCol[1], bCol[2], bCol[3], bCol[4] or 1.0)
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", x, y, size, size, 3)
+
+    -- Stack / charge count
+    if count and count > 1 then
+        love.graphics.push("all")
+        local font = love.graphics.getFont()
+        local txt = tostring(math.floor(count))
+        local tw = font:getWidth(txt)
+        local th = font:getHeight()
+        love.graphics.setColor(0.01, 0.01, 0.02, 0.85)
+        love.graphics.rectangle("fill", x + size - tw - 3, y + size - th - 1, tw + 2, th, 2)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.print(txt, x + size - tw - 2, y + size - th - 1)
+        love.graphics.pop()
+    end
 end
 
 return icons

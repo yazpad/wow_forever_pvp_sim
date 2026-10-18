@@ -1,5 +1,8 @@
 # Warlock simulation accuracy TODO
 
+Start with [TODO.md](TODO.md) for current cross-project priorities. This file is
+the detailed source of truth for Warlock mechanic coverage.
+
 Scope: the checked-in level 60 Warlock tree (`visualizer/data/talents_warlock.json`)
 and the compact PvP kit currently modeled in `src/spec.zig` / `src/combat_spec.zig`.
 The current action set includes Agony, Corruption, Fear, Shadow Bolt, Drain Life,
@@ -57,7 +60,7 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [ ] 105916 Amplify Curse: empower next eligible curse.
 - [x] 105917 Pandemic: rank-based 33%/67%/100% increase to the critical damage bonus applies to modeled Affliction periodic/channel ticks; extend to future eligible spells when added.
 - [x] 110876 Malevolence: +1% crit chance per rank applies to modeled eligible direct Shadow damage and Shadow periodic/channel ticks.
-- [ ] 105914 Nightfall: proc Shadow Trance from Corruption/drain effects and make next Shadow Bolt instant.
+- [x] 105914 Nightfall: 2% / 4% proc chance per tick from Corruption and Drain Life damage rolls causes caster to enter 10.0s Shadow Trance; consuming Shadow Trance reduces next Shadow Bolt cast time by 100% (instant cast on GCD).
 - [ ] 105913 Curse of Exhaustion: unlock/modify the spell (spell implementation above).
 - [ ] 105911 Soul Siphon: scale drain output based on active Affliction effects.
 - [ ] 105909 Wrack: unlock/modify the spell (spell implementation above).
@@ -86,14 +89,14 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 ### Destruction
 
 - [ ] 105881 Destructive Reach: increase damaging spell range.
-- [ ] 105889 Improved Shadow Bolt: trigger its increased Shadow damage taken debuff from landed Shadow Bolt crits, including duration, charges/consumption, and refresh rules. Direct Shadow Bolt crits already resolve; the debuff and crit-trigger hook remain missing.
+- [x] 105889 Improved Shadow Bolt: landed Shadow Bolt crits apply a 12-second debuff increasing Shadow damage taken by 4% per rank (up to 20%), with 4 charges consumed by incoming Shadow damage hits/ticks, refreshing on new landed SB crits. debuff duration, stack count, and timers are recorded in telemetry and displayed in unit frames and overhead nameplates.
 - [x] 105885 Molten Skin: reduces all incoming player damage by 2% per rank, including spell, drain, and pet damage.
 - [x] 105887 Cataclysm: reduces Shadow Bolt mana cost by 3%/rank (10% at rank 3); extend the cost reduction to other eligible modeled Destruction spells; the current hook only affects Shadow Bolt.
 - [x] 105886 Aftermath: +10% Immolate initial damage per rank and 20% Conflagrate daze chance per rank (50% movement slow for 5 seconds).
 - [x] 105883 Ruin: +20% critical damage bonus per rank for currently modeled direct Destruction spells (1.5x base crit through 2x at rank 5). Extend to future eligible spells as added.
 - [x] 105884 Shadowburn: talent unlock gates the action; modeled direct hit, range, mana cost, and cooldown.
 - [x] 105882 Intensity: 23%/47%/70% chance to resist direct-damage pushback for modeled Destruction hard casts (Shadow Bolt, Searing Pain, Incinerate, Immolate). Fear and Drain Life do not inherit it; extend to future eligible casts/channels.
-- [ ] 105879 Agonizing Flames: increase Searing Pain critical chance and Destruction damage.
+- [x] 105879 Agonizing Flames: increase Searing Pain critical chance (+3%/+7%/+10%) and Destruction damage (+3%/+7%/+10%).
 - [x] 105880 Conflagrate: unlock gates the spell; effects are implemented above.
 - [ ] 105878 Pyroclasm: add stun chance to Soul Fire, Rain of Fire, and Hellfire.
 - [ ] 105876 Bane of Havoc: mark one target and copy the specified share of damage dealt to other targets (requires multi-target support).
@@ -109,7 +112,7 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [x] Add periodic/channel critical strikes, one roll per eligible tick. Pandemic, Malevolence, and Immolate/Ruin are wired. Drain healing uses the same critical/partial-resist multiplier as damage on the existing base HPS; target shields/Soul Link/overkill do not reduce healing in the preserved compact model.
 - [x] Extend hit/full-resist resolution to DoT applications, channel starts, crowd control, and interrupts. Failed refreshes preserve effects; costs/cooldowns commit on failure and failed CC does not advance DR. Suppression applies to owner effects only.
 - [x] Add Imp Firebolt hit/full-resist/partial-resist/crit and simplified melee pet hit/avoidance/crit/armor resolution, with separate pet stats and RNG. Owner-only hit/crit talents do not leak. Authentic pet stats and full melee attack tables remain accuracy work.
-- [ ] Add crit-triggered effect hooks, starting with Improved Shadow Bolt; implement Agonizing Flames' Searing Pain crit bonus and Destruction damage bonus (see talent entries above).
+- [x] Add crit-triggered effect hooks, starting with Improved Shadow Bolt; implement Agonizing Flames' Searing Pain crit bonus and Destruction damage bonus (see talent entries above).
 - [ ] Resistance foundations now accept raw school resistance, level, and penetration, with binary resistance and mean-preserving adjacent 25% partial buckets. This is an explicit compact approximation; authentic Forever tables and any supported rating conversion remain pending. Unsupported rating inputs are rejected. See CLI_REFERENCE.md for formulas and eligibility.
 - [ ] Spec editor now edits and round-trips supported combat stats, with compact defaults and a clearly labeled level-60 example preset. Verified Forever baseline/gear-derived stats remain pending; example probabilities are assumptions, and talent bonuses remain separate.
 - [x] Add direct-damage cast/channel pushback and Fel Concentration/Intensity resistance. Individual missile impacts, Conflagrate, and autonomous pet attacks qualify; DoT/channel ticks, misses, full resists, and fully absorbed hits do not. Classic-reference pushbacks are 1.0/0.8/0.6/0.4/0.2 seconds, then 0.2 seconds per hit; normal casts cannot rewind before their start. Channel pushback removes tail duration without advancing tick phase. Counters, natural channel time, and dedicated RNG are snapshotted; counters reset per cast. Forever-specific rule overrides remain unverified; see CLI_REFERENCE.md.
@@ -123,14 +126,16 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 
 ## Recommended implementation order
 
-1. Discrete DoT/channel ticks and timing/snapshot coverage. **Completed 2026-10-15.**
-2. Periodic crits, Pandemic, and remaining Malevolence hooks. **Completed 2026-10-15.**
-3. Hit/resist coverage for DoT applications, channels, crowd control, and pets. **Completed for the documented compact scope 2026-10-15.**
-4. Replace compact resistance approximations with verified Forever formulas/tables and establish verified level-60 baseline stats. Compact partial resists, penetration, and editor configuration are implemented.
-5. Direct-damage pushback and interruption resistance **completed for the documented Classic-reference scope**; dispels/purges remain next.
+Current cross-project order is maintained in [TODO.md](TODO.md): active Soul
+Link/DS frame indicators first, then Nightfall, Improved Shadow Bolt, Agonizing
+Flames, and passive owner/pet stat talents. The spell and talent entries above
+remain the detailed acceptance scope.
 
-Crit-triggered talent hooks and replay outcome reporting can progress alongside
-the corresponding combat-resolution work above.
+Completed foundations include discrete DoT/channel ticks, periodic crits,
+application/CC/pet hit resolution, and direct-damage pushback with interruption
+resistance for the documented compact scope. Verified Forever resistance and
+baseline stats, dispels/purges, and replay outcome reporting remain open and can
+progress alongside talent work.
 
 ## Action and spec configuration
 

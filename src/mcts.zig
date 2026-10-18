@@ -345,10 +345,10 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                 worker.rng = std.Random.DefaultPrng.init(seed +% (@as(u64, @intCast(i)) *% 0x9e3779b97f4a7c15));
             }
         }
-        pub fn setWarlockTalentRanksA(self: *Self, encoded: u64) void {
+        pub fn setWarlockTalentRanksA(self: *Self, encoded: u128) void {
             for (self.workers) |*worker| worker.duel.setWarlockTalentRanksA(encoded);
         }
-        pub fn setWarlockTalentRanksB(self: *Self, encoded: u64) void {
+        pub fn setWarlockTalentRanksB(self: *Self, encoded: u128) void {
             for (self.workers) |*worker| worker.duel.setWarlockTalentRanksB(encoded);
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
@@ -429,11 +429,16 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     }
     const hp = @field(s, "hp" ++ own)[lane];
     // Put instant DoTs (Corruption 2, Agony 1, Siphon Life 8) as highest offensive priorities at opening.
-    const priorities = if (spec == .warlock) [_]u32{ 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 } else [_]u32{ 6, 7, 2, 1, 4, 3, 5 };
+    const priorities = switch (spec) {
+        .warlock => &[_]u32{ 19, 17, 18, 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 },
+        .frost_mage => &[_]u32{ 19, 17, 18, 6, 7, 2, 1, 4, 3, 5 },
+        .priest => &[_]u32{ 19, 17, 18, 16, 7, 6, 3, 9, 2, 8, 1, 12, 15, 4, 13, 5, 11, 14 },
+    };
     for (priorities) |candidate| {
         var allowed = true;
         if (spec == .warlock) {
             allowed = switch (candidate) {
+                19 => if ((if (side) @TypeOf(d.arena).SpecB else @TypeOf(d.arena).SpecA) == .frost_mage) @field(s, "agony_timer" ++ own)[lane] > 0 or @field(s, "corruption_timer" ++ own)[lane] > 0 else false,
                 6 => hp < 800,
                 7 => hp < 1600,
                 2 => @field(s, "corruption_timer" ++ enemy)[lane] < 1.0,
@@ -445,7 +450,25 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
                 15 => @field(s, "cast_id" ++ enemy)[lane] != 0,
                 else => true,
             };
+        } else if (spec == .priest) {
+            const max_hp = @field(s, "max_health" ++ own)[lane];
+            const enemy_hp = @field(s, "hp" ++ enemy)[lane];
+            allowed = switch (candidate) {
+                19 => if ((if (side) @TypeOf(d.arena).SpecB else @TypeOf(d.arena).SpecA) == .frost_mage) @field(s, "agony_timer" ++ own)[lane] > 0 or @field(s, "corruption_timer" ++ own)[lane] > 0 else false,
+                7 => @field(s, "cast_id" ++ enemy)[lane] != 0,
+                6 => @field(s, "action6_dur" ++ own)[lane] <= 0 and hp < max_hp * 0.90,
+                3 => s.distance[lane] <= 8.0 and @field(s, "fear_timer" ++ enemy)[lane] <= 0,
+                9 => enemy_hp < 600 or hp > 1000,
+                2 => @field(s, "corruption_timer" ++ enemy)[lane] < 1.0,
+                8 => @field(s, "siphon_timer" ++ enemy)[lane] < 1.0,
+                1 => @field(s, "agony_timer" ++ enemy)[lane] < 1.0,
+                12 => @field(s, "shadow_lockout" ++ own)[lane] < 1.0 and hp < max_hp * 0.85,
+                13 => @field(s, "immolate_timer" ++ enemy)[lane] < 1.0,
+                11 => hp < max_hp * 0.55,
+                else => true,
+            };
         } else allowed = switch (candidate) {
+            19 => if ((if (side) @TypeOf(d.arena).SpecB else @TypeOf(d.arena).SpecA) == .frost_mage) @field(s, "agony_timer" ++ own)[lane] > 0 or @field(s, "corruption_timer" ++ own)[lane] > 0 else false,
             7 => @field(s, "cast_id" ++ enemy)[lane] != 0,
             2 => s.distance[lane] < 10,
             1 => @field(s, "agony_timer" ++ enemy)[lane] > 0,
@@ -482,21 +505,22 @@ pub fn evaluateHeuristic(comptime spec_a: Spec, comptime spec_b: Spec, d: anytyp
     if (hp_b <= 0) return 1;
 
     // Delta HP normalized to [-1, 1]
-    const delta_hp = (hp_a - hp_b) / 2000.0;
+    const health_scale = @max(s.max_health_a[lane], s.max_health_b[lane]);
+    const delta_hp = (hp_a - hp_b) / health_scale;
 
     // A short heuristic horizon must still value missiles already in flight.
     // Discount the estimate: mitigation and shielding can change before impact.
     const pending_a = @import("projectiles.zig").pendingEffects(s, true, lane);
     const pending_b = @import("projectiles.zig").pendingEffects(s, false, lane);
-    const shield_a = if (spec_a == .frost_mage) d.arena.frostTelemetry(true, lane)[2] else 0;
-    const shield_b = if (spec_b == .frost_mage) d.arena.frostTelemetry(false, lane)[2] else 0;
+    const shield_a = if (spec_a == .frost_mage or spec_a == .priest) d.arena.frostTelemetry(true, lane)[2] else 0;
+    const shield_b = if (spec_b == .frost_mage or spec_b == .priest) d.arena.frostTelemetry(false, lane)[2] else 0;
     const mit_a: f32 = 1;
     const mit_b: f32 = 1;
     const future_damage_a = @min(hp_b, @max(0, pending_a.damage * mit_b - shield_b));
     const future_damage_b = @min(hp_a, @max(0, pending_b.damage * mit_a - shield_a));
-    const future_heal_a = @min(2000 - hp_a, pending_a.healing);
-    const future_heal_b = @min(2000 - hp_b, pending_b.healing);
-    const flight_score = (future_damage_a - future_damage_b + future_heal_a - future_heal_b) / 2000 * 0.65 * 0.75;
+    const future_heal_a = @min(s.max_health_a[lane] - hp_a, pending_a.healing);
+    const future_heal_b = @min(s.max_health_b[lane] - hp_b, pending_b.healing);
+    const flight_score = (future_damage_a - future_damage_b + future_heal_a - future_heal_b) / health_scale * 0.65 * 0.75;
 
     // DoT differential
     var dot_score: f32 = 0;
@@ -505,12 +529,24 @@ pub fn evaluateHeuristic(comptime spec_a: Spec, comptime spec_b: Spec, d: anytyp
         dot_score += (s.corruption_timer_b[lane] / 14.0) * 0.10;
         dot_score += (s.siphon_timer_b[lane] / 30.0) * 0.18;
         dot_score += (s.immolate_timer_b[lane] / 15.0) * 0.12;
+    } else if (spec_a == .priest) {
+        dot_score += (s.agony_timer_b[lane] / 18.0) * 0.12;
+        dot_score += (s.corruption_timer_b[lane] / 24.0) * 0.18;
+        dot_score += (s.siphon_timer_b[lane] / 30.0) * 0.10;
+        dot_score += (s.immolate_timer_b[lane] / 10.0) * 0.08;
+        dot_score += (s.shadow_lockout_a[lane] / 15.0) * 0.10;
     }
     if (spec_b == .warlock) {
         dot_score -= (s.agony_timer_a[lane] / 18.0) * 0.10;
         dot_score -= (s.corruption_timer_a[lane] / 14.0) * 0.10;
         dot_score -= (s.siphon_timer_a[lane] / 30.0) * 0.18;
         dot_score -= (s.immolate_timer_a[lane] / 15.0) * 0.12;
+    } else if (spec_b == .priest) {
+        dot_score -= (s.agony_timer_a[lane] / 18.0) * 0.12;
+        dot_score -= (s.corruption_timer_a[lane] / 24.0) * 0.18;
+        dot_score -= (s.siphon_timer_a[lane] / 30.0) * 0.10;
+        dot_score -= (s.immolate_timer_a[lane] / 10.0) * 0.08;
+        dot_score -= (s.shadow_lockout_b[lane] / 15.0) * 0.10;
     }
 
     // CC differential
@@ -523,7 +559,7 @@ pub fn evaluateHeuristic(comptime spec_a: Spec, comptime spec_b: Spec, d: anytyp
     // Distance / kite score
     var kite_score: f32 = 0;
     const dist = s.distance[lane];
-    if (spec_a == .frost_mage or spec_a == .warlock) {
+    if (spec_a == .frost_mage or spec_a == .warlock or spec_a == .priest) {
         // Caster prefers safe range (15m - 28m)
         if (dist >= 15.0 and dist <= 28.0) kite_score += 0.05;
         if (dist < 10.0) kite_score -= 0.05;
@@ -596,6 +632,76 @@ pub fn computePriors(comptime spec: Spec, comptime side: bool, d: anytype, lane:
                 },
                 15 => { // Spell Lock
                     if (enemy_casting) weight += 8.0 else weight = 0.2;
+                },
+                else => {},
+            }
+        } else if (spec == .priest) {
+            const max_hp = @field(s, "max_health" ++ own)[lane];
+            const enemy_hp = @field(s, "hp" ++ enemy)[lane];
+            switch (action.ability) {
+                0 => { // Idle / Maneuver
+                    weight = 0.2;
+                },
+                7 => { // Silence
+                    if (enemy_casting) weight += 9.0 else weight += 2.0;
+                },
+                6 => { // Power Word: Shield
+                    if (@field(s, "action6_dur" ++ own)[lane] <= 0) weight += 6.0 else weight = 0.2;
+                },
+                3 => { // Psychic Scream
+                    if (dist <= 8.0 and @field(s, "fear_timer" ++ enemy)[lane] <= 0) weight += 7.0 else weight = 0.1;
+                },
+                2 => { // Devouring Plague
+                    if (@field(s, "corruption_timer" ++ enemy)[lane] < 1.0) weight += 7.5;
+                },
+                1 => { // Shadow Word: Pain
+                    if (@field(s, "agony_timer" ++ enemy)[lane] < 1.0) weight += 6.0;
+                },
+                8 => { // Vampiric Embrace
+                    if (@field(s, "siphon_timer" ++ enemy)[lane] < 1.0) weight += 5.0;
+                },
+                9 => { // Shadow Word: Death
+                    if (enemy_hp < 500) weight += 10.0 else if (hp > 1000) weight += 4.5 else weight = 0.3;
+                },
+                4 => { // Mind Blast
+                    if (dist <= 30.0) weight += 4.0;
+                },
+                5 => { // Mind Flay
+                    if (dist <= 24.0) weight += 2.5;
+                },
+                11 => { // Flash Heal
+                    if (hp < max_hp * 0.55) weight += 7.0 else weight = 0.3;
+                },
+                12 => { // Renew
+                    if (@field(s, "shadow_lockout" ++ own)[lane] < 1.0 and hp < max_hp * 0.85) weight += 4.5 else weight = 0.3;
+                },
+                13 => { // Holy Fire
+                    if (@field(s, "immolate_timer" ++ enemy)[lane] < 1.0) weight += 4.5 else weight += 1.5;
+                },
+                14 => { // Smite
+                    weight += 2.0;
+                },
+                15 => { // Penance
+                    weight += 6.5;
+                },
+                16 => { // Inner Focus
+                    weight += 8.0;
+                },
+                21 => { // Power Infusion: strongest before committing damage/heals.
+                    weight += 12.0;
+                },
+                22 => { // Defensive Dispel Magic (only offered with an eligible aura).
+                    weight += 7.0;
+                },
+                23 => { // Offensive Dispel Magic (only offered with an eligible buff).
+                    weight += 6.0;
+                },
+                24 => { // Mana Burn: prefer pressure on an already depleted caster.
+                    const enemy_mana = @field(s, "mana" ++ enemy)[lane];
+                    weight += if (enemy_mana < 1000) @as(f32, 4.0) else @as(f32, 1.5);
+                },
+                10 => { // Cancel Cast
+                    weight = 0.05;
                 },
                 else => {},
             }

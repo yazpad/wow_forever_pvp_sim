@@ -1,0 +1,545 @@
+{
+  "version": "Vanilla level 60 / fixed-stat pre-raid candidates (includes Dire Maul)",
+  "sources": [
+    "https://www.icy-veins.com/wow-classic/mage-dps-pre-raid-gear",
+    "https://www.icy-veins.com/wow-classic/warlock-dps-pre-raid-gear"
+  ],
+  "item_source": "https://nether.wowhead.com/classic/tooltip/item/{id}",
+  "items": [
+    {
+      "id": 13866,
+      "name": "Runecloth Headband",
+      "slot": "head",
+      "stats": {
+        "intellect": 20,
+        "spirit": 13,
+        "armor": 62
+      },
+      "quality": 2,
+      "icon": "inv_misc_bandana_03",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13866"
+    },
+    {
+      "id": 18727,
+      "name": "Crimson Felt Hat",
+      "slot": "head",
+      "stats": {
+        "stamina": 8,
+        "intellect": 8,
+        "spirit": 8,
+        "armor": 68,
+        "spell_power": 30
+      },
+      "quality": 3,
+      "icon": "inv_helmet_51",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18727"
+    },
+    {
+      "id": 12103,
+      "name": "Star of Mystaria",
+      "slot": "neck",
+      "stats": {
+        "stamina": 9,
+        "intellect": 9,
+        "spirit": 8,
+        "spell_hit": 1
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_talisman_08",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=12103"
+    },
+    {
+      "id": 18691,
+      "name": "Dark Advisor's Pendant",
+      "slot": "neck",
+      "stats": {
+        "stamina": 8,
+        "intellect": 7,
+        "shadow_power": 20
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_necklace_06",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18691"
+    },
+    {
+      "id": 11782,
+      "name": "Boreal Mantle",
+      "slot": "shoulder",
+      "stats": {
+        "stamina": 5,
+        "intellect": 8,
+        "armor": 61,
+        "frost_power": 29
+      },
+      "quality": 3,
+      "icon": "inv_shoulder_02",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=11782"
+    },
+    {
+      "id": 18681,
+      "name": "Burial Shawl",
+      "slot": "shoulder",
+      "stats": {
+        "intellect": 16,
+        "armor": 65,
+        "spell_power": 20
+      },
+      "quality": 3,
+      "icon": "inv_shoulder_05",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18681"
+    },
+    {
+      "id": 11623,
+      "name": "Spritecaster Cape",
+      "slot": "back",
+      "stats": {
+        "stamina": 4,
+        "intellect": 4,
+        "spirit": 5,
+        "armor": 37,
+        "spell_power": 14
+      },
+      "quality": 3,
+      "icon": "inv_misc_cape_20",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=11623"
+    },
+    {
+      "id": 13386,
+      "name": "Archivist Cape (base stats only)",
+      "slot": "back",
+      "stats": {
+        "armor": 43
+      },
+      "quality": 3,
+      "icon": "inv_misc_cape_19",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13386",
+      "effect_note": "Random enchantment not included."
+    },
+    {
+      "id": 14152,
+      "name": "Robe of the Archmage",
+      "slot": "chest",
+      "stats": {
+        "intellect": 12,
+        "armor": 96,
+        "spell_power": 40,
+        "spell_crit": 1
+      },
+      "quality": 4,
+      "icon": "inv_chest_cloth_38",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=14152",
+      "class": "frost_mage",
+      "effect_note": "Use/proc effect is not simulated."
+    },
+    {
+      "id": 14153,
+      "name": "Robe of the Void",
+      "slot": "chest",
+      "stats": {
+        "stamina": 14,
+        "armor": 96,
+        "spell_power": 46
+      },
+      "quality": 4,
+      "icon": "inv_chest_cloth_51",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=14153",
+      "class": "warlock",
+      "effect_note": "Use/proc effect is not simulated."
+    },
+    {
+      "id": 14136,
+      "name": "Robe of Winter Night",
+      "slot": "chest",
+      "stats": {
+        "intellect": 12,
+        "armor": 81,
+        "shadow_power": 40,
+        "frost_power": 40
+      },
+      "quality": 3,
+      "icon": "inv_chest_cloth_49",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=14136"
+    },
+    {
+      "id": 14340,
+      "name": "Freezing Lich Robes",
+      "slot": "chest",
+      "stats": {
+        "stamina": 15,
+        "armor": 88,
+        "frost_power": 43
+      },
+      "quality": 3,
+      "icon": "inv_chest_cloth_46",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=14340"
+    },
+    {
+      "id": 18497,
+      "name": "Sublime Wristguards",
+      "slot": "wrist",
+      "stats": {
+        "stamina": 6,
+        "intellect": 10,
+        "spirit": 6,
+        "armor": 37,
+        "spell_power": 12
+      },
+      "quality": 3,
+      "icon": "inv_bracer_13",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18497"
+    },
+    {
+      "id": 16683,
+      "name": "Magister's Bindings",
+      "slot": "wrist",
+      "stats": {
+        "stamina": 4,
+        "intellect": 15,
+        "spirit": 5,
+        "armor": 35
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_ring_23",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16683"
+    },
+    {
+      "id": 16697,
+      "name": "Devout Bracers",
+      "slot": "wrist",
+      "stats": {
+        "stamina": 7,
+        "intellect": 10,
+        "spirit": 10,
+        "armor": 35
+      },
+      "quality": 3,
+      "icon": "inv_belt_31",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16697"
+    },
+    {
+      "id": 13253,
+      "name": "Hands of Power",
+      "slot": "hands",
+      "stats": {
+        "intellect": 6,
+        "spirit": 6,
+        "armor": 53,
+        "spell_power": 26
+      },
+      "quality": 3,
+      "icon": "inv_gauntlets_14",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13253"
+    },
+    {
+      "id": 13870,
+      "name": "Frostweave Gloves",
+      "slot": "hands",
+      "stats": {
+        "intellect": 6,
+        "armor": 43,
+        "frost_power": 21
+      },
+      "quality": 2,
+      "icon": "inv_gauntlets_05",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13870"
+    },
+    {
+      "id": 11662,
+      "name": "Ban'thok Sash",
+      "slot": "waist",
+      "stats": {
+        "stamina": 10,
+        "intellect": 11,
+        "armor": 43,
+        "spell_power": 12,
+        "spell_hit": 1
+      },
+      "quality": 3,
+      "icon": "inv_belt_29",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=11662"
+    },
+    {
+      "id": 13956,
+      "name": "Clutch of Andros",
+      "slot": "waist",
+      "stats": {
+        "stamina": 9,
+        "intellect": 19,
+        "armor": 49,
+        "spell_hit": 1
+      },
+      "quality": 3,
+      "icon": "inv_belt_12",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13956"
+    },
+    {
+      "id": 18740,
+      "name": "Thuzadin Sash",
+      "slot": "waist",
+      "stats": {
+        "stamina": 11,
+        "intellect": 12,
+        "spirit": 11,
+        "armor": 49,
+        "spell_power": 11
+      },
+      "quality": 3,
+      "icon": "inv_belt_13",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18740"
+    },
+    {
+      "id": 13170,
+      "name": "Skyshroud Leggings",
+      "slot": "legs",
+      "stats": {
+        "stamina": 8,
+        "intellect": 8,
+        "armor": 75,
+        "spell_power": 34
+      },
+      "quality": 3,
+      "icon": "inv_pants_13",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13170"
+    },
+    {
+      "id": 9484,
+      "name": "Spellshock Leggings",
+      "slot": "legs",
+      "stats": {
+        "stamina": 9,
+        "intellect": 10,
+        "armor": 63,
+        "spell_power": 23
+      },
+      "quality": 3,
+      "icon": "inv_pants_08",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=9484"
+    },
+    {
+      "id": 11822,
+      "name": "Omnicast Boots",
+      "slot": "feet",
+      "stats": {
+        "stamina": 6,
+        "intellect": 9,
+        "armor": 58,
+        "spell_power": 22
+      },
+      "quality": 3,
+      "icon": "inv_boots_05",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=11822"
+    },
+    {
+      "id": 18735,
+      "name": "Maleki's Footwraps",
+      "slot": "feet",
+      "stats": {
+        "stamina": 9,
+        "intellect": 9,
+        "armor": 60,
+        "shadow_power": 27
+      },
+      "quality": 3,
+      "icon": "inv_boots_03",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=18735"
+    },
+    {
+      "id": 18102,
+      "name": "Dragonrider Boots",
+      "slot": "feet",
+      "stats": {
+        "fire_resistance": 10,
+        "stamina": 5,
+        "intellect": 16,
+        "armor": 61,
+        "spell_power": 18
+      },
+      "quality": 3,
+      "icon": "inv_boots_05",
+      "unique": true,
+      "url": "https://www.wowhead.com/classic/item=18102"
+    },
+    {
+      "id": 942,
+      "name": "Freezing Band",
+      "slot": "ring",
+      "stats": {
+        "frost_resistance": 10,
+        "frost_power": 21
+      },
+      "quality": 4,
+      "icon": "inv_jewelry_ring_07",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=942",
+      "effect_note": "Use/proc effect is not simulated."
+    },
+    {
+      "id": 13001,
+      "name": "Maiden's Circle",
+      "slot": "ring",
+      "stats": {
+        "intellect": 7,
+        "spirit": 6,
+        "spell_power": 18
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_ring_12",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13001"
+    },
+    {
+      "id": 12543,
+      "name": "Songstone of Ironforge",
+      "slot": "ring",
+      "stats": {
+        "intellect": 7,
+        "spirit": 4,
+        "spell_power": 18
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_ring_05",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=12543"
+    },
+    {
+      "id": 12545,
+      "name": "Eye of Orgrimmar",
+      "slot": "ring",
+      "stats": {
+        "intellect": 7,
+        "spirit": 4,
+        "spell_power": 18
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_ring_05",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=12545"
+    },
+    {
+      "id": 12930,
+      "name": "Briarwood Reed",
+      "slot": "trinket",
+      "stats": {
+        "spell_power": 29
+      },
+      "quality": 3,
+      "icon": "inv_misc_root_02",
+      "unique": true,
+      "url": "https://www.wowhead.com/classic/item=12930"
+    },
+    {
+      "id": 13968,
+      "name": "Eye of the Beast",
+      "slot": "trinket",
+      "stats": {
+        "spell_crit": 2
+      },
+      "quality": 3,
+      "icon": "inv_jewelry_talisman_08",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13968"
+    },
+    {
+      "id": 13964,
+      "name": "Witchblade",
+      "slot": "main_hand",
+      "stats": {
+        "intellect": 8,
+        "spell_power": 14
+      },
+      "quality": 3,
+      "icon": "inv_weapon_shortblade_25",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13964"
+    },
+    {
+      "id": 17719,
+      "name": "Inventor's Focal Sword",
+      "slot": "main_hand",
+      "stats": {
+        "spell_crit": 1
+      },
+      "quality": 3,
+      "icon": "inv_sword_14",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=17719"
+    },
+    {
+      "id": 944,
+      "name": "Elemental Mage Staff",
+      "slot": "main_hand",
+      "stats": {
+        "fire_resistance": 20,
+        "frost_resistance": 20,
+        "frost_power": 36,
+        "fire_power": 36
+      },
+      "quality": 4,
+      "icon": "inv_staff_07",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=944",
+      "two_hand": true
+    },
+    {
+      "id": 11904,
+      "name": "Spirit of Aquementas",
+      "slot": "off_hand",
+      "stats": {
+        "spell_power": 20
+      },
+      "quality": 2,
+      "icon": "inv_ore_arcanite_02",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=11904"
+    },
+    {
+      "id": 13938,
+      "name": "Bonecreeper Stylus",
+      "slot": "wand",
+      "stats": {
+        "intellect": 4,
+        "spell_power": 11
+      },
+      "quality": 3,
+      "icon": "inv_misc_bone_taurenskull_01",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13938"
+    },
+    {
+      "id": 13396,
+      "name": "Skul's Ghastly Touch",
+      "slot": "wand",
+      "stats": {
+        "shadow_power": 14
+      },
+      "quality": 3,
+      "icon": "inv_misc_bone_elfskull_01",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=13396"
+    }
+  ]
+}

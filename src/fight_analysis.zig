@@ -11,6 +11,8 @@ pub const SavedOptions = struct {
     config: mcts.Config,
     warlock_talents_a: spec.WarlockTalentRanks = .{},
     warlock_talents_b: spec.WarlockTalentRanks = .{},
+    priest_talents_a: spec.PriestTalentRanks = .{},
+    priest_talents_b: spec.PriestTalentRanks = .{},
     action_mask_a: u32 = std.math.maxInt(u32),
     action_mask_b: u32 = std.math.maxInt(u32),
 };
@@ -96,8 +98,16 @@ pub const Report = struct {
     results: []Result,
 };
 pub fn configure(duel: anytype, options: SavedOptions) void {
-    duel.setWarlockTalentRanksA(if (options.a == .warlock) options.warlock_talents_a.encode() else 0);
-    duel.setWarlockTalentRanksB(if (options.b == .warlock) options.warlock_talents_b.encode() else 0);
+    duel.setWarlockTalentRanksA(switch (options.a) {
+        .warlock => options.warlock_talents_a.encode(),
+        .priest => options.priest_talents_a.encode(),
+        .frost_mage => 0,
+    });
+    duel.setWarlockTalentRanksB(switch (options.b) {
+        .warlock => options.warlock_talents_b.encode(),
+        .priest => options.priest_talents_b.encode(),
+        .frost_mage => 0,
+    });
     duel.setActionMaskA(options.action_mask_a);
     duel.setActionMaskB(options.action_mask_b);
 }
@@ -142,8 +152,16 @@ pub fn analyze(comptime a: spec.Spec, comptime b: spec.Spec, comptime side: bool
     config.seed = seed;
     const search = try mcts.Search(a, b).init(allocator, config);
     defer search.deinit();
-    search.setWarlockTalentRanksA(if (a == .warlock) run.options.warlock_talents_a.encode() else 0);
-    search.setWarlockTalentRanksB(if (b == .warlock) run.options.warlock_talents_b.encode() else 0);
+    search.setWarlockTalentRanksA(switch (a) {
+        .warlock => run.options.warlock_talents_a.encode(),
+        .priest => run.options.priest_talents_a.encode(),
+        .frost_mage => 0,
+    });
+    search.setWarlockTalentRanksB(switch (b) {
+        .warlock => run.options.warlock_talents_b.encode(),
+        .priest => run.options.priest_talents_b.encode(),
+        .frost_mage => 0,
+    });
     search.setActionMaskA(run.options.action_mask_a);
     search.setActionMaskB(run.options.action_mask_b);
     var search_decisions: u64 = 0;
@@ -276,13 +294,11 @@ pub fn main() !void {
     settings.progress_file = try std.fmt.allocPrint(allocator, "{s}.progress.json", .{output.?});
     defer allocator.free(settings.progress_file.?);
     const report = switch (run.options.a) {
-        .warlock => switch (run.options.b) {
-            .warlock => if (side == 0) try analyze(.warlock, .warlock, true, allocator, run, index, samples, seed, stop_file, settings) else try analyze(.warlock, .warlock, false, allocator, run, index, samples, seed, stop_file, settings),
-            .frost_mage => if (side == 0) try analyze(.warlock, .frost_mage, true, allocator, run, index, samples, seed, stop_file, settings) else try analyze(.warlock, .frost_mage, false, allocator, run, index, samples, seed, stop_file, settings),
-        },
-        .frost_mage => switch (run.options.b) {
-            .warlock => if (side == 0) try analyze(.frost_mage, .warlock, true, allocator, run, index, samples, seed, stop_file, settings) else try analyze(.frost_mage, .warlock, false, allocator, run, index, samples, seed, stop_file, settings),
-            .frost_mage => if (side == 0) try analyze(.frost_mage, .frost_mage, true, allocator, run, index, samples, seed, stop_file, settings) else try analyze(.frost_mage, .frost_mage, false, allocator, run, index, samples, seed, stop_file, settings),
+        inline else => |spec_a| switch (run.options.b) {
+            inline else => |spec_b| if (side == 0)
+                try analyze(spec_a, spec_b, true, allocator, run, index, samples, seed, stop_file, settings)
+            else
+                try analyze(spec_a, spec_b, false, allocator, run, index, samples, seed, stop_file, settings),
         },
     };
     defer allocator.free(report.results);

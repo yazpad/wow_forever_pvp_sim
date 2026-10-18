@@ -66,3 +66,12 @@ pub fn apply(state: anytype, comptime side: bool, comptime warlock: bool, i: usi
     hit(state, side, i, hits.conflagrate * mitigation, &shield, cast, remaining, total, channel, resistance);
     hit(state, side, i, pet_damage * mitigation, &shield, cast, remaining, total, channel, resistance);
 }
+
+pub fn applyPriest(state: anytype, comptime side: bool, i: usize, hits: projectiles.Hits, pet_damage: V, mitigation: V, absorb: V, pushback_resist: V, cast: U, remaining: anytype, total: V) void {
+    if (!@reduce(.Or, cast != u(0))) return;
+    var shield = absorb;
+    const channel = simd.vOr16(cast == u(5), cast == u(15));
+    inline for (0..projectiles.Slots) |slot| hit(state, side, i, hits.direct_events[slot] * mitigation, &shield, cast, remaining, total, channel, pushback_resist);
+    hit(state, side, i, hits.conflagrate * mitigation, &shield, cast, remaining, total, channel, pushback_resist);
+    hit(state, side, i, pet_damage * mitigation, &shield, cast, remaining, total, channel, pushback_resist);
+}

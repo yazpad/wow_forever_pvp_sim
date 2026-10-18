@@ -28,6 +28,7 @@ pub const EventKind = enum(u8) {
     ProjectileImpact = 15,
     PetAttack = 16,
     SpellLock = 17,
+    StunApplied = 18,
 };
 
 pub const RecordedEvent = struct {
@@ -39,7 +40,28 @@ pub const RecordedEvent = struct {
     amount: f32,
 };
 
+// Replay columns 115..124, interleaved A/B: Renew, Inner Focus,
+// Shadowform, Shadow Weaving duration, Shadow Weaving stacks.
+pub fn priestAuraTelemetry(state: anytype, comptime class: Spec, comptime side: bool) [5]f32 {
+    if (class != .priest) return @splat(0);
+    const suffix = if (side) "_a" else "_b";
+    return .{
+        @field(state, "shadow_lockout" ++ suffix)[0],
+        @floatFromInt(@field(state, "soul_link" ++ suffix)[0]),
+        @floatFromInt((@field(state, "talent_flags" ++ suffix)[0] >> 26) & 1),
+        @field(state, "shadow_flame_timer" ++ suffix)[0],
+        if (@field(state, "shadow_flame_timer" ++ suffix)[0] > 0) @field(state, "soul_shards" ++ suffix)[0] else 0,
+    };
+}
+
 pub const RecordedFrame = struct {
+    priest_auras: [10]f32 = @splat(0),
+    priest_pi_timer_a: f32 = 0,
+    priest_pi_timer_b: f32 = 0,
+    priest_pi_cd_a: f32 = 0,
+    priest_pi_cd_b: f32 = 0,
+    stun_a: f32 = 0,
+    stun_b: f32 = 0,
     projectiles: [32]f32 = @splat(0),
     pets: [10]f32 = @splat(0),
     // Appended aura timers, keeping existing replay frame columns stable.
@@ -55,6 +77,10 @@ pub const RecordedFrame = struct {
     seduction_b: f32 = 0,
     seduction_cast_a: f32 = 0,
     seduction_cast_b: f32 = 0,
+    isb_timer_a: f32 = 0,
+    isb_timer_b: f32 = 0,
+    isb_charges_a: f32 = 0,
+    isb_charges_b: f32 = 0,
     // Appended replay columns: Blink/Nova cooldown, shield, lockout, per side.
     frost: [8]f32 = [_]f32{0} ** 8,
     time_s: f32,
@@ -102,8 +128,16 @@ pub const RecordedFrame = struct {
 };
 
 pub const MatchTrajectory = struct {
+    max_health_a: f32 = 2000,
+    max_health_b: f32 = 2000,
+    max_mana_a: f32 = 1000,
+    max_mana_b: f32 = 1000,
+    race_a: @import("spec.zig").Race = .human,
+    race_b: @import("spec.zig").Race = .human,
     spec_a: Spec = .warlock,
     spec_b: Spec = .warlock,
+    warlock_talents_a: @import("spec.zig").WarlockTalentRanks = .{},
+    warlock_talents_b: @import("spec.zig").WarlockTalentRanks = .{},
     allocator: mem.Allocator,
     name_a: []const u8,
     name_b: []const u8,
@@ -155,12 +189,20 @@ pub const MatchTrajectory = struct {
         const writer = buf_writer.writer();
 
         try writer.print("{{\n  \"meta\": {{\n", .{});
+        try writer.print("    \"max_health_a\": {d}, \"max_health_b\": {d}, \"max_mana_a\": {d}, \"max_mana_b\": {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
         try writer.print("    \"spec_a\": \"{s}\", \"spec_b\": \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
+        try writer.print("    \"race_a\": \"{s}\", \"race_b\": \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
         try writer.print("    \"name_a\": \"{s}\", \"elo_a\": {d:0.1},\n", .{ self.name_a, self.elo_a });
         try writer.print("    \"name_b\": \"{s}\", \"elo_b\": {d:0.1},\n", .{ self.name_b, self.elo_b });
         try writer.print("    \"victor\": {d}, \"total_time\": {d:0.3},\n", .{ self.victor, self.total_time_s });
         try writer.print("    \"dmg_a\": {d:0.1}, \"dmg_b\": {d:0.1},\n", .{ self.total_dmg_a, self.total_dmg_b });
-        try writer.print("    \"heal_a\": {d:0.1}, \"heal_b\": {d:0.1}\n  }},\n", .{ self.total_heal_a, self.total_heal_b });
+        try writer.print("    \"heal_a\": {d:0.1}, \"heal_b\": {d:0.1},\n", .{ self.total_heal_a, self.total_heal_b });
+        try writer.print("    \"warlock_talents_a\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}}},\n", .{
+            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet,
+        });
+        try writer.print("    \"warlock_talents_b\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}}}\n  }},\n", .{
+            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet,
+        });
 
         try writer.print("  \"events\": [\n", .{});
         for (self.events.items, 0..) |ev, idx| {
@@ -180,11 +222,11 @@ pub const MatchTrajectory = struct {
                 f.agony_a,      f.agony_b,      f.corruption_a, f.corruption_b,
             });
             try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d}", .{
-                f.fear_a,            f.fear_b,            f.horror_a,      f.horror_b,
-                f.action6_dur_a,    f.action6_dur_b,    f.action6_cd_a, f.action6_cd_b,
-                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,     f.fear_dr_b,
-                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,   f.horror_dr_b,
-                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,      f.action_b,
+                f.fear_a,            f.fear_b,            f.horror_a,     f.horror_b,
+                f.action6_dur_a,     f.action6_dur_b,     f.action6_cd_a, f.action6_cd_b,
+                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,    f.fear_dr_b,
+                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,  f.horror_dr_b,
+                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,     f.action_b,
             });
             for (f.frost) |value| try writer.print(",{d:0.3}", .{value});
             try writer.print(",{d:0.3},{d:0.3}", .{ f.pos_y_a, f.pos_y_b });
@@ -196,6 +238,11 @@ pub const MatchTrajectory = struct {
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cd_a, f.seduction_cd_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_a, f.seduction_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cast_a, f.seduction_cast_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.isb_timer_a, f.isb_timer_b });
+            try writer.print(",{d},{d}", .{ @as(u32, @intFromFloat(f.isb_charges_a)), @as(u32, @intFromFloat(f.isb_charges_b)) });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.stun_a, f.stun_b });
+            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{ f.priest_pi_timer_a, f.priest_pi_timer_b, f.priest_pi_cd_a, f.priest_pi_cd_b });
+            for (f.priest_auras) |value| try writer.print(",{d:0.2}", .{value});
             try writer.print("]{s}\n", .{if (idx + 1 < self.frames.items.len) "," else ""});
         }
         try writer.print("  ]\n}}\n", .{});
@@ -209,12 +256,20 @@ pub const MatchTrajectory = struct {
         const writer = buf_writer.writer();
 
         try writer.print("return {{\n  meta = {{\n", .{});
+        try writer.print("    max_health_a = {d}, max_health_b = {d}, max_mana_a = {d}, max_mana_b = {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
         try writer.print("    spec_a = \"{s}\", spec_b = \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
+        try writer.print("    race_a = \"{s}\", race_b = \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
         try writer.print("    name_a = \"{s}\", elo_a = {d:0.1},\n", .{ self.name_a, self.elo_a });
         try writer.print("    name_b = \"{s}\", elo_b = {d:0.1},\n", .{ self.name_b, self.elo_b });
         try writer.print("    victor = {d}, total_time = {d:0.3},\n", .{ self.victor, self.total_time_s });
         try writer.print("    dmg_a = {d:0.1}, dmg_b = {d:0.1},\n", .{ self.total_dmg_a, self.total_dmg_b });
-        try writer.print("    heal_a = {d:0.1}, heal_b = {d:0.1}\n  }},\n", .{ self.total_heal_a, self.total_heal_b });
+        try writer.print("    heal_a = {d:0.1}, heal_b = {d:0.1},\n", .{ self.total_heal_a, self.total_heal_b });
+        try writer.print("    warlock_talents_a = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d} }},\n", .{
+            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet,
+        });
+        try writer.print("    warlock_talents_b = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d} }}\n  }},\n", .{
+            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet,
+        });
 
         try writer.print("  events = {{\n", .{});
         for (self.events.items) |ev| {
@@ -233,11 +288,11 @@ pub const MatchTrajectory = struct {
                 f.agony_a,      f.agony_b,      f.corruption_a, f.corruption_b,
             });
             try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d:0.2},{d},{d}", .{
-                f.fear_a,            f.fear_b,            f.horror_a,      f.horror_b,
-                f.action6_dur_a,    f.action6_dur_b,    f.action6_cd_a, f.action6_cd_b,
-                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,     f.fear_dr_b,
-                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,   f.horror_dr_b,
-                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,      f.action_b,
+                f.fear_a,            f.fear_b,            f.horror_a,     f.horror_b,
+                f.action6_dur_a,     f.action6_dur_b,     f.action6_cd_a, f.action6_cd_b,
+                f.death_coil_cd_a,   f.death_coil_cd_b,   f.fear_dr_a,    f.fear_dr_b,
+                f.fear_dr_timer_a,   f.fear_dr_timer_b,   f.horror_dr_a,  f.horror_dr_b,
+                f.horror_dr_timer_a, f.horror_dr_timer_b, f.action_a,     f.action_b,
             });
             for (f.frost) |value| try writer.print(",{d:0.3}", .{value});
             try writer.print(",{d:0.3},{d:0.3}", .{ f.pos_y_a, f.pos_y_b });
@@ -249,6 +304,11 @@ pub const MatchTrajectory = struct {
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cd_a, f.seduction_cd_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_a, f.seduction_b });
             try writer.print(",{d:0.2},{d:0.2}", .{ f.seduction_cast_a, f.seduction_cast_b });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.isb_timer_a, f.isb_timer_b });
+            try writer.print(",{d},{d}", .{ @as(u32, @intFromFloat(f.isb_charges_a)), @as(u32, @intFromFloat(f.isb_charges_b)) });
+            try writer.print(",{d:0.2},{d:0.2}", .{ f.stun_a, f.stun_b });
+            try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{ f.priest_pi_timer_a, f.priest_pi_timer_b, f.priest_pi_cd_a, f.priest_pi_cd_b });
+            for (f.priest_auras) |value| try writer.print(",{d:0.2}", .{value});
             try writer.writeAll(" },\n");
         }
         try writer.print("  }}\n}}\n", .{});
@@ -272,6 +332,7 @@ pub const MatchRecorder = struct {
             if (@field(state, "agony_timer" ++ suffix)[0] > 0) speed = 0;
             if (@field(state, "corruption_timer" ++ suffix)[0] > 0) speed *= @import("spec.zig").Frost.SlowMultiplier;
         }
+        if (@field(state, "stun_timer" ++ suffix)[0] > dt) speed = 0;
         return if (side_a) -speed else speed;
     }
 };
@@ -324,9 +385,19 @@ test "MatchTrajectory json and lua export" {
         .action_b = 0,
     });
 
+    traj.frames.items[0].priest_auras = .{ 9, 4, 1, 0, 1, 0, 13, 7, 5, 2 };
     const json_path = "tmp_test_traj.json";
     try traj.exportJson(json_path);
     defer std.fs.cwd().deleteFile(json_path) catch {};
+    const json_bytes = try std.fs.cwd().readFileAlloc(std.testing.allocator, json_path, 1024 * 1024);
+    defer std.testing.allocator.free(json_bytes);
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, json_bytes, .{});
+    defer parsed.deinit();
+    const row = parsed.value.object.get("frames").?.array.items[0].array.items;
+    try std.testing.expectEqual(@as(usize, 124), row.len);
+    for (traj.frames.items[0].priest_auras, 114..) |expected, index| {
+        try std.testing.expectApproxEqAbs(@as(f64, expected), row[index].float, 0.001);
+    }
 
     const lua_path = "tmp_test_traj.lua";
     try traj.exportLua(lua_path);

@@ -11,16 +11,18 @@ fn v(x: f32) V {
 
 // Quantize countdowns to 10us to prevent float subtraction drift from moving a
 // final tick to the next physics frame. No partial tick at expiry/cancellation.
-pub fn remaining(old: V, dt: f32) V {
-    return @max(v(0), @round((old - v(dt)) * v(100000)) / v(100000));
+pub fn remaining(old: V, dt: anytype) V {
+    const delta: V = if (@TypeOf(dt) == V) dt else v(dt);
+    return @max(v(0), @round((old - delta) * v(100000)) / v(100000));
 }
-pub fn tickCount(old: V, next: V, duration: f32, interval: f32) V {
-    const before = @floor((v(duration) - @min(v(duration), old)) / v(interval) + v(0.00001));
-    const after = @floor((v(duration) - @min(v(duration), next)) / v(interval) + v(0.00001));
+pub fn tickCount(old: V, next: V, duration: anytype, interval: f32) V {
+    const dur: V = if (@TypeOf(duration) == V) duration else v(duration);
+    const before = @floor((dur - @min(dur, old)) / v(interval) + v(0.00001));
+    const after = @floor((dur - @min(dur, next)) / v(interval) + v(0.00001));
     return @select(f32, old > v(0), @max(v(0), after - before), v(0));
 }
 pub const Tick = struct { damage: V = @splat(0), healing: V = @splat(0) };
-pub fn advance(state: anytype, comptime side: bool, i: usize, timer: anytype, dt: f32, comptime duration: f32, comptime interval: f32, dps: V, hps: V, mask: B, profile: resolution.Profile) Tick {
+pub fn advance(state: anytype, comptime side: bool, i: usize, timer: anytype, dt: f32, duration: anytype, comptime interval: f32, dps: V, hps: V, mask: B, profile: resolution.Profile) Tick {
     const old: V = timer.*;
     if (!@reduce(.Or, old > v(0))) return .{};
     const next = remaining(old, dt);
@@ -40,11 +42,12 @@ fn resolveTicks(state: anytype, comptime side: bool, i: usize, ticks: V, interva
 }
 // Channel pushback shortens the expiry, never advances tick phase. Only actual
 // time spent channeling can earn a tick; removed tail time produces no ticks.
-pub fn channel(state: anytype, comptime side: bool, i: usize, time_left: V, dt: f32, comptime duration: f32, comptime interval: f32, dps: V, hps: V, mask: B, profile: resolution.Profile) Tick {
+pub fn channel(state: anytype, comptime side: bool, i: usize, time_left: V, dt: anytype, comptime duration: f32, comptime interval: f32, dps: V, hps: V, mask: B, profile: resolution.Profile) Tick {
     if (!@reduce(.Or, mask)) return .{};
     const elapsed = @field(state, "channel_elapsed" ++ (if (side) "_a" else "_b"));
     const old: V = elapsed[i..][0..16].*;
-    const next = @min(v(duration), @round((old + @min(v(dt), @max(v(0), time_left))) * v(100000)) / v(100000));
+    const delta: V = if (@TypeOf(dt) == V) dt else v(dt);
+    const next = @min(v(duration), @round((old + @min(delta, @max(v(0), time_left))) * v(100000)) / v(100000));
     elapsed[i..][0..16].* = @select(f32, mask, next, old);
     return resolveTicks(state, side, i, @select(f32, mask, tickCount(v(duration) - old, v(duration) - next, duration, interval), v(0)), interval, dps, hps, profile);
 }

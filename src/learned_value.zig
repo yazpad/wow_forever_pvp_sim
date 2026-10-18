@@ -43,8 +43,8 @@ pub fn features(comptime a: Spec, comptime b: Spec, comptime side: bool, d: anyt
     inline for (.{ own, enemy }, 0..) |suffix, j| {
         inline for (names, 0..) |name, i| x[4 + j * 20 + i] = @field(s, name ++ suffix)[lane] / scales[i];
     }
-    const fa = if (a == .frost_mage) d.arena.frostTelemetry(true, lane) else [_]f32{0} ** 5;
-    const fb = if (b == .frost_mage) d.arena.frostTelemetry(false, lane) else [_]f32{0} ** 5;
+    const fa = if (a == .frost_mage or a == .priest) d.arena.frostTelemetry(true, lane) else [_]f32{0} ** 5;
+    const fb = if (b == .frost_mage or b == .priest) d.arena.frostTelemetry(false, lane) else [_]f32{0} ** 5;
     const frost_scales = [_]f32{ 15, 25, 500, 8, 10 };
     for (if (side) fa else fb, if (side) fb else fa, frost_scales, 0..) |v, u, scale, i| {
         x[44 + i] = v / scale;

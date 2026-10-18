@@ -10,18 +10,21 @@ function view.icon(meta, side, id)
     return (action_catalog.icons_by_id[view.spec(meta, side)] or action_catalog.icons_by_id.warlock)[id] or "ui_sword"
 end
 function view.classIcon(meta, side)
-    return view.spec(meta, side) == "frost_mage" and "mage" or "warlock"
+    local sp = view.spec(meta, side)
+    return sp == "frost_mage" and "mage" or (sp == "priest" and "priest" or "warlock")
 end
 function view.aura(meta, side, kind)
-    local mage = view.spec(meta, kind == "icebarrier" and side or (1-side)) == "frost_mage"
-    if mage then
+    local sourceSpec = view.spec(meta, kind == "icebarrier" and side or (1-side))
+    if sourceSpec == "frost_mage" then
         return ({agony="frostnova", corruption="slow", fear="polymorph"})[kind] or kind
+    elseif sourceSpec == "priest" then
+        return ({agony="spell_shadow_shadowwordpain", corruption="spell_shadow_blackplague", fear="spell_shadow_psychicscream", icebarrier="spell_holy_powerwordshield"})[kind] or kind
     end
     return kind
 end
 function view.auraDuration(meta, side, kind)
     local icon = view.aura(meta, side, kind)
-    return ({frostnova=4, slow=6, polymorph=4, icebarrier=20, agony=18, corruption=14, fear=4})[icon] or 3
+    return ({frostnova=4, slow=6, polymorph=4, icebarrier=20, spell_holy_powerwordshield=20, spell_shadow_shadowwordpain=18, spell_shadow_blackplague=24, spell_shadow_psychicscream=8, agony=18, corruption=14, fear=4})[icon] or 3
 end
 function view.drawMagePanel(meta, f, side, x, iconsRef)
     local g, offset = love.graphics, side

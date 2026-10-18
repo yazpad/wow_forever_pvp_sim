@@ -1,0 +1,93 @@
+{
+  "trees": {
+    "Shadow Magic": {},
+    "Discipline": {
+      "14520": 3,
+      "14523": 3,
+      "1309957": 3,
+      "425280": 5,
+      "10060": 1,
+      "402174": 1,
+      "1309969": 5,
+      "14748": 3,
+      "402000": 1,
+      "14751": 1,
+      "1225132": 5
+    },
+    "Holy": {
+      "27900": 3,
+      "14908": 2,
+      "18530": 5,
+      "14909": 2,
+      "14889": 5,
+      "14913": 3
+    }
+  },
+  "description": "Forever 31/20/0 Discipline / Smite Priest with Penance, Soul Warding, Power in Light, Searing Light, and Twilight Focus.",
+  "class": "priest",
+  "combat_stats": {
+    "max_mana": 2695,
+    "shadow_power": 348,
+    "spell_crit_chance": 0.038991596638655,
+    "armor_damage_reduction": 0.086226947998006,
+    "frost_power": 287,
+    "spell_hit_chance": 0.97,
+    "arcane_resistance": 0,
+    "fire_power": 247,
+    "frost_resistance": 0,
+    "max_health": 2530,
+    "fire_resistance": 0,
+    "shadow_resistance": 0
+  },
+  "race": "human",
+  "name": "Discipline / Smite Priest",
+  "gear_base_stats": {
+    "max_mana": 1000,
+    "armor_damage_reduction": 0,
+    "shadow_power": 0,
+    "spell_crit_chance": 0,
+    "fire_power": 0,
+    "max_health": 2000,
+    "frost_power": 0,
+    "spell_hit_chance": 1
+  },
+  "gear": {
+    "waist": 11662,
+    "main_hand": 13964,
+    "legs": 13170,
+    "ring1": 13001,
+    "hands": 13253,
+    "wrist": 18497,
+    "off_hand": 11904,
+    "trinket1": 12930,
+    "head": 18727,
+    "feet": 18735,
+    "chest": 14136,
+    "ring2": 12543,
+    "trinket2": 13968,
+    "back": 11623,
+    "neck": 18691,
+    "shoulder": 18681,
+    "wand": 13396
+  },
+  "level": 60,
+  "talents_summary": "31/20/0",
+  "action_loadout": [
+    "Shadow Word: Pain",
+    "Devouring Plague",
+    "Psychic Scream",
+    "Mind Blast",
+    "Power Word: Shield",
+    "Shadow Word: Death",
+    "Flash Heal",
+    "Renew",
+    "Holy Fire",
+    "Smite",
+    "Penance",
+    "Inner Focus",
+    "Power Infusion",
+    "Dispel Magic (Self)",
+    "Dispel Magic (Enemy)",
+    "Mana Burn"
+  ]
+}

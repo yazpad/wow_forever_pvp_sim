@@ -51,6 +51,37 @@ The New Fight dialog includes pet selectors, and new replays show pets and HP.
 love visualizer matches/latest.lua
 ```
 
+The visualizer opens in the **Arena workspace (F1)**: select Fighter A or B on the left,
+edit Talents, Stats, Pets, or Abilities, and drag either portrait in the arena.
+Stat probabilities use 0–1 values; click a value, type its replacement, and press
+Enter to apply or Escape to cancel. In Abilities, select a slot and choose an
+available ability below; right-click a slot to clear it.
+Fight uses the current drafts without saving; Save spec stores a named build.
+Completed fights play in the center panel with the existing Arena effects,
+telemetry, camera, and timeline controls. Use **Edit positions** to return to the
+setup preview or **Playback** to resume the loaded replay. Editing a spec returns
+the center to setup automatically. Explicit replay paths open directly in Playback.
+Specs and Settings remain visible in both modes; drafts and starting positions
+are preserved. Space toggles playback, arrows step, the timeline seeks, the wheel
+zooms over playback, and right/middle drag pans. Escape returns to Edit positions.
+
+Arena (F1) is the sole top-level workspace. Fight replays (F2) and Matrix (F4)
+expand under Settings, which scrolls independently above the fixed Fight button.
+Analysis is hidden for now. F3 and F6 remain workspace shortcuts. The legacy
+`--fights` and `--matrix` launch flags open the corresponding Settings section.
+
+For explicit starting positions in the CLI:
+
+```bash
+zig-out/bin/mcts_fight --x-a -8 --y-a 4 --x-b 10 --y-b -2 --output matches/positioned.lua
+```
+
+Supply all four coordinates, each between -17.5 and 17.5 meters, with at most
+35 meters between fighters. Explicit coordinates determine starting distance.
+Without coordinates, `--distance` retains its centered horizontal setup. Pets
+spawn beside their owner; coordinates are recorded in search metadata.
+
+
 ---
 
 ## 2. Key Architecture Details
@@ -245,3 +276,18 @@ before periodic damage; a simultaneous periodic tick cannot make a fully
 absorbed direct hit trigger pushback. Existing aggregate HP/shield accounting
 remains unchanged. Pet casting pushback is outside the current owner-targeted
 combat model.
+
+### Visualizer workspace checks
+
+```bash
+lua visualizer/test_workspace.lua
+luajit visualizer/test_workspace.lua
+# Real GUI events, worker thread and simulator; writes replay/screenshots under /tmp.
+zig build -Doptimize=ReleaseFast
+SDL_VIDEODRIVER=offscreen ALSOFT_DRIVERS=null love visualizer/tests/repeat_fight
+```
+
+The Love2D check runs two fights from unsaved edits, verifies replay metadata,
+returns to setup, changes the pet/loadout/position, and runs again. It also checks
+resizing and dropdown bounds/dismissal at 960x540, 1280x720 and 2560x1080.
+Omit `SDL_VIDEODRIVER=offscreen` to watch the check in a window.

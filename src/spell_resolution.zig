@@ -5,9 +5,15 @@ const simd = @import("simd.zig");
 const V = simd.f32x16;
 const U = simd.u32x16;
 const B = simd.bool16;
-pub const School = enum { shadow, fire, frost, arcane };
+pub const School = enum { shadow, fire, frost, arcane, holy };
 pub const Outcome = enum(u32) { none, miss, resist, hit, crit };
 pub const Stats = struct {
+    max_health: f32 = 2000,
+    max_mana: f32 = 1000,
+    shadow_power: f32 = 0,
+    fire_power: f32 = 0,
+    frost_power: f32 = 0,
+
     // Preserve the compact kit's former baseline unless a spec supplies stats.
     spell_hit_chance: f32 = 1,
     spell_crit_chance: f32 = 0,
@@ -35,12 +41,20 @@ pub const Stats = struct {
             if (!std.math.isFinite(value) or value < 0) return error.InvalidCombatStats;
             if (comptime std.mem.eql(u8, field.name, "level")) {
                 if (value < 1 or value > 100 or @floor(value) != value) return error.InvalidCombatStats;
+            } else if (comptime std.mem.startsWith(u8, field.name, "max_")) {
+                if (value < 1 or value > 100000) return error.InvalidCombatStats;
+            } else if (comptime std.mem.endsWith(u8, field.name, "_power")) {
+                if (value > 10000) return error.InvalidCombatStats;
             } else if (comptime std.mem.endsWith(u8, field.name, "_resistance") or std.mem.eql(u8, field.name, "spell_penetration")) {
                 if (value > 10000) return error.InvalidCombatStats;
             } else if (value > 1) return error.InvalidCombatStats;
         }
     }
 };
+pub fn spellPower(state: anytype, comptime side: bool, i: usize, comptime school: School) V {
+    const field_prefix = if (school == .holy) "shadow" else @tagName(school);
+    return @field(state, field_prefix ++ "_power" ++ (if (side) "_a" else "_b"))[i..][0..16].* * @import("racials.zig").powerMultiplier(state, side, i);
+}
 pub const Profile = struct {
     school: School,
     hit_bonus: V = @splat(0),
@@ -74,6 +88,9 @@ fn rollFor(state: anytype, comptime side: bool, i: usize, mask: B, pet: bool) V 
     const values = if (pet) @field(state, "pet_rng" ++ (if (side) "_a" else "_b")) else @field(state, "spell_rng" ++ (if (side) "_a" else "_b"));
     return rollValues(values, i, mask);
 }
+pub fn rollSpell(state: anytype, comptime side: bool, i: usize, mask: B) V {
+    return rollFor(state, side, i, mask, false);
+}
 fn rollValues(values: anytype, i: usize, mask: B) V {
     const old: U = values[i..][0..16].*;
     var next = @select(u32, old == @as(U, @splat(0)), @as(U, @splat(0x6d2b79f5)), old);
@@ -91,6 +108,7 @@ pub fn resolve(state: anytype, comptime side: bool, i: usize, damage: V, mask: B
     const hit: V = if (profile.pet) @field(state, "pet_hit_chance" ++ own)[i..][0..16].* else @field(state, "spell_hit_chance" ++ own)[i..][0..16].*;
     const crit: V = if (profile.pet) @field(state, "pet_crit_chance" ++ own)[i..][0..16].* else @field(state, "spell_crit_chance" ++ own)[i..][0..16].*;
     const resist: V = switch (profile.school) {
+        .holy => v(0),
         inline else => |school| @field(state, @tagName(school) ++ "_resist_chance" ++ target)[i..][0..16].*,
     };
     const average = averageResistance(state, side, i, profile.school);
@@ -124,9 +142,11 @@ pub fn resistanceMean(resistance: V, penetration: V, caster_level: V, target_lev
     return @min(v(0.75), effective * v(0.75) / (v(5) * @max(v(1), caster_level)));
 }
 fn averageResistance(state: anytype, comptime side: bool, i: usize, school: School) V {
+    if (school == .holy) return v(0);
     const own = if (side) "_a" else "_b";
     const target = if (side) "_b" else "_a";
     const resistance: V = switch (school) {
+        .holy => unreachable,
         inline else => |value| @field(state, @tagName(value) ++ "_resistance" ++ target)[i..][0..16].*,
     };
     return resistanceMean(resistance, @field(state, "spell_penetration" ++ own)[i..][0..16].*, @field(state, "level" ++ own)[i..][0..16].*, @field(state, "level" ++ target)[i..][0..16].*);

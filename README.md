@@ -4,6 +4,10 @@ A high-performance, SIMD-accelerated battle simulation engine written in **Zig 0
 
 Built for extreme throughput (hundreds of millions to billions of entity ticks per second), designed for Monte-Carlo battle simulations, auto-battlers, matchmaking balance calculations, and real-time game logic.
 
+Current priorities and detailed checklists: [Project TODO](TODO.md).
+
+The visualizer supports per-slot Vanilla pre-raid gear for Warlock and Frost Mage, with resolved combat stats. See [Gear setup and data sources](GEAR.md).
+
 ---
 
 ## 🚀 Performance Highlights

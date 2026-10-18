@@ -50,22 +50,39 @@ pub fn launch(state: anytype, comptime side_a: bool, i: usize, comptime spell: u
 pub fn launchClass(state: anytype, comptime side_a: bool, i: usize, comptime spell: u32, damage: V, mask: B, comptime actor: anytype) void {
     if (!@reduce(.Or, mask)) return;
     const resolution = @import("spell_resolution.zig");
-    const effects = @import("warlock_talents.zig").decode(
-        @field(state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
-        @field(state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
-    );
-    const shadow = spell == 4 or spell == 7 or spell == 9;
-    const profile: resolution.Profile = if (actor == .warlock) .{
-        .school = if (shadow) .shadow else .fire,
-        .hit_bonus = effects.spell_hit_bonus,
-        .crit_bonus = if (shadow) effects.shadow_crit_bonus else @splat(0),
-        .crit_multiplier = effects.destruction_crit_multiplier,
-        // Death Coil's drain/Horror is resolved as a noncritical spell.
-        .can_crit = spell != 7,
-        .binary = spell == 7,
+    const profile: resolution.Profile = if (actor == .warlock) blk: {
+        const effects = @import("warlock_talents.zig").decode(
+            @field(state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+            @field(state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+        );
+        const shadow = spell == 4 or spell == 7 or spell == 9;
+        break :blk .{
+            .school = if (shadow) .shadow else .fire,
+            .hit_bonus = effects.spell_hit_bonus,
+            .crit_bonus = if (shadow) effects.shadow_crit_bonus else (if (spell == 11) effects.searing_pain_crit_bonus else @splat(0)),
+            .crit_multiplier = effects.destruction_crit_multiplier,
+            // Death Coil's drain/Horror is resolved as a noncritical spell.
+            .can_crit = spell != 7,
+            .binary = spell == 7,
+        };
+    } else if (actor == .priest) blk: {
+        const effects = @import("priest_talents.zig").decode(
+            @field(state, "talent_ranks" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+            @field(state, "talent_flags" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+            @field(state, "talent_extra" ++ (if (side_a) "_a" else "_b"))[i..][0..16].*,
+        );
+        const inner_focus_crit = select(@field(state, "soul_link" ++ (if (side_a) "_a" else "_b"))[i..][0..16].* != @as(simd.u32x16, @splat(0)), splat(@import("spec.zig").Priest.InnerFocusCritBonus), splat(0));
+        const shadow = spell == 4 or spell == 9;
+        break :blk .{
+            .school = if (shadow) .shadow else .holy,
+            .hit_bonus = if (shadow) effects.shadow_hit_bonus else effects.holy_hit_bonus,
+            .crit_bonus = (if (shadow) @as(V, @splat(0)) else effects.holy_crit_bonus) + inner_focus_crit,
+            .crit_multiplier = if (shadow) effects.shadow_crit_multiplier else @splat(1.5),
+        };
     } else .{ .school = .frost };
     const active = simd.vAnd16(mask, state.is_active[i..][0..16].* != @as(simd.u32x16, @splat(0)));
-    const result = resolution.resolve(state, side_a, i, damage, active, profile);
+    const powered = if (actor == .frost_mage) damage + resolution.spellPower(state, side_a, i, .frost) * splat(if (spell == 1) 0.143 else 0.814) else damage;
+    const result = resolution.resolve(state, side_a, i, powered, active, profile);
     launch(state, side_a, i, spell, result.damage, active);
 }
 pub fn tick(state: anytype, comptime side_a: bool, i: usize, dt: f32) Hits {
@@ -105,7 +122,7 @@ fn tickImpl(state: anytype, comptime side_a: bool, i: usize, dt: f32, comptime o
             hits.direct_events[slot] = select(hit, damage.*, splat(0));
             hits.immolate += select(simd.vAnd16(hit, id.* == splat(13)), damage.*, splat(0));
             hits.bolt += select(simd.vAnd16(hit, simd.vOr16(simd.vOr16(id.* == splat(4), id.* == splat(9)), simd.vOr16(id.* == splat(11), id.* == splat(12)))), damage.*, splat(0));
-            hits.lance += select(simd.vAnd16(hit, id.* == splat(1)), damage.*, splat(0));
+            hits.lance += select(simd.vAnd16(hit, simd.vOr16(id.* == splat(1), id.* == splat(14))), damage.*, splat(0));
             hits.coil += select(simd.vAnd16(hit, id.* == splat(7)), damage.*, splat(0));
             count.* -= select(hit, splat(1), splat(0));
             id.* = select(hit, splat(0), id.*);

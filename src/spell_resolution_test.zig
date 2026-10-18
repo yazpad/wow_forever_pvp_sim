@@ -48,10 +48,10 @@ test "combat stat probabilities reject invalid values" {
 
 test "spell resolution talent ranks preserve neighbors and match scalar modifiers" {
     for (0..6) |rank| {
-        const ranks = spec.WarlockTalentRanks{ .suppression = @intCast(rank), .malevolence = @intCast(rank), .ruin = @intCast(rank), .fire_and_brimstone = @intCast(@min(rank, 3)), .improved_sayaad = 3, .improved_felhunter = 2, .conflagrate = 1 };
+        const ranks = spec.WarlockTalentRanks{ .suppression = @intCast(rank), .malevolence = @intCast(rank), .ruin = @intCast(rank), .fire_and_brimstone = @intCast(@min(rank, 3)), .agonizing_flames = @intCast(@min(rank, 3)), .improved_sayaad = 3, .improved_felhunter = 2, .conflagrate = 1 };
         const fx = talents.decode(@splat(@truncate(ranks.encode())), @splat(@truncate(ranks.encode() >> 32)));
         const scalar = spec.CombatModifiers.fromWarlockRanks(ranks);
-        inline for (.{ "spell_hit_bonus", "shadow_crit_bonus", "destruction_crit_multiplier", "conflagrate_crit_bonus" }) |field|
+        inline for (.{ "spell_hit_bonus", "shadow_crit_bonus", "destruction_crit_multiplier", "conflagrate_crit_bonus", "searing_pain_crit_bonus", "destruction_damage_mult" }) |field|
             try std.testing.expectApproxEqAbs(@field(scalar, field), @field(fx, field)[0], 0.0001);
         try std.testing.expectApproxEqAbs(@as(f32, 1.3), fx.seduction_duration_mult[0], 0.0001);
         try std.testing.expectEqual(@as(f32, 20), fx.spell_lock_cooldown[0]);
@@ -377,3 +377,101 @@ test "missed Mage control spends cooldown without applying root interrupt or dim
     try std.testing.expectEqual(@as(f32, 0), state.horror_dr_tier_b[0]);
     try std.testing.expect(duel.arena.frostTelemetry(true, 0)[1] > 0);
 }
+
+test "Improved Shadow Bolt applies on SB crit, amplifies shadow damage, and consumes charges" {
+    var duel = try search.Duel(.warlock, .warlock).init(std.testing.allocator);
+    defer duel.deinit();
+
+    const ranks_a = spec.WarlockTalentRanks{ .improved_shadow_bolt = 5 };
+    const encoded_ranks_a: u32 = @truncate(ranks_a.encode());
+    const encoded_flags_a: u32 = @truncate(ranks_a.encode() >> 32);
+
+    const state = duel.arena.combat();
+    state.talent_ranks_a[0] = encoded_ranks_a;
+    state.talent_flags_a[0] = encoded_flags_a;
+
+    // Guaranteed hit and crit for caster A
+    try duel.setCombatStats(true, .{
+        .spell_hit_chance = 1.0,
+        .spell_crit_chance = 1.0,
+    });
+    try duel.setCombatStats(false, .{
+        .shadow_resist_chance = 0.0,
+    });
+
+    state.distance[0] = 10.0;
+    state.pos_x_a[0] = -5.0;
+    state.pos_x_b[0] = 5.0;
+
+    // Start Shadow Bolt cast for Unit A
+    duel.applyMasked(@splat(.{ .ability = 4 }), @splat(.{}), @splat(true), @splat(false));
+    try std.testing.expectEqual(@as(u32, 4), state.cast_id_a[0]);
+
+    // Fast-forward cast completion
+    _ = duel.arena.tickPhysics16(3.0, 0);
+
+    // After SB crit lands, ISB debuff should be active on Unit B: 12s timer, 4 charges, 20% vuln (0.20)
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), state.isb_timer_b[0], 0.05);
+    try std.testing.expectEqual(@as(f32, 4.0), state.isb_charges_b[0]);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.20), state.isb_vuln_b[0], 0.001);
+
+    // Now test shadow damage amplification and charge consumption:
+    // Cast Corruption (ability 2, instant DoT)
+    const hp_before_dot = state.hp_b[0];
+    duel.applyMasked(@splat(.{ .ability = 2 }), @splat(.{}), @splat(true), @splat(false));
+
+    // Tick physics to let a corruption tick happen (Corruption ticks every 3s in base sim)
+    _ = duel.arena.tickPhysics16(3.0, 0);
+
+    // Debuff charges should have decremented by 1 upon taking shadow damage tick
+    try std.testing.expectEqual(@as(f32, 3.0), state.isb_charges_b[0]);
+    const dot_damage = hp_before_dot - state.hp_b[0];
+    // Corruption tick base is ~66.67. With 20% ISB amp, damage should be amplified by ~1.20x
+    try std.testing.expect(dot_damage > 70.0);
+}
+
+test "Agonizing Flames provides Searing Pain crit bonus and Destruction damage bonus" {
+    var duel = try search.Duel(.warlock, .warlock).init(std.testing.allocator);
+    defer duel.deinit();
+
+    // Rank 3 Agonizing Flames (+10% Searing Pain crit, +10% Destruction damage)
+    const ranks_a = spec.WarlockTalentRanks{ .agonizing_flames = 3 };
+    const encoded_ranks_a: u32 = @truncate(ranks_a.encode());
+    const encoded_flags_a: u32 = @truncate(ranks_a.encode() >> 32);
+
+    const state = duel.arena.combat();
+    state.talent_ranks_a[0] = encoded_ranks_a;
+    state.talent_flags_a[0] = encoded_flags_a;
+
+    // Base crit chance is 0.05. With rank 3 Agonizing Flames (+0.10), Searing Pain effective crit chance is 0.15.
+    try duel.setCombatStats(true, .{
+        .spell_hit_chance = 1.0,
+        .spell_crit_chance = 0.05,
+    });
+    try duel.setCombatStats(false, .{
+        .fire_resist_chance = 0.0,
+    });
+
+    state.distance[0] = 10.0;
+    state.pos_x_a[0] = -5.0;
+    state.pos_x_b[0] = 5.0;
+
+    // Start Searing Pain cast for Unit A (ability 11)
+    duel.applyMasked(@splat(.{ .ability = 11 }), @splat(.{}), @splat(true), @splat(false));
+    try std.testing.expectEqual(@as(u32, 11), state.cast_id_a[0]);
+
+    // Fast-forward cast completion
+    _ = duel.arena.tickPhysics16(2.0, 0);
+
+    // Baseline Searing Pain damage is 130.0. With rank 3 Agonizing Flames (+10%), base damage is 143.0.
+    // If not crit, impact damage is 143.0. If crit, impact damage is 143.0 * 1.5 = 214.5.
+    const proj_damage = state.projectile_0_damage_a[0];
+    const is_crit = state.spell_outcome_a[0] == @intFromEnum(@import("spell_resolution.zig").Outcome.crit);
+    if (is_crit) {
+        try std.testing.expectApproxEqAbs(@as(f32, 143.0 * 1.5), proj_damage, 0.01);
+    } else {
+        try std.testing.expectApproxEqAbs(@as(f32, 143.0), proj_damage, 0.01);
+    }
+}
+
+

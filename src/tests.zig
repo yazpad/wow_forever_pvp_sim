@@ -1,6 +1,7 @@
 const std = @import("std");
 
 test {
+    _ = @import("racials_test.zig");
     _ = @import("learning_tests.zig");
     _ = @import("pets_test.zig");
     _ = @import("spell_resolution_test.zig");
@@ -16,4 +17,6 @@ test {
     _ = @import("combat_spec.zig");
     _ = @import("match_recorder.zig");
     _ = @import("search_sim.zig");
+    _ = @import("priest_talents.zig");
+    _ = @import("priest_test.zig");
 }

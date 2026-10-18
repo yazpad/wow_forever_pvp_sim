@@ -327,4 +327,22 @@ function match_browser.draw()
     end
 end
 
+-- Compact presentation; workspace owns scrolling and clips interactive rows.
+function match_browser.drawPanel(y,button,text,loadReplay)
+    button(y,'Refresh replays',function() match_browser.scanMatchesDir(currentDirectory) end)
+    y=text(y+34,string.format('%d recorded fights · newest first',#allMatchesList))
+    for _,m in ipairs(allMatchesList) do
+        local replay=m
+        local title=replay.name
+        if #title>26 then title=title:sub(1,23)..'...' end
+        button(y,title,function() loadReplay(replay.path) end)
+        y=text(y+30,string.format('%s vs %s\n%s · %.2fs\nDamage: %.0f / %.0f · %s',
+            replay.name_a,replay.name_b,replay.timestamp,replay.total_time,replay.dmg_a,replay.dmg_b,
+            replay.victor==0 and 'A wins' or replay.victor==1 and 'B wins' or 'Draw'))
+        y=y+8
+    end
+    if #allMatchesList==0 then y=text(y,'No replays yet. Use Fight below to generate one.') end
+    return y+8
+end
+
 return match_browser
