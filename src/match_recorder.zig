@@ -132,6 +132,8 @@ pub const MatchTrajectory = struct {
     max_health_b: f32 = 2000,
     max_mana_a: f32 = 1000,
     max_mana_b: f32 = 1000,
+    action_mask_a: u32 = @import("spec.zig").AllActionBits,
+    action_mask_b: u32 = @import("spec.zig").AllActionBits,
     race_a: @import("spec.zig").Race = .human,
     race_b: @import("spec.zig").Race = .human,
     spec_a: Spec = .warlock,
@@ -190,6 +192,7 @@ pub const MatchTrajectory = struct {
 
         try writer.print("{{\n  \"meta\": {{\n", .{});
         try writer.print("    \"max_health_a\": {d}, \"max_health_b\": {d}, \"max_mana_a\": {d}, \"max_mana_b\": {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
+        try writer.print("    \"action_mask_a\": {d}, \"action_mask_b\": {d},\n", .{ self.action_mask_a, self.action_mask_b });
         try writer.print("    \"spec_a\": \"{s}\", \"spec_b\": \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
         try writer.print("    \"race_a\": \"{s}\", \"race_b\": \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
         try writer.print("    \"name_a\": \"{s}\", \"elo_a\": {d:0.1},\n", .{ self.name_a, self.elo_a });
@@ -197,11 +200,11 @@ pub const MatchTrajectory = struct {
         try writer.print("    \"victor\": {d}, \"total_time\": {d:0.3},\n", .{ self.victor, self.total_time_s });
         try writer.print("    \"dmg_a\": {d:0.1}, \"dmg_b\": {d:0.1},\n", .{ self.total_dmg_a, self.total_dmg_b });
         try writer.print("    \"heal_a\": {d:0.1}, \"heal_b\": {d:0.1},\n", .{ self.total_heal_a, self.total_heal_b });
-        try writer.print("    \"warlock_talents_a\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}}},\n", .{
-            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet,
+        try writer.print("    \"warlock_talents_a\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}, \"fel_vitality\": {d}, \"demonic_knowledge\": {d}, \"master_demonologist\": {d}}},\n", .{
+            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet, self.warlock_talents_a.fel_vitality, self.warlock_talents_a.demonic_knowledge, self.warlock_talents_a.master_demonologist,
         });
-        try writer.print("    \"warlock_talents_b\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}}}\n  }},\n", .{
-            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet,
+        try writer.print("    \"warlock_talents_b\": {{\"soul_link\": {d}, \"demonic_sacrifice\": {d}, \"demonic_sacrifice_pet\": {d}, \"fel_vitality\": {d}, \"demonic_knowledge\": {d}, \"master_demonologist\": {d}}}\n  }},\n", .{
+            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet, self.warlock_talents_b.fel_vitality, self.warlock_talents_b.demonic_knowledge, self.warlock_talents_b.master_demonologist,
         });
 
         try writer.print("  \"events\": [\n", .{});
@@ -257,6 +260,7 @@ pub const MatchTrajectory = struct {
 
         try writer.print("return {{\n  meta = {{\n", .{});
         try writer.print("    max_health_a = {d}, max_health_b = {d}, max_mana_a = {d}, max_mana_b = {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
+        try writer.print("    action_mask_a = {d}, action_mask_b = {d},\n", .{ self.action_mask_a, self.action_mask_b });
         try writer.print("    spec_a = \"{s}\", spec_b = \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
         try writer.print("    race_a = \"{s}\", race_b = \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
         try writer.print("    name_a = \"{s}\", elo_a = {d:0.1},\n", .{ self.name_a, self.elo_a });
@@ -264,11 +268,11 @@ pub const MatchTrajectory = struct {
         try writer.print("    victor = {d}, total_time = {d:0.3},\n", .{ self.victor, self.total_time_s });
         try writer.print("    dmg_a = {d:0.1}, dmg_b = {d:0.1},\n", .{ self.total_dmg_a, self.total_dmg_b });
         try writer.print("    heal_a = {d:0.1}, heal_b = {d:0.1},\n", .{ self.total_heal_a, self.total_heal_b });
-        try writer.print("    warlock_talents_a = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d} }},\n", .{
-            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet,
+        try writer.print("    warlock_talents_a = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d}, fel_vitality = {d}, demonic_knowledge = {d}, master_demonologist = {d} }},\n", .{
+            self.warlock_talents_a.soul_link, self.warlock_talents_a.demonic_sacrifice, self.warlock_talents_a.demonic_sacrifice_pet, self.warlock_talents_a.fel_vitality, self.warlock_talents_a.demonic_knowledge, self.warlock_talents_a.master_demonologist,
         });
-        try writer.print("    warlock_talents_b = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d} }}\n  }},\n", .{
-            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet,
+        try writer.print("    warlock_talents_b = {{ soul_link = {d}, demonic_sacrifice = {d}, demonic_sacrifice_pet = {d}, fel_vitality = {d}, demonic_knowledge = {d}, master_demonologist = {d} }}\n  }},\n", .{
+            self.warlock_talents_b.soul_link, self.warlock_talents_b.demonic_sacrifice, self.warlock_talents_b.demonic_sacrifice_pet, self.warlock_talents_b.fel_vitality, self.warlock_talents_b.demonic_knowledge, self.warlock_talents_b.master_demonologist,
         });
 
         try writer.print("  events = {{\n", .{});
@@ -324,7 +328,7 @@ pub const MatchRecorder = struct {
         // Hard position freeze during stationary hard casts or channels
         if (cast_id > 0 and cast_id <= 5) return 0;
         const move = @field(state, "move_intent" ++ suffix)[0];
-        var speed: f32 = if (move < 0) -WarlockConstants.ForwardSpeed else if (move > 0) WarlockConstants.BackpedalSpeed else 0;
+        var speed: f32 = if (move < 0) -WarlockConstants.ForwardSpeed else if (move > 0) WarlockConstants.ForwardSpeed else 0;
         if (@field(state, "seduction_timer" ++ suffix)[0] > dt) speed = 0;
         if (@field(state, "fear_timer" ++ suffix)[0] > dt or @field(state, "horror_timer" ++ suffix)[0] > dt)
             speed = if (source_class == .frost_mage) 0 else WarlockConstants.ForwardSpeed;

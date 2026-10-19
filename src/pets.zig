@@ -36,8 +36,10 @@ fn col(state: anytype, comptime name: []const u8, comptime side: bool, i: usize)
 }
 pub fn set(state: anytype, comptime side: bool, lane: usize, kind: Kind) void {
     const suffix = if (side) "_a" else "_b";
+    const extra: u32 = @field(state, "talent_extra" ++ suffix)[lane];
+    const fel_vitality_rank = (extra >> 8) & 0x3;
     @field(state, "pet_kind" ++ suffix)[lane] = @intFromEnum(kind);
-    @field(state, "pet_hp" ++ suffix)[lane] = kind.maxHp();
+    @field(state, "pet_hp" ++ suffix)[lane] = kind.maxHp() * (1.0 + 0.05 * @as(f32, @floatFromInt(fel_vitality_rank)));
     @field(state, "pet_timer" ++ suffix)[lane] = if (kind == .imp) AttackInterval else 0;
     @field(state, "pet_x" ++ suffix)[lane] = if (kind == .none) 0 else @field(state, "pos_x" ++ suffix)[lane];
     @field(state, "pet_y" ++ suffix)[lane] = if (kind == .none) 0 else @field(state, "pos_y" ++ suffix)[lane] + 1.5;
@@ -73,7 +75,7 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
     timer.* = @select(f32, live, next, timer.*);
     const damage = @select(f32, imp, v(60), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.succubus))), v(50), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.felhunter))), v(40), v(30))));
     const resolution = @import("spell_resolution.zig");
-    const fire = resolution.resolve(state, side, i, imp_firebolt_damage, simd.vAnd16(hit, imp), .{ .school = .fire, .pet = true });
+    const fire = resolution.resolve(state, side, i, (imp_firebolt_damage + @import("demon_passives.zig").knowledge(state, side, i) * v(2.0 / 3.5) * (imp_firebolt_damage / v(60))) * @import("demon_passives.zig").petFireMultiplier(state, side, i), simd.vAnd16(hit, imp), .{ .school = .fire, .pet = true });
     const melee = resolution.petMelee(state, side, i, damage, simd.vAnd16(hit, simd.vNot16(imp)));
     return fire.damage + melee;
 }

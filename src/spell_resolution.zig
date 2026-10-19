@@ -9,6 +9,8 @@ pub const School = enum { shadow, fire, frost, arcane, holy };
 pub const Outcome = enum(u32) { none, miss, resist, hit, crit };
 pub const Stats = struct {
     max_health: f32 = 2000,
+    // Total stamina before talents; max_health already includes its base HP.
+    stamina: f32 = 0,
     max_mana: f32 = 1000,
     shadow_power: f32 = 0,
     fire_power: f32 = 0,
@@ -43,6 +45,8 @@ pub const Stats = struct {
                 if (value < 1 or value > 100 or @floor(value) != value) return error.InvalidCombatStats;
             } else if (comptime std.mem.startsWith(u8, field.name, "max_")) {
                 if (value < 1 or value > 100000) return error.InvalidCombatStats;
+            } else if (comptime std.mem.eql(u8, field.name, "stamina")) {
+                if (value > 10000) return error.InvalidCombatStats;
             } else if (comptime std.mem.endsWith(u8, field.name, "_power")) {
                 if (value > 10000) return error.InvalidCombatStats;
             } else if (comptime std.mem.endsWith(u8, field.name, "_resistance") or std.mem.eql(u8, field.name, "spell_penetration")) {
@@ -53,7 +57,7 @@ pub const Stats = struct {
 };
 pub fn spellPower(state: anytype, comptime side: bool, i: usize, comptime school: School) V {
     const field_prefix = if (school == .holy) "shadow" else @tagName(school);
-    return @field(state, field_prefix ++ "_power" ++ (if (side) "_a" else "_b"))[i..][0..16].* * @import("racials.zig").powerMultiplier(state, side, i);
+    return (@field(state, field_prefix ++ "_power" ++ (if (side) "_a" else "_b"))[i..][0..16].* + @import("demon_passives.zig").knowledge(state, side, i)) * @import("racials.zig").powerMultiplier(state, side, i);
 }
 pub const Profile = struct {
     school: School,
@@ -118,7 +122,10 @@ pub fn resolve(state: anytype, comptime side: bool, i: usize, damage: V, mask: B
     return if (profile.partial and !profile.binary) applyPartial(state, side, i, result, acting, profile) else result;
 }
 pub fn setStats(state: anytype, comptime side: bool, lane: usize, stats: Stats) void {
-    inline for (std.meta.fields(Stats)) |field| @field(state, field.name ++ (if (side) "_a" else "_b"))[lane] = @field(stats, field.name);
+    inline for (std.meta.fields(Stats)) |field| {
+        // Stamina is resolved at setup; combat only needs the resulting HP.
+        if (comptime !std.mem.eql(u8, field.name, "stamina")) @field(state, field.name ++ (if (side) "_a" else "_b"))[lane] = @field(stats, field.name);
+    }
 }
 
 // Applications resolve hit/full resist once; landed periodic effects roll only

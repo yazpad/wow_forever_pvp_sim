@@ -84,6 +84,7 @@ function gear.resolve(loadout,class,base)
         local key=school..'_resistance'
         stats[key]=(base[key] or 0)+(t[key] or 0)
     end
+    stats.stamina=(base.stamina or 0)+t.stamina
     stats.max_health=(base.max_health or 2000)+t.stamina*10
     stats.max_mana=(base.max_mana or 1000)+t.intellect*15
     stats.shadow_power=(base.shadow_power or 0)+t.spell_power+t.shadow_power

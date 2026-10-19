@@ -128,6 +128,15 @@ pub fn decode(encoded: U, flags: U) Effects {
     };
 }
 
+/// Full runtime decode, including ranks stored beyond the first two words.
+pub fn decodeExtended(encoded: U, flags: U, extra: U) Effects {
+    var effects = decode(encoded, flags);
+    const agony_rank = rank(extra, 10, 2);
+    const old_bonus = @as(V, @splat(1)) + @as(V, @splat(0.10)) * asFloat(rank(flags, 3, 1));
+    effects.agony_damage = effects.agony_damage / old_bonus * (@as(V, @splat(1)) + @as(V, @splat(0.05)) * asFloat(agony_rank));
+    return effects;
+}
+
 test "Warlock talent decode applies ranks independently per SIMD lane" {
     const std = @import("std");
     var encoded: U = @splat(0);
@@ -230,3 +239,24 @@ test "Agonizing Flames packed ranks match scalar modifiers" {
     }
 }
 
+test "extended Agony ranks match scalar damage without changing packed neighbors" {
+    const std = @import("std");
+    const spec = @import("spec.zig");
+    var encoded: U = @splat(0);
+    var flags: U = @splat(0);
+    var extra: U = @splat(0);
+    for (0..16) |lane| {
+        const ranks = spec.WarlockTalentRanks{ .improved_bane_of_agony = @intCast(lane % 3), .fel_vitality = 3, .improved_shadow_bolt = 5, .malediction = 3 };
+        const words = ranks.encode();
+        encoded[lane] = @truncate(words);
+        flags[lane] = @truncate(words >> 32);
+        extra[lane] = @truncate(words >> 64);
+    }
+    const effects = decodeExtended(encoded, flags, extra);
+    for (0..16) |lane| {
+        const scalar = spec.CombatModifiers.fromWarlockRanks(.{ .improved_bane_of_agony = @intCast(lane % 3), .malediction = 3 });
+        try std.testing.expectApproxEqAbs(scalar.agony_damage_mult, effects.agony_damage[lane], 0.0001);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.20), effects.improved_shadow_bolt_mult[lane], 0.0001);
+        try std.testing.expectEqual(@as(u32, 3), (extra[lane] >> 8) & 3);
+    }
+}

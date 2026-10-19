@@ -1,7 +1,9 @@
+local vitals = require('vitals')
 local ui = require('ui')
 local classes = require('class_view')
 local icons = require('icons_manager')
 local frames = {}
+local catalog = require('action_catalog')
 local pets = {'Imp','Succubus','Felhunter','Voidwalker'}
 local petIcons = {'pet_imp','pet_succubus','pet_felhunter','pet_voidwalker'}
 local petHp = {500,700,900,1200}
@@ -16,6 +18,8 @@ function frames.describe(meta,f,side,extra)
     local priest=spec=='priest'
     local kind=value(83+side*4)
     local hp=value(84+side*4)
+    local warlockTalents=meta and meta[side==0 and 'warlock_talents_a' or 'warlock_talents_b']
+    local petMaxHp=petHp[kind] and petHp[kind]*(1+0.05*((warlockTalents and warlockTalents.fel_vitality) or 0)) or nil
     local cast=value(11)
     local isChannel=(not mage and cast==5) or (priest and cast==15)
     local result={name=meta[side==0 and 'name_a' or 'name_b'] or (mage and 'Mage' or (priest and 'Priest' or 'Warlock')),
@@ -24,12 +28,30 @@ function frames.describe(meta,f,side,extra)
         castProgress=clamp(isChannel and value(13)/math.max(0.001,value(15))
             or 1-value(13)/math.max(0.001,value(15))),
         castRemaining=math.max(0,value(13)),cooldowns={},buffs={},debuffs={},
-        pet=(not mage and not priest) and pets[kind] and {name=pets[kind],icon=petIcons[kind],hp=hp,maxHp=petHp[kind]} or nil}
-    local function cd(icon,index,total)
+        pet=(not mage and not priest) and pets[kind] and {name=pets[kind],icon=petIcons[kind],hp=hp,maxHp=petMaxHp} or nil}
+    local suffix=side==0 and 'a' or 'b'
+    local loadout=meta['action_loadout_'..suffix]
+    local mask=meta['action_mask_'..suffix]
+    local function available(name)
+        if loadout then
+            for _,action in ipairs(loadout) do if action==name then return true end end
+            return false
+        end
+        if mask then
+            for id,action in pairs(catalog.names_by_id[spec] or {}) do
+                if action==name then return math.floor(mask/2^id)%2==1 end
+            end
+            return false
+        end
+        -- Legacy recordings without capabilities retain their historical indicators.
+        return true
+    end
+    local function cd(name,icon,index,total)
+        if not available(name) then return end
         result.cooldowns[#result.cooldowns+1]={icon=icon,remaining=value(index),total=total}
     end
     if mage then
-        cd('blink',41,15);cd('frostnova',43,25);cd('counterspell',29,24);cd('icebarrier',27,25)
+        cd('Blink','blink',41,15);cd('Frost Nova','frostnova',43,25);cd('Counterspell','counterspell',29,24);cd('Ice Barrier','icebarrier',27,25)
         if value(25)>0 or result.shield>0 then
             result.buffs[1]={icon='icebarrier',remaining=value(25)>0 and value(25) or 20,total=20}
         end
@@ -40,28 +62,36 @@ function frames.describe(meta,f,side,extra)
         if value(121)>0 and value(123)>0 then
             result.buffs[#result.buffs+1]={icon='spell_shadow_blackplague',remaining=value(121),total=15,count=value(123)}
         end
-        cd('spell_holy_powerinfusion',113,180)
+        cd('Power Infusion','spell_holy_powerinfusion',113,180)
         if value(111)>0 then result.buffs[#result.buffs+1]={icon='spell_holy_powerinfusion',remaining=value(111),total=15} end
-        cd('spell_shadow_unholyfrenzy',29,8);cd('spell_shadow_psychicscream',43,30);cd('spell_shadow_impphaseshift',99,45);cd('spell_holy_powerwordshield',27,15)
+        cd('Mind Blast','spell_shadow_unholyfrenzy',29,8);cd('Psychic Scream','spell_shadow_psychicscream',43,30);cd('Silence','spell_shadow_impphaseshift',99,45);cd('Power Word: Shield','spell_holy_powerwordshield',27,15)
         if value(25)>0 or result.shield>0 then
             result.buffs[#result.buffs+1]={icon='spell_holy_powerwordshield',remaining=value(25)>0 and value(25) or 20,total=20}
         end
     else
-        cd('deathcoil',29,45);cd('healthstone',27,120)
-        if hp>0 and (kind==2 or kind==3) then cd(kind==2 and 'seduction' or 'spell_lock',99,kind==2 and 15 or 24) end
+        cd('Death Coil','deathcoil',29,45);cd('Healthstone','healthstone',27,120)
+        if hp>0 and (kind==2 or kind==3) then cd(kind==2 and 'Seduction' or 'Spell Lock',kind==2 and 'seduction' or 'spell_lock',99,kind==2 and 15 or 24) end
         local wTalents = meta and meta[side==0 and 'warlock_talents_a' or 'warlock_talents_b']
         local slRank = wTalents and wTalents.soul_link or 0
         local dsRank = wTalents and wTalents.demonic_sacrifice or 0
         local dsPet = wTalents and wTalents.demonic_sacrifice_pet or 0
+        local dkRank = wTalents and wTalents.demonic_knowledge or 0
+        local mdRank = wTalents and wTalents.master_demonologist or 0
         if not wTalents and meta and meta.specs and meta.specs[side+1] then
             local sp = meta.specs[side+1]
             if sp.class == 'warlock' then
                 local dt = sp.trees and sp.trees.Demonology or {}
                 slRank = dt['105892'] or dt[105892] or 0
                 dsRank = dt['105900'] or dt[105900] or 0
+                dkRank = dt['105893'] or dt[105893] or 0
+                mdRank = dt['105891'] or dt[105891] or 0
                 local kindsMap = { imp=1, succubus=2, felhunter=3, voidwalker=4 }
                 dsPet = kindsMap[sp.sacrifice_pet] or 0
             end
+        end
+        if hp>0 and kind>0 and result.hp>0 then
+            if dkRank>0 then result.buffs[#result.buffs+1]={icon='spell_shadow_improvedvampiricembrace',remaining=0,total=0} end
+            if mdRank>0 then result.buffs[#result.buffs+1]={icon='spell_shadow_shadowpact',remaining=0,total=0} end
         end
         if slRank > 0 and hp > 0 and kind > 0 then
             result.buffs[#result.buffs+1] = { icon = 'soul_link', remaining = 0, total = 0 }
@@ -122,8 +152,8 @@ function frames.draw(meta,f,side,x,y,selected,extra)
     text((side==0 and 'A · ' or 'B · ')..d.name,bx+6,y+7,bw-12,'left')
     local hpLabel=string.format('%d HP',math.floor(d.hp))
     if d.shield>0 then hpLabel=hpLabel..string.format(' (+%d)',math.floor(d.shield)) end
-    bar(bx,y+27,bw,18,d.hp/(meta[side==0 and 'max_health_a' or 'max_health_b'] or 2000),{0.16,0.60,0.23,1},hpLabel)
-    bar(bx,y+48,bw,14,d.mana/(meta[side==0 and 'max_mana_a' or 'max_mana_b'] or 1000),{0.12,0.35,0.73,1},string.format('%d MP',math.floor(d.mana)))
+    bar(bx,y+27,bw,18,vitals.fraction(meta,side,'health',d.hp),{0.16,0.60,0.23,1},hpLabel)
+    bar(bx,y+48,bw,14,vitals.fraction(meta,side,'mana',d.mana),{0.12,0.35,0.73,1},string.format('%d MP',math.floor(d.mana)))
     local cx,cy=x+35,y+34
     g.setColor(0.01,0.015,0.02,1);g.circle('fill',cx,cy,31)
     g.stencil(function() g.circle('fill',cx,cy,28) end,'replace',1)

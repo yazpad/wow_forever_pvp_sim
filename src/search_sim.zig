@@ -104,7 +104,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 @memset(state.soul_link_a[0..16], if (a == .warlock) @intFromBool((encoded & (@as(u64, 1) << 17)) != 0) else 0);
             }
             if (a == .warlock) {
-                self.warlock_effects_a = warlock_talents.decode(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)));
+                self.warlock_effects_a = warlock_talents.decodeExtended(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)), @splat(@truncate(encoded >> 64)));
             }
         }
         pub fn setWarlockTalentRanksB(self: *Self, encoded: u128) void {
@@ -118,7 +118,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 @memset(state.soul_link_b[0..16], if (b == .warlock) @intFromBool((encoded & (@as(u64, 1) << 17)) != 0) else 0);
             }
             if (b == .warlock) {
-                self.warlock_effects_b = warlock_talents.decode(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)));
+                self.warlock_effects_b = warlock_talents.decodeExtended(@splat(@truncate(encoded)), @splat(@truncate(encoded >> 32)), @splat(@truncate(encoded >> 64)));
             }
         }
         pub fn setPriestTalentRanksA(self: *Self, encoded: u128) void {
@@ -134,8 +134,17 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
         }
         pub fn setCombatStats(self: *Self, comptime side: bool, stats: @import("spell_resolution.zig").Stats) !void {
             try stats.validate();
+            var adjusted = stats;
+            const warlock = if (side) a == .warlock else b == .warlock;
+            if (warlock) {
+                const extra = @field(self.arena.combat(), if (side) "talent_extra_a" else "talent_extra_b")[0];
+                const fel_vitality_rank = (extra >> 8) & 0x3;
+                const embrace_rank = (extra >> 12) & 0x7;
+                adjusted.max_health += stats.stamina * 0.03 * @as(f32, @floatFromInt(embrace_rank)) * 10.0;
+                adjusted.max_mana *= 1.0 + 0.05 * @as(f32, @floatFromInt(fel_vitality_rank));
+            }
             inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
-                for (0..16) |lane| @import("spell_resolution.zig").setStats(pool.combat(), side, lane, stats);
+                for (0..16) |lane| @import("spell_resolution.zig").setStats(pool.combat(), side, lane, adjusted);
             }
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
@@ -736,5 +745,32 @@ test "equipped shadow power increases bolt damage in mirror and mixed kernels" {
             geared.tick(1000);
         }
         try std.testing.expect(geared.arena.combat().hp_b[0] < plain.arena.combat().hp_b[0] - 290);
+    }
+}
+
+test "Demonic Embrace stamina and Fel Vitality resolve independently on both sides" {
+    const Ranks = @import("spec.zig").WarlockTalentRanks;
+    inline for (.{ .warlock, .frost_mage }) |other| {
+        var duel = try Duel(.warlock, other).init(std.testing.allocator);
+        defer duel.deinit();
+        inline for (.{ true, false }) |side| {
+            for (0..6) |rank| {
+                const words = (Ranks{ .demonic_embrace = @intCast(rank), .fel_vitality = 3, .improved_bane_of_agony = 2 }).encode();
+                if (side) duel.setWarlockTalentRanksA(words) else duel.setWarlockTalentRanksB(words);
+                try duel.setCombatStats(side, .{ .max_health = 3000, .stamina = 200, .max_mana = 2000 });
+                const warlock = side or other == .warlock;
+                const expected: f32 = 3000 + (if (warlock) @as(f32, @floatFromInt(rank)) * 60 else 0);
+                inline for (.{ &duel.arena, &duel.scratch, &duel.original }) |pool| {
+                    const state = pool.combat();
+                    for (0..16) |lane| {
+                        try std.testing.expectApproxEqAbs(expected, @field(state, if (side) "max_health_a" else "max_health_b")[lane], 0.001);
+                        try std.testing.expectApproxEqAbs(@as(f32, if (warlock) 2300 else 2000), @field(state, if (side) "max_mana_a" else "max_mana_b")[lane], 0.001);
+                    }
+                }
+                // Reapplying base stats must not compound the talent bonus.
+                try duel.setCombatStats(side, .{ .max_health = 3000 });
+                try std.testing.expectEqual(@as(f32, 3000), @field(duel.arena.combat(), if (side) "max_health_a" else "max_health_b")[0]);
+            }
+        }
     }
 }

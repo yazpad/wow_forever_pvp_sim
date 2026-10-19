@@ -233,8 +233,8 @@ pub fn masks(arena: anytype, comptime side_a: bool, i: usize) [combat_spec.Warlo
     const opponent = if (side_a) Arena.SpecB else Arena.SpecA;
     const extra = ucol(state, "talent_extra", side_a, i).*;
     result[21] = vAnd16(free, vAnd16(unlocked, vAnd16((extra & ids(1 << 5)) != ids(0), vAnd16(col(state, "priest_pi_cd", side_a, i).* <= splat(0), mana >= splat(200) * cost_mult))));
-    result[22] = vAnd16(spell, vAnd16(mana >= splat(180) * holy_inst_mult, selfDispellable(state, side_a, i, opponent)));
-    result[23] = vAnd16(spell, vAnd16(distance <= splat(30), vAnd16(mana >= splat(180) * holy_inst_mult, enemyDispellable(arena, side_a, i, opponent))));
+    result[22] = vAnd16(spell, vAnd16(mana >= splat(Priest.DispelMana) * holy_inst_mult, selfDispellable(state, side_a, i, opponent)));
+    result[23] = vAnd16(spell, vAnd16(distance <= splat(30), vAnd16(mana >= splat(Priest.DispelMana) * holy_inst_mult, enemyDispellable(arena, side_a, i, opponent))));
     result[24] = vAnd16(spell, vAnd16(distance <= splat(30) * effects.shadow_range_mult, vAnd16(mana >= splat(270) * shadow_cast_mult, col(state, "mana", !side_a, i).* > splat(0))));
     racials.fillMasks(state, side_a, i, &result);
     return result;
@@ -289,7 +289,9 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     const shadow_inst_mult = cost_mult * effects.instant_mana_mult * effects.shadow_mana_mult;
     const shadow_cast_mult = cost_mult * effects.shadow_mana_mult;
     const holy_inst_mult = cost_mult * effects.instant_mana_mult;
-    const gcd_dur = @max(splat(1.0), splat(1.0) / racials.hasteMultiplier(state, side_a, i));
+    // Forever reference core/cast.go deliberately leaves spell GCDs unhasted.
+    // Haste still accelerates cast progress through the shared physics path.
+    const gcd_dur = splat(1.5);
 
     // 1: Shadow Word: Pain
     const is_swp = actions == ids(1);
@@ -445,8 +447,8 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     col(state, "priest_pi_cd", side_a, i).* = select16(is_pi, splat(180), col(state, "priest_pi_cd", side_a, i).*);
     col(state, "priest_pi_timer", side_a, i).* = select16(is_pi, splat(15), col(state, "priest_pi_timer", side_a, i).*);
     const is_dispel = vOr16(actions == ids(22), actions == ids(23));
-    mana.* = select16(is_dispel, mana.* - splat(180) * holy_inst_mult, mana.*);
-    gcd.* = select16(is_dispel, splat(1.5), gcd.*);
+    mana.* = select16(is_dispel, mana.* - splat(Priest.DispelMana) * holy_inst_mult, mana.*);
+    gcd.* = select16(is_dispel, gcd_dur, gcd.*);
     dispelSelf(arena, side_a, i, actions == ids(22), opponent);
     const purge = periodic.application(state, side_a, i, actions == ids(23), effects.holy_hit_bonus, .holy);
     if (opponent != .warlock) {
@@ -467,7 +469,7 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     const burn_rank = (ucol(state, "talent_extra", side_a, i).* >> @as(@Vector(16, u5), @splat(6))) & ids(3);
     const burn_cast = splat(3) - @as(f32x16, @floatFromInt(burn_rank)) * splat(0.5);
     mana.* = select16(is_burn, mana.* - splat(270) * shadow_cast_mult, mana.*);
-    gcd.* = select16(is_burn, splat(1.5), gcd.*);
+    gcd.* = select16(is_burn, gcd_dur, gcd.*);
     cast.* = @select(u32, is_burn, ids(24), cast.*);
     timer.* = select16(is_burn, burn_cast, timer.*);
     total.* = select16(is_burn, burn_cast, total.*);

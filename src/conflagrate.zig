@@ -16,7 +16,7 @@ fn flags(state: anytype, comptime side: bool, i: usize) U {
 }
 pub fn legal(state: anytype, comptime side: bool, i: usize, free: B) B {
     const unlocked = (flags(state, side, i) & @as(U, @splat(1 << 10))) != @as(U, @splat(0));
-    return simd.vAnd16(free, simd.vAnd16(unlocked, simd.vAnd16(col(state, "immolate_timer", !side, i).* > v(0), simd.vAnd16(col(state, "conflagrate_cd", side, i).* <= v(0), simd.vAnd16(col(state, "mana", side, i).* >= v(C.ConflagrateMana), @as(V, state.distance[i..][0..16].*) <= v(C.ConflagrateRange))))));
+    return simd.vAnd16(free, simd.vAnd16(unlocked, simd.vAnd16(col(state, "immolate_timer", !side, i).* > v(0), simd.vAnd16(col(state, "conflagrate_cd", side, i).* <= v(0), simd.vAnd16(col(state, "mana", side, i).* >= v(C.ConflagrateMana) * talents.decode(@field(state, "talent_ranks" ++ (if (side) "_a" else "_b"))[i..][0..16].*, flags(state, side, i)).shadow_bolt_mana, @as(V, state.distance[i..][0..16].*) <= v(C.ConflagrateRange))))));
 }
 // Integer state is part of snapshots. Only acting lanes advance, so replay and
 // batching produce the same proc outcomes. Two independent draws per cast.
@@ -58,6 +58,7 @@ pub fn apply(state: anytype, comptime side: bool, i: usize, mask: B, effects: ta
     pending.* += @select(f32, mask, resolved.damage * effects.fire_damage * sacrifice, v(0));
 }
 pub fn buffEffects(state: anytype, comptime side: bool, i: usize, effects: *talents.Effects) void {
+    @import("demon_passives.zig").effects(state, side, i, effects);
     const buff = col(state, "shadow_flame_timer", side, i);
     const active = buff.* > v(0);
     if (!@reduce(.Or, active)) return;

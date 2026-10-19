@@ -538,6 +538,52 @@ test "Offensive Dispel Magic purges Shield and Power Infusion without resetting 
     }
 }
 
+test "Dispel Magic costs eighteen percent class base mana for both targets and sides" {
+    inline for (.{ true, false }) |side| {
+        inline for (.{ @as(u8, 22), @as(u8, 23) }) |ability| {
+            inline for (0..5) |mode| {
+                var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
+                defer d.deinit();
+                const ranks = PriestTalentRanks{ .mental_agility = if (mode < 4) mode else 3 };
+                if (side) d.setPriestTalentRanksA(ranks.encode()) else d.setPriestTalentRanksB(ranks.encode());
+                const s = d.arena.combat();
+                const own = if (side) "_a" else "_b";
+                const target = if (ability == 22) side else !side;
+                const target_suffix = if (target) "_a" else "_b";
+                // SW:P is self-dispellable; Renew is enemy-dispellable.
+                const aura = if (ability == 22) "agony_timer" else "shadow_lockout";
+                @field(s, aura ++ target_suffix)[0] = 15;
+                @field(s, "spell_hit_chance" ++ own)[0] = 1;
+                s.distance[0] = 10;
+                @field(s, "max_mana" ++ own)[0] = if (mode == 0) 3000 else 9000;
+                const discount: f32 = switch (mode) {
+                    0 => 1,
+                    1 => 0.97,
+                    2 => 0.93,
+                    else => 0.90,
+                };
+                // Match f32 percentage arithmetic at the exact affordability
+                // boundary; the decimal literal alone can differ by one ULP.
+                const base_cost: f32 = @as(f32, 1376) * @as(f32, 0.18);
+                try std.testing.expectApproxEqAbs(@as(f32, 247.68), base_cost, 0.0001);
+                const cost: f32 = base_cost * discount;
+                @field(s, "mana" ++ own)[0] = cost - 0.01;
+                try std.testing.expect(!(if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[ability][0]);
+                if (side) d.apply(@splat(.{ .ability = ability }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = ability }));
+                try std.testing.expectEqual(cost - 0.01, @field(s, "mana" ++ own)[0]);
+                try std.testing.expectEqual(@as(f32, 15), @field(s, aura ++ target_suffix)[0]);
+                @field(s, "mana" ++ own)[0] = if (mode == 4) 0 else cost;
+                @field(s, "soul_link" ++ own)[0] = if (mode == 4) 1 else 0;
+                try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[ability][0]);
+                if (side) d.apply(@splat(.{ .ability = ability }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = ability }));
+                try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
+                try std.testing.expectEqual(@as(f32, 0), @field(s, aura ++ target_suffix)[0]);
+                try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+            }
+        }
+    }
+}
+
 test "Mana Burn drains only available mana on completion and shields absorb damage but not mana loss" {
     inline for (.{ true, false }) |side| {
         var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
@@ -649,6 +695,35 @@ test "Holy Fire matches Forever rank eight cast cost impact and five noncritical
     }
 }
 
+test "Priest audited healing mana costs gate spending and Inner Focus on both sides" {
+    inline for (.{ true, false }) |side| {
+        inline for (.{ .{ @as(u8, 6), @as(f32, 500) }, .{ @as(u8, 11), @as(f32, 380) }, .{ @as(u8, 12), @as(f32, 410) } }) |spell| {
+            inline for (0..3) |mode| {
+                var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
+                defer d.deinit();
+                const ranks = PriestTalentRanks{ .mental_agility = if (mode == 1) 3 else 0, .soul_warding = if (mode == 1) 1 else 0 };
+                if (side) d.setPriestTalentRanksA(ranks.encode()) else d.setPriestTalentRanksB(ranks.encode());
+                const s = d.arena.combat();
+                const own = if (side) "_a" else "_b";
+                const cost = spell[1] * (if (mode == 1 and spell[0] != 11) @as(f32, 0.90) else 1) * (if (mode == 1 and spell[0] == 6) @as(f32, 0.85) else 1);
+                @field(s, "mana" ++ own)[0] = cost - 0.01;
+                try std.testing.expect(!(if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[spell[0]][0]);
+                // Rejected actions must leave resources and spell state untouched.
+                if (side) d.apply(@splat(.{ .ability = spell[0] }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = spell[0] }));
+                try std.testing.expectEqual(cost - 0.01, @field(s, "mana" ++ own)[0]);
+                try std.testing.expectEqual(@as(f32, 0), @field(s, "gcd" ++ own)[0]);
+                @field(s, "mana" ++ own)[0] = if (mode == 2) 0 else cost;
+                @field(s, "soul_link" ++ own)[0] = if (mode == 2) 1 else 0;
+                try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[spell[0]][0]);
+                if (side) d.apply(@splat(.{ .ability = spell[0] }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = spell[0] }));
+                try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
+                try std.testing.expect(@field(s, "gcd" ++ own)[0] > 0);
+                if (mode == 2) try std.testing.expectEqual(@as(u32, if (spell[0] == 11) 1 else 0), @field(s, "soul_link" ++ own)[0]);
+            }
+        }
+    }
+}
+
 test "Priest audited Shadow mana costs gate and spend correctly on both sides" {
     inline for (.{ true, false }) |side| {
         inline for (.{ .{ @as(u8, 1), @as(f32, 470) }, .{ @as(u8, 4), @as(f32, 350) }, .{ @as(u8, 5), @as(f32, 205) } }) |spell| {
@@ -674,6 +749,104 @@ test "Priest audited Shadow mana costs gate and spend correctly on both sides" {
                 // Cast-time spells retain Inner Focus until completion.
                 if (mode == 2 and spell[0] == 1) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
             }
+        }
+    }
+}
+
+test "Priest spell GCD is 1.5s including haste; Shield gates Dispel and off-GCD buffs remain usable" {
+    inline for (.{ true, false }) |side| {
+        inline for (.{ false, true }) |hasted| {
+            var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
+            defer d.deinit();
+            const s = d.arena.combat();
+            const own = if (side) "_a" else "_b";
+            const ranks = PriestTalentRanks{ .inner_focus = 1, .power_infusion = 1, .silence = 1 };
+            if (side) d.setPriestTalentRanksA(ranks.encode()) else d.setPriestTalentRanksB(ranks.encode());
+            s.distance[0] = 10;
+            @field(s, "mana" ++ own)[0] = 10000;
+            @field(s, "racial_haste_timer" ++ own)[0] = if (hasted) 10 else 0;
+            @field(s, "agony_timer" ++ own)[0] = 18;
+            if (side) d.arena.applyActionA(0, act(.PowerWordShield), splat(0)) else d.arena.applyActionB(0, act(.PowerWordShield), splat(0));
+            try std.testing.expectEqual(@as(f32, 1.5), @field(s, "gcd" ++ own)[0]);
+            const shield = (if (side) d.arena.extra(.shield, true, 0) else d.arena.extra(.shield, false, 0))[0];
+            // The old one-second GCD incorrectly admitted Dispel at this point.
+            for (0..101) |_| _ = d.arena.tickPhysics16(0.01, 0);
+            try std.testing.expect(!(if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[22][0]);
+            inline for (.{ 7, 16, 21 }) |id| {
+                try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[id][0]);
+            }
+            const before = @field(s, "gcd" ++ own)[0];
+            if (side) d.arena.applyActionA(0, act(.InnerFocus), splat(0)) else d.arena.applyActionB(0, act(.InnerFocus), splat(0));
+            try std.testing.expectEqual(before, @field(s, "gcd" ++ own)[0]);
+            for (0..48) |_| _ = d.arena.tickPhysics16(0.01, 0);
+            try std.testing.expect(!(if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[22][0]);
+            // Repeated f32 subtraction may leave a sub-tick remainder at 1.50s.
+            for (0..2) |_| _ = d.arena.tickPhysics16(0.01, 0);
+            try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[22][0]);
+            if (side) d.arena.applyActionA(0, act(.DispelSelf), splat(0)) else d.arena.applyActionB(0, act(.DispelSelf), splat(0));
+            try std.testing.expectEqual(@as(f32, 1.5), @field(s, "gcd" ++ own)[0]);
+            try std.testing.expectEqual(@as(f32, 0), @field(s, "agony_timer" ++ own)[0]);
+            try std.testing.expectEqual(shield, (if (side) d.arena.extra(.shield, true, 0) else d.arena.extra(.shield, false, 0))[0]);
+        }
+    }
+}
+
+test "Priest healing and absorption match level 60 client amounts on both sides" {
+    inline for (.{ true, false }) |side| {
+        inline for (.{ PriestAction.PowerWordShield, PriestAction.FlashHeal, PriestAction.Renew }) |ability| {
+            var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
+            defer d.deinit();
+            const s = d.arena.combat();
+            const own = if (side) "_a" else "_b";
+            @field(s, "hp" ++ own)[0] = 100;
+            @field(s, "spell_crit_chance" ++ own)[0] = 0;
+            if (side) d.arena.applyActionA(0, act(ability), splat(0)) else d.arena.applyActionB(0, act(ability), splat(0));
+            if (ability == .PowerWordShield) {
+                try std.testing.expectApproxEqAbs(@as(f32, 928), d.arena.extra(.shield, side, 0)[0], 0.01);
+            } else {
+                const ticks: usize = if (ability == .FlashHeal) 152 else 301;
+                for (0..ticks) |_| _ = d.arena.tickPhysics16(0.01, 0);
+                const expected: f32 = if (ability == .FlashHeal) 941 else 266;
+                try std.testing.expectApproxEqAbs(expected, @field(s, "hp" ++ own)[0], 0.01);
+            }
+        }
+    }
+}
+
+test "Priest scripted rollouts consider utility and situational Mana Burn on both sides" {
+    inline for (.{ true, false }) |side| {
+        var d = try search_sim.Duel(.priest, .priest).init(std.testing.allocator);
+        defer d.deinit();
+        const s = d.arena.combat();
+        const own = if (side) "_a" else "_b";
+        const enemy = if (side) "_b" else "_a";
+        // Isolate the new choices from unrelated spell priorities.
+        var masks: [@import("combat_spec.zig").WarlockAction.COUNT]simd.bool16 = @splat(@splat(false));
+        masks[0] = @splat(true);
+        masks[24] = @splat(true);
+        @field(s, "mana" ++ enemy)[0] = 1000;
+        var rng = std.Random.DefaultPrng.init(42);
+        var burns: usize = 0;
+        for (0..100) |_| {
+            const action = mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false);
+            if (action.ability == 24) burns += 1;
+        }
+        try std.testing.expect(burns >= 90);
+        @field(s, "hp" ++ own)[0] = 100;
+        var idles: usize = 0;
+        for (0..100) |_| {
+            if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false).ability == 0) idles += 1;
+        }
+        try std.testing.expect(idles >= 90);
+        inline for (.{ 21, 22, 23 }) |id| {
+            masks[24] = @splat(false);
+            masks[id] = @splat(true);
+            var selected: usize = 0;
+            for (0..100) |_| {
+                if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false).ability == id) selected += 1;
+            }
+            try std.testing.expect(selected >= 90);
+            masks[id] = @splat(false);
         }
     }
 }

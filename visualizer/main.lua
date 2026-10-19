@@ -1,3 +1,4 @@
+local vitals = require('vitals')
 local ui = require("ui")
 local class_view = require("class_view")
 local spell_visuals = require("spell_visuals")
@@ -790,8 +791,8 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     local halfW = barW * 0.5
     local hpY = y - 56
 
-    local hpPct = math.max(0, math.min(1.0, hp / 2000.0))
-    local manaPct = math.max(0, math.min(1.0, mana / 1000.0))
+    local hpPct = vitals.fraction(meta, side, "health", hp)
+    local manaPct = vitals.fraction(meta, side, "mana", mana)
     love.graphics.setColor(0.04, 0.06, 0.09, 0.95)
     love.graphics.rectangle("fill", x - halfW - 1, hpY - 1, barW + 2, 13, 2)
     love.graphics.setColor(0.12, 0.18, 0.16, 1)

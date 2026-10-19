@@ -74,6 +74,8 @@ local ICON_FILES = {
     firebolt        = "icons/spell_fire_fireball02.png",
 
     -- Warlock Buffs
+    spell_shadow_improvedvampiricembrace = "icons/spell_shadow_improvedvampiricembrace.png",
+    spell_shadow_shadowpact = "icons/spell_shadow_shadowpact.png",
     soul_link       = "icons/spell_shadow_gathershadows.png",
     spell_shadow_gathershadows = "icons/spell_shadow_gathershadows.png",
     demonic_sacrifice = "icons/spell_shadow_psychicscream.png",

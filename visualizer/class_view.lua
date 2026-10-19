@@ -1,3 +1,4 @@
+local vitals = require('vitals')
 local view = {}
 local action_catalog = require("action_catalog")
 function view.spec(meta, side)
@@ -56,7 +57,7 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
 
     -- Row 2: Vitals Bars (HP & MP)
     local hp = f[5 + offset]
-    local hpPct = math.max(0, math.min(1.0, hp / 2000.0))
+    local hpPct = vitals.fraction(meta, side, "health", hp)
     g.setColor(0.06, 0.08, 0.12, 1.0)
     g.rectangle("fill", x + 40, 102, 228, 12, 2)
     g.setColor(0.2, 0.82, 0.3, 0.95)
@@ -65,7 +66,7 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
     -- Shield absorb overlay on HP bar if active
     local shieldAbsorb = f[45 + offset] or 0
     if shieldAbsorb > 0 then
-        local shieldPct = math.min(1.0 - hpPct, shieldAbsorb / 2000.0)
+        local shieldPct = math.min(1.0 - hpPct, shieldAbsorb / math.max(1, meta[side==0 and "max_health_a" or "max_health_b"] or 2000))
         g.setColor(0.25, 0.75, 1.0, 0.85)
         g.rectangle("fill", x + 40 + (228 * hpPct), 102, 228 * shieldPct, 12, 2)
     end
@@ -75,7 +76,7 @@ function view.drawMagePanel(meta, f, side, x, iconsRef)
     g.printf(hpText, x + 40, 102, 228, "center")
 
     local mana = f[7 + offset]
-    local manaPct = math.max(0, math.min(1.0, mana / 1000.0))
+    local manaPct = vitals.fraction(meta, side, "mana", mana)
     g.setColor(0.06, 0.08, 0.12, 1.0)
     g.rectangle("fill", x + 40, 118, 228, 8, 2)
     g.setColor(0.15, 0.65, 0.95, 0.95)

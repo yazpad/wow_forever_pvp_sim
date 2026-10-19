@@ -22,7 +22,7 @@ pub const WarlockAction = action_catalog.WarlockAction;
 pub const MoveIntent = enum(i32) {
     Advance = -1, // Close distance towards target (-7.0 m/s)
     Stand = 0, // Stand stationary (0.0 m/s)
-    Kite = 1, // Backpedal/kite away (+4.5 m/s)
+    Kite = 1, // Kite away at normal run speed (+7.0 m/s)
 };
 
 pub const WarlockConstants = struct {
@@ -31,7 +31,6 @@ pub const WarlockConstants = struct {
     pub const ManaRegenPerSec: f32 = 15.0;
 
     pub const ForwardSpeed: f32 = 7.0; // m/s
-    pub const BackpedalSpeed: f32 = 4.5; // m/s
     pub const MinDistance: f32 = 0.0; // m (no artificial minimum collision boundary)
     pub const MaxDistance: f32 = 35.0; // m (arena boundary)
 
@@ -1999,6 +1998,7 @@ pub const WarlockArenaPool = struct {
         const v_zeros: f32x16 = @splat(0.0);
         const hp = self.hp_a[i..][0..VEC_LEN].*;
         const mana = self.mana_a[i..][0..VEC_LEN].*;
+        const mana_mult = warlock_talents.decode(self.talent_ranks_a[i..][0..VEC_LEN].*, self.talent_flags_a[i..][0..VEC_LEN].*).shadow_bolt_mana;
         const gcd = self.gcd_a[i..][0..VEC_LEN].*;
         const dist = self.distance[i..][0..VEC_LEN].*;
         const cast_id = self.cast_id_a[i..][0..VEC_LEN].*;
@@ -2027,7 +2027,7 @@ pub const WarlockArenaPool = struct {
         masks[@intFromEnum(WarlockAction.Fear)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_fear_range, mana >= @as(f32x16, @splat(WarlockConstants.FearMana)))));
 
         // 4. Shadow Bolt: Hard cast, stationary, range 35m, cost 50 mana
-        masks[@intFromEnum(WarlockAction.ShadowBolt)] = vAnd16(can_act, vAnd16(gcd_free, mana >= @as(f32x16, @splat(WarlockConstants.ShadowBoltMana))));
+        masks[@intFromEnum(WarlockAction.ShadowBolt)] = vAnd16(can_act, vAnd16(gcd_free, mana >= @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * mana_mult));
 
         // 5. Drain Life: Channeled, stationary, range 25m, cost 70 mana
         const in_drain_range = dist <= @as(f32x16, @splat(WarlockConstants.DrainLifeRange));
@@ -2050,7 +2050,7 @@ pub const WarlockArenaPool = struct {
         const sb_cd = self.shadowburn_cd_a[i..][0..VEC_LEN].*;
         const shards = self.soul_shards_a[i..][0..VEC_LEN].*;
         const in_sb_range = dist <= @as(f32x16, @splat(WarlockConstants.ShadowburnRange));
-        masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sb_range, vAnd16(sb_cd <= v_zeros, vAnd16(shards >= @as(f32x16, @splat(1)), mana >= @as(f32x16, @splat(WarlockConstants.ShadowburnMana)))))));
+        masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sb_range, vAnd16(sb_cd <= v_zeros, vAnd16(shards >= @as(f32x16, @splat(1)), mana >= @as(f32x16, @splat(WarlockConstants.ShadowburnMana)) * mana_mult)))));
         masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(masks[@intFromEnum(WarlockAction.Shadowburn)], warlock_talents.shadowburnUnlocked(self.talent_ranks_a[i..][0..VEC_LEN].*));
         masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(masks[@intFromEnum(WarlockAction.Shadowburn)], @import("projectiles.zig").available(self, true, i));
 
@@ -2059,11 +2059,11 @@ pub const WarlockArenaPool = struct {
 
         const fire_room = @import("projectiles.zig").available(self, true, i);
         const in_sp_range = dist <= @as(f32x16, @splat(WarlockConstants.SearingPainRange));
-        masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sp_range, mana >= @as(f32x16, @splat(WarlockConstants.SearingPainMana)))));
+        masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sp_range, mana >= @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(masks[@intFromEnum(WarlockAction.SearingPain)], fire_room);
-        masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.IncinerateMana)))));
+        masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(masks[@intFromEnum(WarlockAction.Incinerate)], fire_room);
-        masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.ImmolateMana)))));
+        masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(masks[@intFromEnum(WarlockAction.Immolate)], fire_room);
 
         masks[@intFromEnum(WarlockAction.Conflagrate)] = @import("conflagrate.zig").legal(self, true, i, vAnd16(can_act, gcd_free));
@@ -2091,6 +2091,7 @@ pub const WarlockArenaPool = struct {
         const v_zeros: f32x16 = @splat(0.0);
         const hp = self.hp_b[i..][0..VEC_LEN].*;
         const mana = self.mana_b[i..][0..VEC_LEN].*;
+        const mana_mult = warlock_talents.decode(self.talent_ranks_b[i..][0..VEC_LEN].*, self.talent_flags_b[i..][0..VEC_LEN].*).shadow_bolt_mana;
         const gcd = self.gcd_b[i..][0..VEC_LEN].*;
         const dist = self.distance[i..][0..VEC_LEN].*;
         const cast_id = self.cast_id_b[i..][0..VEC_LEN].*;
@@ -2119,7 +2120,7 @@ pub const WarlockArenaPool = struct {
         masks[@intFromEnum(WarlockAction.Fear)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_fear_range, mana >= @as(f32x16, @splat(WarlockConstants.FearMana)))));
 
         // 4. Shadow Bolt: Hard cast, stationary, range 35m, cost 50 mana
-        masks[@intFromEnum(WarlockAction.ShadowBolt)] = vAnd16(can_act, vAnd16(gcd_free, mana >= @as(f32x16, @splat(WarlockConstants.ShadowBoltMana))));
+        masks[@intFromEnum(WarlockAction.ShadowBolt)] = vAnd16(can_act, vAnd16(gcd_free, mana >= @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * mana_mult));
 
         // 5. Drain Life: Channeled, stationary, range 25m, cost 70 mana
         const in_drain_range = dist <= @as(f32x16, @splat(WarlockConstants.DrainLifeRange));
@@ -2142,7 +2143,7 @@ pub const WarlockArenaPool = struct {
         const sb_cd = self.shadowburn_cd_b[i..][0..VEC_LEN].*;
         const shards = self.soul_shards_b[i..][0..VEC_LEN].*;
         const in_sb_range = dist <= @as(f32x16, @splat(WarlockConstants.ShadowburnRange));
-        masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sb_range, vAnd16(sb_cd <= v_zeros, vAnd16(shards >= @as(f32x16, @splat(1)), mana >= @as(f32x16, @splat(WarlockConstants.ShadowburnMana)))))));
+        masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sb_range, vAnd16(sb_cd <= v_zeros, vAnd16(shards >= @as(f32x16, @splat(1)), mana >= @as(f32x16, @splat(WarlockConstants.ShadowburnMana)) * mana_mult)))));
         masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(masks[@intFromEnum(WarlockAction.Shadowburn)], warlock_talents.shadowburnUnlocked(self.talent_ranks_b[i..][0..VEC_LEN].*));
         masks[@intFromEnum(WarlockAction.Shadowburn)] = vAnd16(masks[@intFromEnum(WarlockAction.Shadowburn)], @import("projectiles.zig").available(self, false, i));
 
@@ -2150,11 +2151,11 @@ pub const WarlockArenaPool = struct {
         masks[@intFromEnum(WarlockAction.CancelCast)] = is_casting;
         const fire_room = @import("projectiles.zig").available(self, false, i);
         const in_sp_range = dist <= @as(f32x16, @splat(WarlockConstants.SearingPainRange));
-        masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sp_range, mana >= @as(f32x16, @splat(WarlockConstants.SearingPainMana)))));
+        masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(in_sp_range, mana >= @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.SearingPain)] = vAnd16(masks[@intFromEnum(WarlockAction.SearingPain)], fire_room);
-        masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.IncinerateMana)))));
+        masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.Incinerate)] = vAnd16(masks[@intFromEnum(WarlockAction.Incinerate)], fire_room);
-        masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.ImmolateMana)))));
+        masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(can_act, vAnd16(gcd_free, vAnd16(dist <= @as(f32x16, @splat(WarlockConstants.FireSpellRange)), mana >= @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * mana_mult)));
         masks[@intFromEnum(WarlockAction.Immolate)] = vAnd16(masks[@intFromEnum(WarlockAction.Immolate)], fire_room);
 
         masks[@intFromEnum(WarlockAction.Conflagrate)] = @import("conflagrate.zig").legal(self, false, i, vAnd16(can_act, gcd_free));
@@ -2197,7 +2198,7 @@ pub const WarlockArenaPool = struct {
         const v_zeros_u32: u32x16 = @splat(0);
         const v_gcd_std: f32x16 = @max(@as(f32x16, @splat(1)), @as(f32x16, @splat(WarlockConstants.StandardGcd)) / @import("racials.zig").hasteMultiplier(self, true, i));
         const v_react_std: f32x16 = @splat(WarlockConstants.ReactionInterval);
-        var effects_a = warlock_talents.decode(self.talent_ranks_a[i..][0..VEC_LEN].*, self.talent_flags_a[i..][0..VEC_LEN].*);
+        var effects_a = warlock_talents.decodeExtended(self.talent_ranks_a[i..][0..VEC_LEN].*, self.talent_flags_a[i..][0..VEC_LEN].*, self.talent_extra_a[i..][0..VEC_LEN].*);
         @import("conflagrate.zig").buffEffects(self, true, i, &effects_a);
 
         var hp_a = self.hp_a[i..][0..VEC_LEN].*;
@@ -2299,7 +2300,7 @@ pub const WarlockArenaPool = struct {
         gcd_a = select16(is_act_siph, v_gcd_std, gcd_a);
 
         const is_act_shadowburn = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Shadowburn)));
-        mana_a = select16(is_act_shadowburn, mana_a - @as(f32x16, @splat(WarlockConstants.ShadowburnMana)), mana_a);
+        mana_a = select16(is_act_shadowburn, mana_a - @as(f32x16, @splat(WarlockConstants.ShadowburnMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_act_shadowburn, v_gcd_std, gcd_a);
         sb_cd_a = select16(is_act_shadowburn, @as(f32x16, @splat(WarlockConstants.ShadowburnCooldown)), sb_cd_a);
         shards_a = select16(is_act_shadowburn, @max(v_zeros, shards_a - @as(f32x16, @splat(1.0)) + effects_a.shadowburn_shard_refund), shards_a);
@@ -2309,27 +2310,27 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
         cast_tmr = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tmr);
         cast_tot = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tot);
-        mana_a = select16(is_sp, mana_a - @as(f32x16, @splat(WarlockConstants.SearingPainMana)), mana_a);
+        mana_a = select16(is_sp, mana_a - @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_sp, v_gcd_std, gcd_a);
         move_a = select16(is_sp, v_zeros, move_a);
         const is_inc = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Incinerate)));
         cast_id = @select(u32, is_inc, @as(u32x16, @splat(12)), cast_id);
         cast_tmr = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tmr);
         cast_tot = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tot);
-        mana_a = select16(is_inc, mana_a - @as(f32x16, @splat(WarlockConstants.IncinerateMana)), mana_a);
+        mana_a = select16(is_inc, mana_a - @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_inc, v_gcd_std, gcd_a);
         move_a = select16(is_inc, v_zeros, move_a);
         const is_immolate = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Immolate)));
         cast_id = @select(u32, is_immolate, @as(u32x16, @splat(13)), cast_id);
         cast_tmr = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tmr);
         cast_tot = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tot);
-        mana_a = select16(is_immolate, mana_a - @as(f32x16, @splat(WarlockConstants.ImmolateMana)), mana_a);
+        mana_a = select16(is_immolate, mana_a - @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_immolate, v_gcd_std, gcd_a);
         move_a = select16(is_immolate, v_zeros, move_a);
 
         const conflag = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Conflagrate)));
         @import("conflagrate.zig").apply(self, true, i, conflag, effects_a, &immolate_b);
-        mana_a = select16(conflag, mana_a - @as(f32x16, @splat(WarlockConstants.ConflagrateMana)), mana_a);
+        mana_a = select16(conflag, mana_a - @as(f32x16, @splat(WarlockConstants.ConflagrateMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(conflag, v_gcd_std, gcd_a);
 
         self.hp_a[i..][0..VEC_LEN].* = hp_a;
@@ -2400,7 +2401,7 @@ pub const WarlockArenaPool = struct {
         const v_zeros_u32: u32x16 = @splat(0);
         const v_gcd_std: f32x16 = @max(@as(f32x16, @splat(1)), @as(f32x16, @splat(WarlockConstants.StandardGcd)) / @import("racials.zig").hasteMultiplier(self, false, i));
         const v_react_std: f32x16 = @splat(WarlockConstants.ReactionInterval);
-        var effects_b = warlock_talents.decode(self.talent_ranks_b[i..][0..VEC_LEN].*, self.talent_flags_b[i..][0..VEC_LEN].*);
+        var effects_b = warlock_talents.decodeExtended(self.talent_ranks_b[i..][0..VEC_LEN].*, self.talent_flags_b[i..][0..VEC_LEN].*, self.talent_extra_b[i..][0..VEC_LEN].*);
         @import("conflagrate.zig").buffEffects(self, false, i, &effects_b);
 
         const hp_a = self.hp_a[i..][0..VEC_LEN].*;
@@ -2499,7 +2500,7 @@ pub const WarlockArenaPool = struct {
         gcd_b = select16(is_act_siph, v_gcd_std, gcd_b);
 
         const is_act_shadowburn = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Shadowburn)));
-        mana_b = select16(is_act_shadowburn, mana_b - @as(f32x16, @splat(WarlockConstants.ShadowburnMana)), mana_b);
+        mana_b = select16(is_act_shadowburn, mana_b - @as(f32x16, @splat(WarlockConstants.ShadowburnMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_act_shadowburn, v_gcd_std, gcd_b);
         sb_cd_b = select16(is_act_shadowburn, @as(f32x16, @splat(WarlockConstants.ShadowburnCooldown)), sb_cd_b);
         shards_b = select16(is_act_shadowburn, @max(v_zeros, shards_b - @as(f32x16, @splat(1.0)) + effects_b.shadowburn_shard_refund), shards_b);
@@ -2509,28 +2510,28 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
         cast_tmr = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tmr);
         cast_tot = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tot);
-        mana_b = select16(is_sp, mana_b - @as(f32x16, @splat(WarlockConstants.SearingPainMana)), mana_b);
+        mana_b = select16(is_sp, mana_b - @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_sp, v_gcd_std, gcd_b);
         move_b = select16(is_sp, v_zeros, move_b);
         const is_inc = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Incinerate)));
         cast_id = @select(u32, is_inc, @as(u32x16, @splat(12)), cast_id);
         cast_tmr = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tmr);
         cast_tot = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tot);
-        mana_b = select16(is_inc, mana_b - @as(f32x16, @splat(WarlockConstants.IncinerateMana)), mana_b);
+        mana_b = select16(is_inc, mana_b - @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_inc, v_gcd_std, gcd_b);
         move_b = select16(is_inc, v_zeros, move_b);
         const is_immolate = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Immolate)));
         cast_id = @select(u32, is_immolate, @as(u32x16, @splat(13)), cast_id);
         cast_tmr = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tmr);
         cast_tot = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tot);
-        mana_b = select16(is_immolate, mana_b - @as(f32x16, @splat(WarlockConstants.ImmolateMana)), mana_b);
+        mana_b = select16(is_immolate, mana_b - @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_immolate, v_gcd_std, gcd_b);
         move_b = select16(is_immolate, v_zeros, move_b);
 
         self.hp_a[i..][0..VEC_LEN].* = hp_a;
         const conflag = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Conflagrate)));
         @import("conflagrate.zig").apply(self, false, i, conflag, effects_b, &immolate_a);
-        mana_b = select16(conflag, mana_b - @as(f32x16, @splat(WarlockConstants.ConflagrateMana)), mana_b);
+        mana_b = select16(conflag, mana_b - @as(f32x16, @splat(WarlockConstants.ConflagrateMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(conflag, v_gcd_std, gcd_b);
 
         self.hp_b[i..][0..VEC_LEN].* = hp_b;
@@ -2599,9 +2600,9 @@ pub const WarlockArenaPool = struct {
         while (i < end) : (i += VEC_LEN) {
             const active_mask: bool16 = self.is_active[i..][0..VEC_LEN].* > v_zeros_u32;
             if (!@reduce(.Or, active_mask)) continue;
-            var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decode(self.talent_ranks_a[i..][0..VEC_LEN].*, self.talent_flags_a[i..][0..VEC_LEN].*);
+            var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decodeExtended(self.talent_ranks_a[i..][0..VEC_LEN].*, self.talent_flags_a[i..][0..VEC_LEN].*, self.talent_extra_a[i..][0..VEC_LEN].*);
             @import("conflagrate.zig").tickEffects(self, true, i, dt, &effects_a);
-            var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decode(self.talent_ranks_b[i..][0..VEC_LEN].*, self.talent_flags_b[i..][0..VEC_LEN].*);
+            var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decodeExtended(self.talent_ranks_b[i..][0..VEC_LEN].*, self.talent_flags_b[i..][0..VEC_LEN].*, self.talent_extra_b[i..][0..VEC_LEN].*);
             @import("conflagrate.zig").tickEffects(self, false, i, dt, &effects_b);
 
             const sacrifice_a = vAnd16(effects_a.demonic_sacrifice > v_zeros, effects_a.demonic_sacrifice_pet > v_zeros);
@@ -2774,8 +2775,8 @@ pub const WarlockArenaPool = struct {
             hp_b = @min(@as(f32x16, self.max_health_b[i..][0..VEC_LEN].*), hp_b + @select(f32, is_fh_b, @as(f32x16, self.max_health_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
 
             // 2. Movement & Relative Distance Update
-            const speed_a = select16(move_a < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_a > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
-            const speed_b = select16(move_b < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_b > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
+            const speed_a = select16(move_a < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ForwardSpeed)), v_zeros));
+            const speed_b = select16(move_b < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ForwardSpeed)), v_zeros));
 
             // While feared or horrified, unit runs away involuntarily!
             const fear_cc_a = vOr16(fear_a > v_zeros, horror_a > v_zeros);
@@ -2813,6 +2814,8 @@ pub const WarlockArenaPool = struct {
             // 4. Damage Mitigation Factor:
             const mit_a = effects_a.damage_taken;
             const mit_b = effects_b.damage_taken;
+            const pet_mit_a = @import("demon_passives.zig").petMitigation(self, true, i, mit_a);
+            const pet_mit_b = @import("demon_passives.zig").petMitigation(self, false, i, mit_b);
 
             if (@reduce(.Or, hits_a.coil > v_zeros)) {
                 const coil_hit_a = hits_a.coil > v_zeros;
@@ -3000,8 +3003,8 @@ pub const WarlockArenaPool = struct {
             self.isb_timer_b[i..][0..VEC_LEN].* = select16(vAnd16(isb_active_b, new_charges_b <= v_zeros), v_zeros, self.isb_timer_b[i..][0..VEC_LEN].*);
 
             // 7. Apply Damage to HP
-            const total_dmg_to_a = eff_dmg_ago_a + eff_dmg_crp_a + dmg_immolate_a + hits_b.immolate * mit_a + eff_dmg_siph_a + eff_b_drain_dmg + eff_b_sb_dmg + pet_b * mit_a;
-            const total_dmg_to_b = eff_dmg_ago_b + eff_dmg_crp_b + dmg_immolate_b + hits_a.immolate * mit_b + eff_dmg_siph_b + eff_a_drain_dmg + eff_a_sb_dmg + pet_a * mit_b;
+            const total_dmg_to_a = eff_dmg_ago_a + eff_dmg_crp_a + dmg_immolate_a + hits_b.immolate * mit_a + eff_dmg_siph_a + eff_b_drain_dmg + eff_b_sb_dmg + pet_b * pet_mit_a;
+            const total_dmg_to_b = eff_dmg_ago_b + eff_dmg_crp_b + dmg_immolate_b + hits_a.immolate * mit_b + eff_dmg_siph_b + eff_a_drain_dmg + eff_a_sb_dmg + pet_a * pet_mit_b;
             seduction_a = select16(total_dmg_to_a > v_zeros, v_zeros, seduction_a);
             seduction_b = select16(total_dmg_to_b > v_zeros, v_zeros, seduction_b);
             seduced_a = @select(u32, total_dmg_to_a > v_zeros, v_zeros_u32, seduced_a);
@@ -3025,10 +3028,10 @@ pub const WarlockArenaPool = struct {
             self.pet_hp_b[i..][0..VEC_LEN].* = @max(v_zeros, self.pet_hp_b[i..][0..VEC_LEN].* - sl_split_b);
 
             @import("projectiles.zig").recordHits(self, false, i, hits_b, mit_a, incoming_a, @min(@as(f32x16, hp_a), total_dmg_to_a));
-            @import("pets.zig").recordDamage(self, false, i, pet_b * mit_a, incoming_a, @min(@as(f32x16, hp_a), total_dmg_to_a));
+            @import("pets.zig").recordDamage(self, false, i, pet_b * pet_mit_a, incoming_a, @min(@as(f32x16, hp_a), total_dmg_to_a));
             hp_a = @max(v_zeros, hp_a - direct_dmg_a);
             @import("projectiles.zig").recordHits(self, true, i, hits_a, mit_b, incoming_b, @min(@as(f32x16, hp_b), total_dmg_to_b));
-            @import("pets.zig").recordDamage(self, true, i, pet_a * mit_b, incoming_b, @min(@as(f32x16, hp_b), total_dmg_to_b));
+            @import("pets.zig").recordDamage(self, true, i, pet_a * pet_mit_b, incoming_b, @min(@as(f32x16, hp_b), total_dmg_to_b));
             hp_b = @max(v_zeros, hp_b - direct_dmg_b);
 
             // Fear damage break threshold check

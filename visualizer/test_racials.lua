@@ -21,9 +21,9 @@ for _,class in ipairs({'warlock','frost_mage','priest'}) do
             local spec=editor.getCurrentSpecConfig()
             assert(races.maxMana(race,spec.combat_stats.max_mana)==spec.combat_stats.max_mana*1.05)
             editor.setActionSlot(2,'Escape Artist')
-            assert(editor.getCurrentSpecConfig().action_slots[2]=='Escape Artist')
+            assert(contains(editor.getCurrentSpecConfig().action_loadout,'Escape Artist'))
             editor.setRace('human')
-            assert(editor.getCurrentSpecConfig().action_slots[2]=='')
+            assert(not contains(editor.getCurrentSpecConfig().action_loadout,'Escape Artist'))
         end
     end
 end

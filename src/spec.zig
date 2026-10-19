@@ -2,7 +2,7 @@ const std = @import("std");
 const pets = @import("pets.zig");
 const action_catalog = @import("action_catalog_generated.zig");
 const ActionCount = action_catalog.ActionCount;
-const AllActionBits: u32 = (@as(u32, 1) << ActionCount) - 1;
+pub const AllActionBits: u32 = (@as(u32, 1) << ActionCount) - 1;
 
 pub const Spec = enum(u8) {
     warlock = 0,
@@ -97,6 +97,11 @@ pub const Frost = struct {
 
 /// Forever Priest kit with compact arena resource and defensive values.
 pub const Priest = struct {
+    // Level-60 class base mana, before Intellect/gear, from the local
+    // Forever reference's sim/core/base_stats.go.
+    pub const BaseMana: f32 = 1376.0;
+    pub const DispelManaFraction: f32 = 0.18;
+    pub const DispelMana: f32 = BaseMana * DispelManaFraction;
     // Level-60 damage from mythicsim-forever-engine-go/sim/priest,
     // beta client 1.60.1.69893. SW:P, Mind Blast, Mind Flay and Holy Fire
     // use client mana costs; remaining costs retain the compact arena model.
@@ -129,8 +134,10 @@ pub const Priest = struct {
     pub const MindFlayRange: f32 = 20.0;
     pub const MindFlaySlowMultiplier: f32 = 0.5;
 
-    pub const ShieldMana: f32 = 70.0;
-    pub const ShieldAbsorb: f32 = 420.0;
+    // Level-60 costs from the local Forever generated spell table:
+    // PW:S 10901, Flash Heal 10917, Renew 25315.
+    pub const ShieldMana: f32 = 500.0;
+    pub const ShieldAbsorb: f32 = 928.0;
     pub const ShieldDuration: f32 = 20.0;
     pub const ShieldCooldown: f32 = 15.0;
 
@@ -152,13 +159,13 @@ pub const Priest = struct {
     pub const ShieldCoefficient: f32 = 0.10;
     pub const ShadowWordDeathRange: f32 = 30.0;
 
-    pub const FlashHealMana: f32 = 75.0;
+    pub const FlashHealMana: f32 = 380.0;
     pub const FlashHealCast: f32 = 1.5;
-    pub const FlashHealAmount: f32 = 340.0;
+    pub const FlashHealAmount: f32 = 841.0;
 
-    pub const RenewMana: f32 = 55.0;
+    pub const RenewMana: f32 = 410.0;
     pub const RenewDuration: f32 = 15.0;
-    pub const RenewHps: f32 = 36.0;
+    pub const RenewHps: f32 = 166.0 / 3.0;
 
     pub const HolyFireMana: f32 = 255.0;
     pub const HolyFireCast: f32 = 3.5;
@@ -257,9 +264,13 @@ pub const WarlockTalentRanks = struct {
     conflagrate: u8 = 0, // 105880
     improved_shadow_bolt: u8 = 0, // 105889
     demonic_sacrifice_pet: u8 = 1, // pet enum; 0 means none
+    demonic_knowledge: u8 = 0, // 105893 (0..3)
+    master_demonologist: u8 = 0, // 105891 (0..5)
+    demonic_embrace: u8 = 0, // 105907 (0..5)
+    fel_vitality: u8 = 0, // 105903 (0..3)
 
-    pub fn encode(self: WarlockTalentRanks) u64 {
-        return (@as(u64, self.improved_corruption) & 0x7) |
+    pub fn encode(self: WarlockTalentRanks) u128 {
+        return @as(u128, (@as(u64, self.improved_corruption) & 0x7) |
             ((@as(u64, self.malediction) & 0x7) << 3) |
             ((@as(u64, self.improved_drains) & 0x3) << 6) |
             ((@as(u64, self.agonizing_flames) & 0x3) << 8) |
@@ -287,7 +298,12 @@ pub const WarlockTalentRanks = struct {
             ((@as(u64, self.fire_and_brimstone) & 0x3) << 56) |
             ((@as(u64, self.pandemic) & 0x3) << 58) |
             ((@as(u64, self.fel_concentration) & 0x3) << 60) |
-            ((@as(u64, self.intensity) & 0x3) << 62);
+            ((@as(u64, self.intensity) & 0x3) << 62)) |
+            ((@as(u128, self.fel_vitality) & 0x3) << 72) |
+            ((@as(u128, self.improved_bane_of_agony) & 0x3) << 74) |
+            ((@as(u128, self.demonic_embrace) & 0x7) << 76) |
+            ((@as(u128, self.demonic_knowledge) & 0x3) << 79) |
+            ((@as(u128, self.master_demonologist) & 0x7) << 81);
     }
 };
 
@@ -538,10 +554,51 @@ fn rankInTree(trees: std.json.ObjectMap, tree_name: []const u8, talent_id: []con
     };
 }
 
+/// Build capabilities are independent of current mana, cooldowns and crowd control.
+pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTalentRanks, priest: PriestTalentRanks, race: Race, pet: pets.Kind) u32 {
+    var mask = configured & AllActionBits;
+    inline for (0..ActionCount) |id| {
+        const name = switch (class) {
+            .warlock => action_catalog.warlock_names[id],
+            .priest => action_catalog.priest_names[id],
+            .frost_mage => action_catalog.frost_mage_names[id],
+        };
+        if (std.mem.eql(u8, name, "None")) mask &= ~(@as(u32, 1) << id);
+        const rank: u8 = switch (class) {
+            .warlock => switch (action_catalog.warlock_talent_gate_ids[id]) {
+                105912 => warlock.siphon_life,
+                105884 => warlock.shadowburn,
+                105880 => warlock.conflagrate,
+                else => 1,
+            },
+            .priest => switch (action_catalog.priest_talent_gate_ids[id]) {
+                15407 => priest.mind_flay,
+                15487 => priest.silence,
+                15286 => priest.vampiric_embrace,
+                402174 => priest.penance,
+                14751 => priest.inner_focus,
+                10060 => priest.power_infusion,
+                else => 1,
+            },
+            .frost_mage => 1,
+        };
+        if (rank == 0) mask &= ~(@as(u32, 1) << id);
+    }
+    inline for (.{ Race.orc, Race.troll, Race.gnome, Race.undead }, 17..) |required_race, id| {
+        if (race != required_race) mask &= ~(@as(u32, 1) << id);
+    }
+    if (class == .warlock) {
+        if (pet != .succubus) mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction));
+        if (pet != .felhunter) mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock));
+    }
+    return mask;
+}
+
 fn actionMaskFromRoot(root: std.json.ObjectMap, class: Spec) !u32 {
     const names = class.actionNames();
     var mask = AllActionBits;
-    if (root.get("action_loadout") orelse root.get("action_slots")) |actions_value| {
+    const automatic = if (root.get("automatic_actions")) |v| v == .bool and v.bool else false;
+    if (if (automatic) null else root.get("action_loadout") orelse root.get("action_slots")) |actions_value| {
         if (actions_value != .array) return error.InvalidActionLoadout;
         mask = 0;
         for (actions_value.array.items) |value| {
@@ -639,6 +696,10 @@ fn warlockRanksFromTrees(trees: std.json.ObjectMap) WarlockTalentRanks {
         .aftermath = rankInTree(trees, "Destruction", "105886"),
         .conflagrate = rankInTree(trees, "Destruction", "105880"),
         .improved_shadow_bolt = rankInTree(trees, "Destruction", "105889"),
+        .demonic_knowledge = rankInTree(trees, "Demonology", "105893"),
+        .master_demonologist = rankInTree(trees, "Demonology", "105891"),
+        .demonic_embrace = rankInTree(trees, "Demonology", "105907"),
+        .fel_vitality = rankInTree(trees, "Demonology", "105903"),
     };
 }
 
@@ -711,7 +772,7 @@ fn validateWarlockRanks(ranks: WarlockTalentRanks) !void {
         ranks.improved_sayaad > 3 or ranks.improved_felhunter > 3 or
         ranks.unholy_power > 5 or ranks.soul_link > 1 or ranks.bane > 5 or ranks.improved_imp > 3 or
         ranks.molten_skin > 5 or ranks.cataclysm > 3 or ranks.shadowburn > 1 or ranks.shadow_and_flame > 5 or
-        ranks.agonizing_flames > 3 or ranks.conflagrate > 1 or ranks.aftermath > 5 or ranks.demonic_sacrifice > 1 or ranks.demonic_pact > 1 or ranks.demonic_sacrifice_pet > 4 or ranks.improved_shadow_bolt > 5) return error.InvalidTalentRank;
+        ranks.agonizing_flames > 3 or ranks.conflagrate > 1 or ranks.aftermath > 5 or ranks.demonic_sacrifice > 1 or ranks.demonic_pact > 1 or ranks.demonic_sacrifice_pet > 4 or ranks.improved_shadow_bolt > 5 or ranks.fel_vitality > 3 or ranks.demonic_embrace > 5 or ranks.demonic_knowledge > 3 or ranks.master_demonologist > 5) return error.InvalidTalentRank;
 }
 
 pub fn validatePriestRanks(ranks: PriestTalentRanks) !void {
@@ -890,6 +951,10 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
     const sacrifice_pet = sacrifice_pet_value orelse if (class == .warlock) pets.Kind.imp else pets.Kind.none;
     if (class == .warlock and pet != .succubus) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction));
     if (class == .warlock and pet != .felhunter) action_mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock));
+
+    inline for (.{ Race.orc, Race.troll, Race.gnome, Race.undead }, 17..) |required_race, id| {
+        if (race != required_race) action_mask &= ~(@as(u32, 1) << id);
+    }
 
     const name = if (root.get("name")) |n| try allocator.dupe(u8, n.string) else try allocator.dupe(u8, path);
     const id = try allocator.dupe(u8, std.fs.path.stem(path));
@@ -1080,4 +1145,51 @@ test "Forever racial spec loading validates identity and applies crit passives o
         try tmp.dir.writeFile(.{ .sub_path = "race.json", .data = case.json });
         try std.testing.expectError(case.err, loadSpecFile(std.testing.allocator, path));
     }
+}
+
+test "Demonic Embrace parses stamina and validates ranks" {
+    const json =
+        \\{"class":"warlock","combat_stats":{"max_health":3000,"stamina":200},"trees":{"Affliction":{},"Demonology":{"105907":5,"105893":3,"105891":5},"Destruction":{}}}
+    ;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "embrace.json", .data = json });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "embrace.json");
+    defer std.testing.allocator.free(path);
+    const cfg = try loadSpecFile(std.testing.allocator, path);
+    defer std.testing.allocator.free(cfg.id);
+    defer std.testing.allocator.free(cfg.name);
+    try std.testing.expectEqual(@as(u8, 5), cfg.warlock_talents.demonic_embrace);
+    try std.testing.expectEqual(@as(u8, 3), cfg.warlock_talents.demonic_knowledge);
+    try std.testing.expectEqual(@as(u8, 5), cfg.warlock_talents.master_demonologist);
+    try std.testing.expectError(error.InvalidTalentRank, validateWarlockRanks(.{ .demonic_knowledge = 4 }));
+    try std.testing.expectError(error.InvalidTalentRank, validateWarlockRanks(.{ .master_demonologist = 6 }));
+    try std.testing.expectEqual(@as(f32, 200), cfg.combat_stats.stamina);
+    try std.testing.expectEqual(@as(f32, 3000), cfg.combat_stats.max_health);
+    try std.testing.expectError(error.InvalidTalentRank, validateWarlockRanks(.{ .demonic_embrace = 6 }));
+    try std.testing.expectError(error.InvalidCombatStats, (CombatStats{ .stamina = -1 }).validate());
+    try std.testing.expectError(error.InvalidCombatStats, (CombatStats{ .stamina = 10001 }).validate());
+}
+
+test "automatic capabilities include baselines and talent unlocks despite legacy slots" {
+    const allocator = std.testing.allocator;
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator,
+        \\{"automatic_actions":true,"action_slots":["Idle/Maneuver","Cancel Cast"],"trees":{"Destruction":{"105880":1}}}
+    , .{});
+    defer parsed.deinit();
+    const mask = try actionMaskFromRoot(parsed.value.object, .warlock);
+    inline for (.{ action_catalog.WarlockAction.Fear, action_catalog.WarlockAction.Immolate, action_catalog.WarlockAction.Conflagrate, action_catalog.WarlockAction.CancelCast }) |action| {
+        try std.testing.expect(mask & (@as(u32, 1) << @intFromEnum(action)) != 0);
+    }
+    try std.testing.expect(mask & (@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Shadowburn)) == 0);
+}
+
+test "recorded capabilities exclude unsupported cooldowns for canonical builds" {
+    const shadow = findCanonicalSpec("shadow_priest").?;
+    const shadow_mask = filterActionCapabilities(shadow.class, shadow.action_mask, shadow.warlock_talents, shadow.priest_talents, shadow.race, shadow.pet);
+    const pi = @as(u32, 1) << @intFromEnum(action_catalog.PriestAction.PowerInfusion);
+    try std.testing.expect(shadow_mask & pi == 0);
+    const disc = findCanonicalSpec("disc_priest").?;
+    const disc_mask = filterActionCapabilities(disc.class, disc.action_mask, disc.warlock_talents, disc.priest_talents, disc.race, disc.pet);
+    try std.testing.expect(disc_mask & pi != 0);
 }

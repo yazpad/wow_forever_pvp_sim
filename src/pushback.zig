@@ -64,7 +64,7 @@ pub fn apply(state: anytype, comptime side: bool, comptime warlock: bool, i: usi
     const resistance = resistanceFor(warlock, cast, effects);
     inline for (0..projectiles.Slots) |slot| hit(state, side, i, hits.direct_events[slot] * mitigation, &shield, cast, remaining, total, channel, resistance);
     hit(state, side, i, hits.conflagrate * mitigation, &shield, cast, remaining, total, channel, resistance);
-    hit(state, side, i, pet_damage * mitigation, &shield, cast, remaining, total, channel, resistance);
+    hit(state, side, i, pet_damage * (if (warlock) @import("demon_passives.zig").petMitigation(state, side, i, mitigation) else mitigation), &shield, cast, remaining, total, channel, resistance);
 }
 
 pub fn applyPriest(state: anytype, comptime side: bool, i: usize, hits: projectiles.Hits, pet_damage: V, mitigation: V, absorb: V, pushback_resist: V, cast: U, remaining: anytype, total: V) void {

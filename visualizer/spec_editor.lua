@@ -38,7 +38,8 @@ local currentBuild = nil
 local specName = "Custom Build"
 local specDesc = "Custom 51-point level 60 talent build."
 local STAT_FIELDS = {
-    {"max_health", "Maximum health", 2000, 1, 100000},
+    {"max_health", "Health before talents", 2000, 1, 100000},
+    {"stamina", "Stamina before talents", 0, 0, 10000},
     {"max_mana", "Maximum mana", 1000, 1, 100000},
     {"shadow_power", "Shadow spell power", 0, 0, 10000},
     {"fire_power", "Fire spell power", 0, 0, 10000},
@@ -87,7 +88,8 @@ local modalInputText = ""
 
 local ACTION_CATALOG = action_catalog.specs
 local ACTION_ICONS = action_catalog.icons
-local ACTION_SLOT_COUNT = 23
+local ACTION_SLOT_COUNT = 0
+for _, catalog in pairs(ACTION_CATALOG) do ACTION_SLOT_COUNT = math.max(ACTION_SLOT_COUNT, #catalog - 2) end
 local TOTAL_SLOT_COUNT = ACTION_SLOT_COUNT + 2
 local function isTalentLocked(name, build)
     local gate = action_catalog.talent_gates[name]
@@ -118,41 +120,14 @@ local function defaultActionSlots(className, build)
         if slot >= TOTAL_SLOT_COUNT then break end
         local name = catalog[i]
         local locked = ((className == "warlock" or className == "priest") and isTalentLocked(name, build)) or isPetLocked(name, selectedActionPet())
-        if not locked then slots[slot] = name; slot = slot + 1 end
+        if not locked and name ~= "None" then slots[slot] = name; slot = slot + 1 end
     end
     return slots
 end
 
 local function cloneActionSlots(slots, className, build, legacy)
-    if type(slots) ~= "table" then
-        if type(legacy) == "table" then
-            local allowed, result = {}, {}
-            for _, name in ipairs(legacy) do allowed[name] = true end
-            local catalog = ACTION_CATALOG[className] or {}
-            for i = 1, TOTAL_SLOT_COUNT do result[i] = "" end
-            result[1], result[TOTAL_SLOT_COUNT] = "Idle/Maneuver", "Cancel Cast"
-            local slot = 2
-            for i = 2, #catalog - 1 do
-                local name = catalog[i]
-                if slot < TOTAL_SLOT_COUNT and allowed[name] then result[slot] = name; slot = slot + 1 end
-            end
-            return result
-        end
-        return defaultActionSlots(className, build)
-    end
-    local result, valid = {}, {}
-    for i, name in ipairs(ACTION_CATALOG[className] or {}) do if i > 1 and i < #ACTION_CATALOG[className] then valid[name] = true end end
-    for i = 1, TOTAL_SLOT_COUNT do result[i] = "" end
-    result[1], result[TOTAL_SLOT_COUNT] = "Idle/Maneuver", "Cancel Cast"
-    -- Older layouts used 10 or 15 slots. Preserve every configured spell and
-    -- move only the reserved Cancel Cast slot when expanding the action bar.
-    for i = 2, math.min(#slots, TOTAL_SLOT_COUNT - 1) do
-        local name = slots[i]
-        local locked = ((className == "warlock" or className == "priest") and isTalentLocked(name, build)) or isPetLocked(name, selectedActionPet())
-        result[i] = type(name) == "string" and (name == "" or (valid[name] and not locked and name)) or ""
-        if type(result[i]) ~= "string" then result[i] = "" end
-    end
-    return result
+    -- Old slot lists migrate to the full supported build capabilities.
+    return defaultActionSlots(className, build)
 end
 
 local function actionsFromSlots(slots)
@@ -250,6 +225,9 @@ function spec_editor.loadSpec(specObj)
     end
     currentRace = races.normalize(specObj.race, currentClass)
     combatStats = copyCombatStats(specObj.combat_stats)
+    if specObj.gear and not (specObj.combat_stats and specObj.combat_stats.stamina) then
+        combatStats.stamina = (specObj.gear_base_stats and specObj.gear_base_stats.stamina or 0) + gear.totals(specObj.gear).stamina
+    end
     equipment = specObj.gear and gear.validate(specObj.gear, currentClass) or nil
     gearBase = equipment and copyCombatStats(specObj.gear_base_stats) or nil
     -- Saved resolved stats include explicit overrides from the stats editor.
@@ -257,10 +235,10 @@ function spec_editor.loadSpec(specObj)
     -- Priest presets predating gear support otherwise enter fights at baseline.
     if currentClass == "priest" and not specObj.gear and not specObj.combat_stats then spec_editor.equipPrebis() end
     currentBuild = talents_data.cloneBuild(specObj.trees)
-    actionLoadout = cloneActionLoadout(specObj.action_loadout, currentClass, currentBuild)
-    actionSlots = cloneActionSlots(specObj.action_slots, currentClass, currentBuild, specObj.action_loadout)
     sacrificePet = specObj.sacrifice_pet or "none"
     warlockPet = specObj.pet or "imp"
+    actionLoadout = cloneActionLoadout(specObj.action_loadout, currentClass, currentBuild)
+    actionSlots = cloneActionSlots(specObj.action_slots, currentClass, currentBuild, specObj.action_loadout)
     specName = specObj.name or "Custom Build"
     specDesc = specObj.description or ""
     noticeText = "Loaded spec: " .. specName
@@ -282,6 +260,7 @@ end
 
 function spec_editor.getCurrentSpecConfig()
     if not treeData or not currentBuild then return nil end
+    actionSlots = defaultActionSlots(currentClass, currentBuild)
     local summary = talents_data.getSummaryString(treeData, currentBuild, currentClass)
     local hash = talents_data.exportHash(treeData, currentBuild, currentClass)
     local sacrificeRank = currentClass == "warlock" and talents_data.getRank(currentBuild.Demonology, "105900") or 0
@@ -298,6 +277,7 @@ function spec_editor.getCurrentSpecConfig()
         talents_summary = summary,
         hash = hash,
         trees = talents_data.cloneBuild(currentBuild),
+        automatic_actions = true,
         action_loadout = actionsFromSlots(cloneActionSlots(actionSlots, currentClass, currentBuild)),
         action_slots = cloneActionSlots(actionSlots, currentClass, currentBuild),
         pet = currentClass == "warlock" and (sacrificeRank > 0 and sacrificePet ~= "none" and pactRank == 0 and "none" or (sacrificeRank > 0 and sacrificePet ~= "none" and warlockPet == sacrificePet and "none" or warlockPet)) or "none",
@@ -355,11 +335,9 @@ function spec_editor.getAvailableActions()
     return result
 end
 
+-- Compatibility entry point for older integrations; builds now own their actions.
 function spec_editor.setActionSlot(slot, name)
-    if slot < 2 or slot >= TOTAL_SLOT_COUNT then return end
-    for _, allowed in ipairs(spec_editor.getAvailableActions()) do
-        if name == allowed then actionSlots[slot] = name; return end
-    end
+    return false, "Actions are derived automatically from the build"
 end
 
 function spec_editor.update(dt)
@@ -494,10 +472,6 @@ function spec_editor.mousepressed(x, y, button)
                 if btn.kind == "option" then
                     actionSlots[btn.slot] = btn.name == "(Empty)" and "" or btn.name
                     actionPickerSlot = nil
-                elseif btn.kind == "slot" then
-                    if btn.slot > 1 and btn.slot < TOTAL_SLOT_COUNT then
-                        actionPickerSlot = actionPickerSlot == btn.slot and nil or btn.slot
-                    end
                 end
             end
             return true
@@ -568,6 +542,7 @@ local function drawPrereqArrow(pNode, cNode)
 end
 
 function spec_editor.draw(trainingController)
+    if currentBuild then actionSlots = defaultActionSlots(currentClass, currentBuild) end
     if not treeData then
         spec_editor.init()
     end
@@ -594,9 +569,9 @@ function spec_editor.draw(trainingController)
 
     -- 2. Header
     local isMage = (currentClass == "frost_mage")
-    local classIconName = isMage and "mage" or "warlock"
-    local classDisplayName = isMage and "Frost Mage" or "Warlock"
-    local classSubtitle = isMage and "Mage 51-Point Talent Tree Calculator" or "Warlock 51-Point Talent Tree Calculator"
+    local classIconName = isMage and "mage" or (currentClass == "priest" and "priest" or "warlock")
+    local classDisplayName = isMage and "Frost Mage" or (currentClass == "priest" and "Priest" or "Warlock")
+    local classSubtitle = classDisplayName .. " 51-Point Talent Tree Calculator"
     local classAccent = isMage and { 0.35, 0.75, 1.0, 0.9 } or { 0.65, 0.50, 0.90, 0.9 }
 
     icons.drawClassIcon(classIconName, 38, 33, 30)
@@ -1019,8 +994,7 @@ function spec_editor.draw(trainingController)
         end
     end
 
-    -- Configurable action slots are saved with the spec; movement and
-    -- cancel cast occupy the first and last reserved positions.
+    -- Automatic capabilities retain reserved movement and cancel controls.
     local panelY = mainY + mainH - actionPanelH
     g.setColor(0.06, 0.08, 0.14, 0.98)
     g.rectangle("fill", treesAreaX, panelY, treesAreaW, actionPanelH, 6)
@@ -1028,7 +1002,7 @@ function spec_editor.draw(trainingController)
     g.rectangle("line", treesAreaX, panelY, treesAreaW, actionPanelH, 6)
     ui.setFont("small")
     g.setColor(0.75, 0.84, 1.0, 1.0)
-    g.print(ACTION_SLOT_COUNT .. " ACTION SLOTS (hover to inspect, click to change)", treesAreaX + 14, panelY + 8)
+    g.print("AUTOMATIC ABILITIES (hover to inspect)", treesAreaX + 14, panelY + 8)
     local gap, cols = 4, TOTAL_SLOT_COUNT
     local slotSize = math.min(34, math.floor((treesAreaW - 28 - (cols - 1) * gap) / cols))
     local totalW = cols * slotSize + (cols - 1) * gap

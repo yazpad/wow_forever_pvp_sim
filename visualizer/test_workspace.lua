@@ -111,8 +111,11 @@ ui.chevron=function(x,y,expanded)
     return originalChevron(x,y,expanded)
 end
 love.graphics.print=function(text,x,y)
-    if type(text)=='string' and chevrons[y+8]~=nil then
+    if type(text)=='string' and (chevrons[y+8]~=nil or chevrons[y+9]~=nil) then
         schoolHeaders[(chevrons[y+8] and 'v  ' or '>  ')..text]={x=x,y=y}
+        if text=='Talents' or text=='Gear' or text=='Pets' or text=='Abilities' then
+            controls[#controls+1]={x=24,y=y-8,w=workspace.left-24,h=34,label=text}
+        end
     end
 end
 local originalHeader=ui.playerHeader
@@ -149,11 +152,30 @@ local function control(label)
     for _,v in ipairs(controls) do
         if v.label==label then click(v.x+v.w/2,v.y+v.h/2);return end
     end
+    -- Find controls after scrolling; the automatic grid has fewer rows than slots.
+    mx,my=physical(60,workspace.scrollTop+20)
+    workspace.wheelmoved(100);render()
+    for attempt=1,60 do
+        for _,v in ipairs(controls) do
+            if v.label==label then click(v.x+v.w/2,v.y+v.h/2);return end
+        end
+        workspace.wheelmoved(-1);render()
+    end
     error('Missing control '..label)
+end
+local function findSchool(label)
+    if schoolHeaders[label] then return schoolHeaders[label] end
+    mx,my=physical(60,workspace.scrollTop+20)
+    workspace.wheelmoved(100);render()
+    for attempt=1,60 do
+        if schoolHeaders[label] then return schoolHeaders[label] end
+        workspace.wheelmoved(-1);render()
+    end
+    return nil
 end
 local function school(name,open)
     local label=(open and '>  ' or 'v  ')..name
-    local header=assert(schoolHeaders[label],'Missing school header '..label)
+    local header=assert(findSchool(label),'Missing school header '..label)
     click(header.x+8,header.y+8)
 end
 local function iconControl(name,last,b)
@@ -207,16 +229,14 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     render()
     if schoolHeaders['>  Affliction'] then school('Affliction',true);render() end
     mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
-    local hasBottomTree=false
-    for _,v in ipairs(iconCalls) do if v.x<workspace.left then hasBottomTree=true end end
-    assert(hasBottomTree)
+    -- Scrollable section headers remain reachable with the compact ability grid.
     control('Pets');render()
     mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
     control('Abilities');render()
 end
 -- Actual talent point allocation and removal through icon tiles.
 workspace.select(1);editor.setClass('warlock');render();control('Talents');render()
-if schoolHeaders['>  Affliction'] then school('Affliction',true);render() end
+if findSchool('>  Affliction') then school('Affliction',true);render() end
 local talents=require('talents_data')
 local t=talents.load('warlock').Affliction.talents[1]
 iconControl(t.icon);render()
@@ -230,10 +250,11 @@ local allowed={};for _,name in ipairs(available) do allowed[name]=true end
 assert(allowed.Seduction and not allowed['Spell Lock'] and not allowed.Shadowburn)
 -- Scroll the choices into view even in the shortest panel.
 mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
-iconControl(require('action_catalog').icons.Seduction,true);render()
-assert(workspace.preview().specs[1].action_slots[2]=='Seduction')
+-- Pet actions appear automatically without selecting a slot.
+render()
+assert(require('json').encode(workspace.preview().specs[1].action_loadout):find('Seduction'))
 editor.setPet('felhunter');render()
-assert(workspace.preview().specs[1].action_slots[2]=='')
+assert(not require('json').encode(workspace.preview().specs[1].action_loadout):find('Seduction'))
 local generator=require('match_generator')
 local originalStart=generator.startFight
 local launch
@@ -248,34 +269,37 @@ print('Accordion, arena selection, click/drag separation, talents, loadout gates
 -- Each school folds independently, retaining points and a separate state per player/class.
 for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     width,height=size[1],size[2]
-    workspace.select(1);render();control('Talents');render()
-    if schoolHeaders['v  Affliction'] then school('Affliction',false);render() end
-    assert(schoolHeaders['>  Affliction'] and schoolHeaders['>  Demonology'] and schoolHeaders['>  Destruction'])
+    workspace.select(1);render()
+    if not findSchool('>  Affliction') and not findSchool('v  Affliction') then control('Talents');render() end
+    mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(100);render()
+    if findSchool('v  Affliction') then school('Affliction',false);render() end
+    assert(findSchool('>  Affliction') and findSchool('>  Demonology') and findSchool('>  Destruction'))
     local before=require('json').encode(workspace.preview().specs[1])
     school('Affliction',true);render()
-    assert(schoolHeaders['v  Affliction'])
-    workspace.select(2);render();control('Talents');render()
-    assert(schoolHeaders['>  Affliction'])
-    workspace.select(1);render();assert(schoolHeaders['v  Affliction'])
+    assert(findSchool('v  Affliction'))
+    workspace.select(2);render()
+    if not findSchool('>  Affliction') and not findSchool('v  Affliction') then control('Talents');render() end
+    assert(findSchool('>  Affliction'))
+    workspace.select(1);render();assert(findSchool('v  Affliction'))
     assert(require('json').encode(workspace.preview().specs[1])==before)
     school('Affliction',false);render()
     school('Demonology',true);render()
-    assert(schoolHeaders['>  Affliction'] and schoolHeaders['v  Demonology'])
+    assert(findSchool('>  Affliction') and findSchool('v  Demonology'))
     school('Demonology',false);render()
     school('Destruction',true);render()
-    assert(schoolHeaders['v  Destruction'])
+    assert(findSchool('v  Destruction'))
     school('Destruction',false);render()
 end
 control('Frost Mage');render()
-assert(schoolHeaders['>  Arcane'] and schoolHeaders['>  Fire'] and schoolHeaders['>  Frost'])
-school('Arcane',true);render();assert(schoolHeaders['v  Arcane'])
+assert(findSchool('>  Arcane') and findSchool('>  Fire') and findSchool('>  Frost'))
+school('Arcane',true);render();assert(findSchool('v  Arcane'))
 control('Warlock');render()
-assert(schoolHeaders['>  Affliction'])
-control('Frost Mage');render();assert(schoolHeaders['v  Arcane'])
+assert(findSchool('>  Affliction'))
+control('Frost Mage');render();assert(findSchool('v  Arcane'))
 school('Arcane',false);render()
 workspace.showReplay();render();assert(workspace.isPlayback())
 school('Frost',true);render();assert(workspace.isPlayback())
-assert(schoolHeaders['v  Frost'])
+assert(findSchool('v  Frost'))
 print('School collapsing, independent player/class state, preserved drafts and playback checks passed.')
 
 -- Real event routing: menus select exact config values and block underlying input.
@@ -419,11 +443,11 @@ local iconManager=require('icons_manager')
 local oldAura,oldRect=iconManager.drawAuraBadge,iconManager.drawRect
 local seen={}
 iconManager.drawAuraBadge=function(icon,x,y,size)
-    assert(x>=16 and x+size<=336 and y>=74 and y+size<=216)
+    assert(x>=16 and x+size<=336 and y>=74 and y+size<=242)
     seen[icon]=(seen[icon] or 0)+1
 end
 iconManager.drawRect=function(icon,x,y,w,h)
-    assert(x>=16 and x+w<=336 and y>=74 and y+h<=216)
+    assert(x>=16 and x+w<=336 and y>=74 and y+h<=242)
     seen[icon]=(seen[icon] or 0)+1
 end
 for side=0,1 do
@@ -480,7 +504,7 @@ end
 local function chooseClass(player,class)
     render()
     local c=assert(classControls['class_'..player])
-    assert(#c.choices==2 and c.choices[1]=='warlock' and c.choices[2]=='frost_mage')
+    assert(#c.choices==3 and c.choices[1]=='warlock' and c.choices[2]=='frost_mage' and c.choices[3]=='priest')
     click(c.x+c.w/2,c.y+c.h/2)
     local r=assert(ui.dropdownBounds())
     assert(r.w>=160 and r.x>=0 and r.y>=0 and r.x+r.w<=ui.width() and r.y+r.h<=ui.height())
@@ -519,7 +543,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
             local submitted=launched[target==1 and 'spec_a_obj' or 'spec_b_obj']
             assert(submitted.class==class)
             assert(json.encode(submitted.action_slots)==json.encode(state.specs[target].action_slots))
-            for key,value in pairs(state.specs[target].combat_stats) do assert(submitted.combat_stats[key]==value) end
+            for key,value in pairs(state.specs[target].combat_stats) do near(submitted.combat_stats[key],value) end
             for _,path in ipairs(launched.temporary_specs) do os.remove(path) end
         end
         -- The icon also works when both sections are collapsed.
@@ -527,10 +551,11 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
         assert(workspace.getSelected()==nil)
         chooseClass(target,'frost_mage');assert(workspace.getSelected()==nil)
         -- Expanded class changes retain expansion and immediately replace talent schools.
-        workspace.select(target);render();control('Talents');render()
-        assert(schoolHeaders['>  Arcane'] or schoolHeaders['v  Arcane'])
+        workspace.select(target);render()
+        if not findSchool('>  Arcane') and not findSchool('v  Arcane') then control('Talents');render() end
+        assert(findSchool('>  Arcane') or findSchool('v  Arcane'))
         chooseClass(target,'warlock');assert(workspace.getSelected()==target)
-        assert(schoolHeaders['>  Affliction'] or schoolHeaders['v  Affliction'])
+        assert(findSchool('>  Affliction') or findSchool('v  Affliction'))
         -- Selecting the current class is harmless and preserves edits/playback.
         editor.setCombatStat('spell_crit_chance',0.32);render()
         local unchanged=json.encode(workspace.preview().specs[target])

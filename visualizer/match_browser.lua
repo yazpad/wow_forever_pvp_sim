@@ -259,8 +259,8 @@ function match_browser.draw()
             victorName = "B WINS"
         end
 
-        local classA = (m.spec_a == "frost_mage" or m.spec_a == "mage") and "mage" or "warlock"
-        local classB = (m.spec_b == "frost_mage" or m.spec_b == "mage") and "mage" or "warlock"
+        local classA = (m.spec_a == "frost_mage" or m.spec_a == "mage") and "mage" or (m.spec_a == "priest" and "priest" or "warlock")
+        local classB = (m.spec_b == "frost_mage" or m.spec_b == "mage") and "mage" or (m.spec_b == "priest" and "priest" or "warlock")
         icons.drawClassIcon(classA, listX + 22, cy + 22, 28)
         ui.setFont("tiny")
         love.graphics.setColor(0.45, 0.55, 0.68, 0.9)

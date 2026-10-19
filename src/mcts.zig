@@ -432,7 +432,7 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     const priorities = switch (spec) {
         .warlock => &[_]u32{ 19, 17, 18, 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 },
         .frost_mage => &[_]u32{ 19, 17, 18, 6, 7, 2, 1, 4, 3, 5 },
-        .priest => &[_]u32{ 19, 17, 18, 16, 7, 6, 3, 9, 2, 8, 1, 12, 15, 4, 13, 5, 11, 14 },
+        .priest => &[_]u32{ 19, 20, 17, 18, 16, 22, 7, 6, 3, 21, 23, 9, 2, 8, 1, 12, 11, 24, 15, 4, 13, 5, 14 },
     };
     for (priorities) |candidate| {
         var allowed = true;
@@ -455,6 +455,11 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
             const enemy_hp = @field(s, "hp" ++ enemy)[lane];
             allowed = switch (candidate) {
                 19 => if ((if (side) @TypeOf(d.arena).SpecB else @TypeOf(d.arena).SpecA) == .frost_mage) @field(s, "agony_timer" ++ own)[lane] > 0 or @field(s, "corruption_timer" ++ own)[lane] > 0 else false,
+                20 => @field(s, "fear_timer" ++ own)[lane] > 0 or @field(s, "seduction_timer" ++ own)[lane] > 0,
+                // Burn meaningfully into a caster's remaining pool, without
+                // displacing urgent healing or wasting a long cast on scraps.
+                24 => hp >= max_hp * 0.55 and enemy_hp > 600 and
+                    @field(s, "mana" ++ enemy)[lane] >= 384 and @field(s, "mana" ++ enemy)[lane] <= 1534,
                 7 => @field(s, "cast_id" ++ enemy)[lane] != 0,
                 6 => @field(s, "action6_dur" ++ own)[lane] <= 0 and hp < max_hp * 0.90,
                 3 => s.distance[lane] <= 8.0 and @field(s, "fear_timer" ++ enemy)[lane] <= 0,

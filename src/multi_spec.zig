@@ -367,10 +367,10 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             while (i < end) : (i += VEC_LEN) {
                 const active_mask: bool16 = self.state.is_active[i..][0..VEC_LEN].* > v_zeros_u32;
                 if (!@reduce(.Or, active_mask)) continue;
-                var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_a[i..][0..VEC_LEN].*, self.state.talent_flags_a[i..][0..VEC_LEN].*);
+                var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decodeExtended(self.state.talent_ranks_a[i..][0..VEC_LEN].*, self.state.talent_flags_a[i..][0..VEC_LEN].*, self.state.talent_extra_a[i..][0..VEC_LEN].*);
                 if (spec_a == .warlock) @import("conflagrate.zig").tickEffects(&self.state, true, i, dt, &effects_a);
                 if (spec_a == .priest) @import("priest_combat.zig").tickCooldowns(&self.state, true, i, dt);
-                var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decode(self.state.talent_ranks_b[i..][0..VEC_LEN].*, self.state.talent_flags_b[i..][0..VEC_LEN].*);
+                var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decodeExtended(self.state.talent_ranks_b[i..][0..VEC_LEN].*, self.state.talent_flags_b[i..][0..VEC_LEN].*, self.state.talent_extra_b[i..][0..VEC_LEN].*);
                 if (spec_b == .warlock) @import("conflagrate.zig").tickEffects(&self.state, false, i, dt, &effects_b);
                 if (spec_b == .priest) @import("priest_combat.zig").tickCooldowns(&self.state, false, i, dt);
                 const priest_effects_a = if (spec_a == .priest) priest_combat.dynamicEffects(&self.state, true, i) else undefined;
@@ -550,8 +550,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 hp_b = @min(@as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*), hp_b + @select(f32, is_fh_b, @as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
 
                 // 2. Movement & Relative Distance Update
-                const speed_a = select16(move_a < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_a > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
-                const speed_b = select16(move_b < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_b > v_zeros, @as(f32x16, @splat(WarlockConstants.BackpedalSpeed)), v_zeros));
+                const speed_a = select16(move_a < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_a > v_zeros, @as(f32x16, @splat(WarlockConstants.ForwardSpeed)), v_zeros));
+                const speed_b = select16(move_b < v_zeros, @as(f32x16, @splat(-WarlockConstants.ForwardSpeed)), select16(move_b > v_zeros, @as(f32x16, @splat(WarlockConstants.ForwardSpeed)), v_zeros));
 
                 // While feared or horrified, unit runs away involuntarily!
                 const fear_cc_a = vOr16(fear_a > v_zeros, horror_a > v_zeros);
@@ -601,8 +601,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 // 4. Damage Mitigation Factor:
                 const mit_a = if (spec_a == .warlock) effects_a.damage_taken else if (spec_a == .priest) priest_effects_a.spell_damage_taken_mult else splat(1);
                 const mit_b = if (spec_b == .warlock) effects_b.damage_taken else if (spec_b == .priest) priest_effects_b.spell_damage_taken_mult else splat(1);
-                const pet_mit_a = if (spec_a == .priest) select16(self.state.pet_kind_b[i..][0..VEC_LEN].* == ids(@intFromEnum(@import("pets.zig").Kind.imp)), mit_a, priest_effects_a.physical_damage_taken_mult) else mit_a;
-                const pet_mit_b = if (spec_b == .priest) select16(self.state.pet_kind_a[i..][0..VEC_LEN].* == ids(@intFromEnum(@import("pets.zig").Kind.imp)), mit_b, priest_effects_b.physical_damage_taken_mult) else mit_b;
+                const pet_mit_a = if (spec_a == .priest) select16(self.state.pet_kind_b[i..][0..VEC_LEN].* == ids(@intFromEnum(@import("pets.zig").Kind.imp)), mit_a, priest_effects_a.physical_damage_taken_mult) else if (spec_a == .warlock) @import("demon_passives.zig").petMitigation(&self.state, true, i, mit_a) else mit_a;
+                const pet_mit_b = if (spec_b == .priest) select16(self.state.pet_kind_a[i..][0..VEC_LEN].* == ids(@intFromEnum(@import("pets.zig").Kind.imp)), mit_b, priest_effects_b.physical_damage_taken_mult) else if (spec_b == .warlock) @import("demon_passives.zig").petMitigation(&self.state, false, i, mit_b) else mit_b;
 
                 if (@reduce(.Or, hits_a.coil > v_zeros)) {
                     const coil_hit_a = hits_a.coil > v_zeros;

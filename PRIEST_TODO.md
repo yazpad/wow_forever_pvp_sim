@@ -93,6 +93,7 @@ a fully simulated 51-point build.
 - [x] **Dispel Magic:** Separate self/enemy actions remove up to two eligible magic effects.
 - [ ] **Abolish Disease:** Immediate disease removal plus periodic cleansing remains unimplemented.
 - [x] **Mana Burn:** 3s base cast (2.5s/2s with Improved Mana Burn), drains up to 767 mana and deals Shadow damage based on 50% of actual mana burned.
+- [x] **Healing spell mana costs:** Level-60 PW:S, Flash Heal, and Renew costs audited against the local Forever client table (section 12).
 - [ ] **Inner Fire:** Armor and spell power charges buff.
 - [ ] **Fear Ward:** Baseline for every Priest in Forever; implement separately from race spells (section 10).
 - [ ] **Priest racial spells:** Twelve spells across six races; sourced inventory and implementation checklist in section 10.
@@ -172,7 +173,8 @@ rather than claiming a physical equipment set with those totals.
   Self dispel removes magic DOTs and movement effects according to the opponent
   class; it preserves Warlock curses and Priest diseases. Enemy dispel removes
   shields, Power Infusion, Renew, and Inner Focus. Shield/PI cooldowns remain.
-  It costs 18% base mana before Mental Agility and uses a 1.5s GCD.
+  It costs 18% base mana before Mental Agility and uses a 1.5s GCD
+  (the original hardcoded 180 mana was corrected in section 13).
   Offensive dispel rolls spell hit. Per-aura dispel resistance and random aura
   selection remain unimplemented; no unmodeled Warlock buffs are invented.
 - Mana Burn follows the local beta client table: 270 mana, 30m range, 3s cast,
@@ -372,3 +374,119 @@ replays retain their recorded results.
 
 Validation: `zig build test -Doptimize=ReleaseSafe --summary all` passed
 141/141 tests. Zig formatting passed for the touched source files.
+
+## 12. Core healing spell mana audit (2026-10-18)
+
+- [x] Replace placeholder mana costs using the local reference's generated
+  `sim/priest/spell_data_auto_gen.go`, rather than its commented-out healing
+  implementations (which contain older spell data).
+- Power Word: Shield rank ten (10901): 70 -> 500 mana.
+- Flash Heal rank seven (10917): 75 -> 380 mana.
+- Renew rank ten (25315): 55 -> 410 mana.
+- Preserve Mental Agility on PW:S/Renew, Soul Warding on PW:S, and free
+  Inner Focus casts. Flash Heal does not receive the instant-spell discount.
+- Both-side regression coverage checks rejection below cost without spending
+  mana or starting the GCD, availability/spending at exact cost, combined
+  discounts, and Inner Focus consumption versus retention during Flash Heal.
+
+Silence and Mana Burn are already implemented; baseline work remains before
+racial parity. In particular, Abolish Disease, Inner Fire, Fear Ward, Greater
+Heal, Holy Nova, unaudited healing/absorb amounts, and unchecked talents above
+remain open. This pass changes mana costs only; PW:S duration/absorb and
+Flash Heal/Renew healing values still need their own mechanics audit.
+
+Validation: `zig build test -Doptimize=ReleaseSafe --summary all` passed
+142/142 tests. Zig formatting, `git diff --check`, and
+`lua visualizer/test_priest_utility.lua` passed.
+
+## 13. Dispel Magic percentage mana cost (2026-10-18)
+
+- [x] Replace the hardcoded 180-mana cost in both action masks and spending
+  with `Priest.BaseMana * Priest.DispelManaFraction`.
+- The local Forever reference defines level-60 Priest class base mana as
+  1376 (`sim/core/base_stats.go`) and rank-two Dispel Magic (988) as 18%
+  (`sim/priest/spell_data_auto_gen.go`). The resulting cost is 247.68 mana
+  before Mental Agility, or 222.912 at rank three. The simulator retains
+  fractional mana; Intellect and gear do not increase class base mana.
+- Inner Focus still makes either Dispel free and is consumed on use.
+- Both-side tests cover self/enemy targets, all Mental Agility ranks,
+  insufficient-mana rejection, exact-cost spending, and zero-mana Inner Focus.
+  Different maximum mana pools preserve the same class-base cost.
+
+Validation: `zig build test -Doptimize=ReleaseSafe --summary all` passed
+143/143 tests. Zig formatting and `git diff --check` passed.
+
+## 14. GCD and Dispel Magic replay audit (2026-10-18)
+
+- [x] **Correct the Priest spell GCD baseline.** All ordinary Priest spells,
+  including Dispel Magic and Mana Burn, now use 1.5 seconds. The local
+  reference's `sim/core/cast.go` explicitly disables GCD haste scaling;
+  `Cast.EffectiveTime()` enforces the one-second floor but does not apply
+  haste. `Unit.SpellGCD()` alone would misleadingly suggest haste scaling.
+  Cast progress still benefits from haste; Silence, Inner Focus and Power
+  Infusion retain their existing off-GCD behavior.
+  - Both-side regression checks cover Shield-to-Dispel rejection at 1.01s
+    and 1.49s, availability after expiry, with/without racial haste,
+    off-GCD action availability, Inner Focus activation preserving the GCD,
+    and self-dispel preserving Shield absorption.
+  - Recorded matches use 10ms ticks; floating-point timer subtraction can
+    move availability to the next tick after the theoretical 1.50s boundary.
+- [ ] **Audit Dispel Magic selection and resistance.** Self-dispel currently
+  removes up to two effects in fixed priority order (against Warlock:
+  Fear, Seduction, Corruption, Immolate, Siphon Life), without a dispel
+  resistance roll. Verify Forever's selection and resistance rules and
+  implement applicable mechanics with reproducible RNG and snapshot tests.
+  Keep curses/diseases excluded and preserve the caster's beneficial buffs.
+- Observed self-dispels do remove the recorded eligible effects: at 16.84s,
+  Corruption and Siphon Life both disappear while Curse of Agony remains;
+  at 23.39s, Siphon Life disappears while PW:S absorb is preserved. The
+  2.64s self-dispel consumes Inner Focus and is free. These observations
+  confirm replay effects, not full mechanics parity.
+
+Original audit validation: replay event/frame inspection and source comparison.
+`zig build test` (Debug) failed during compilation with LLVM's
+`Cannot emit physreg copy instruction`; tests did not execute in this audit.
+
+Source audit follow-up: the local reference has Dispel Magic's generated spell
+record but no Priest Dispel implementation or general aura-selection/resistance
+resolver. Selection/randomness and per-aura resistance remain open; the current
+fixed-priority behavior is not being presented as verified Forever parity.
+
+GCD implementation validation: `zig build test -Doptimize=ReleaseSafe --summary
+all` passed 144/144 tests; `lua visualizer/test_priest_utility.lua` passed.
+Fresh replay: `matches/priest_gcd_audit.lua` (plus JSON/search metadata),
+using the original matchup's talents, pet and recorded stats with 16,384
+rollouts, 16 workers and 512 MB. The Human racial crit bonus is removed from
+its input stat before spec loading to avoid adding it twice.
+Replay inspection: original final stats, talents and pet match the historical
+recording. Minimum Priest on-GCD cast spacing is 1.51s. Self-dispel at 4.57s
+removes Corruption (9.45s remaining) and preserves Curse of Agony (17.26s).
+The fight ends at 15.22s with a Priest win; this sample does not establish a
+matchup win rate or optimal decisions. Existing replays were preserved.
+
+## 15. Mana Burn search coverage and healing amounts (2026-10-18)
+
+- [x] Include Mana Burn in ordinary Priest rollout continuations. Previously it
+  was legal at the search root and in random exploration but absent from the
+  scripted continuation priority list. Power Infusion, both Dispels and Will
+  of the Forsaken were also absent and now participate when legal.
+- Mana Burn continuation policy favors enemies with 384–1534 mana, while
+  preserving urgent healing and finishing priorities. These are search tuning
+  thresholds, not spell rules; root search retains all legal Mana Burn choices.
+  The short-horizon heuristic still has no explicit mana-value term, and this
+  change does not establish optimal play or guarantee a cast in every match.
+- Confirmed the local generated rank-five Mana Burn record (10876) specifies
+  270 mana, 3s cast, 30m range and 767 mana burned. Existing completion tests
+  cover limited target mana, shields, misses, cancellation and range failure.
+- [x] Replace level-60 healing/absorb placeholders using the generated client
+  table: PW:S (10901) 420 -> 928 base absorb; Flash Heal (10917) 340 -> 841
+  base healing; Renew (25315) 108 -> 166 healing per three-second tick.
+  Existing spell-power coefficients and talent modifiers remain applied.
+- PW:S duration, cooldown versus Weakened Soul, and other healing mechanics
+  still require their own audit. This completes the base-amount portion only.
+- Added both-side regression tests for literal client healing/absorb amounts
+  and rollout selection of Mana Burn and utility actions.
+
+Validation: `zig build test -Doptimize=ReleaseSafe --summary all` passed
+155/155 tests. Priest utility and automatic-action Lua tests, Zig formatting
+and `git diff --check` passed.

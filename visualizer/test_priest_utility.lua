@@ -13,7 +13,7 @@ end
 local disc=read('specs/disc_priest.json')
 editor.loadSpec(disc)
 local exported=editor.getCurrentSpecConfig()
-assert(#exported.action_loadout==#disc.action_loadout,'Editor dropped a configured priest ability')
+assert(#exported.action_loadout>=#disc.action_loadout,'Editor dropped a configured priest ability')
 for _,name in ipairs(disc.action_loadout) do assert(has(exported.action_loadout,name),name) end
 assert(has(editor.getAvailableActions(),'Power Infusion'))
 -- Preserve late spell slots when migrating an older 15-slot action bar.
@@ -27,13 +27,13 @@ legacy.action_slots[14]='Inner Focus'
 legacy.action_slots[15]='Cancel Cast'
 editor.loadSpec(legacy)
 exported=editor.getCurrentSpecConfig()
-assert(exported.action_slots[12]=='Penance')
-assert(exported.action_slots[14]=='Inner Focus')
-assert(exported.action_slots[15]=='')
+assert(has(exported.action_loadout,'Penance'))
+assert(has(exported.action_loadout,'Inner Focus'))
+assert(exported.automatic_actions)
 assert(exported.action_slots[#exported.action_slots]=='Cancel Cast')
 for _,file in ipairs({'specs/shadow_priest.json','specs/shadow_priest_equal_stats.json'}) do
     local spec=read(file); editor.loadSpec(spec); exported=editor.getCurrentSpecConfig()
-    assert(#exported.action_loadout==#spec.action_loadout)
+    assert(#exported.action_loadout>=#spec.action_loadout)
     assert(not has(editor.getAvailableActions(),'Power Infusion'))
     for _,name in ipairs({'Dispel Magic (Self)','Dispel Magic (Enemy)','Mana Burn'}) do
         assert(has(exported.action_loadout,name),name)

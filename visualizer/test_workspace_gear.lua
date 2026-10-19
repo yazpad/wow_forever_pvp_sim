@@ -84,6 +84,27 @@ click(controls.Fight)
 assert(launched.hp_a==2670 and launched.spec_a_obj.combat_stats.shadow_power==354)
 assert(launched.spec_a_obj.gear==nil)
 for _,path in ipairs(launched.temporary_specs) do os.remove(path) end
+-- Talent HP is derived once, leaving saved base health and stamina unchanged.
+editor.loadSpec({class='warlock',race='human',name='Embrace test',
+    combat_stats={max_health=3000,stamina=200,max_mana=2000},
+    trees={Affliction={},Demonology={['105907']=5,['105903']=3},Destruction={}}})
+draw()
+local preview=workspace.preview()
+assert(math.abs(preview.meta.max_health_a-3300)<0.001)
+assert(math.abs(preview.frame[5]-3300)<0.001)
+assert(math.abs(preview.meta.max_mana_a-2300)<0.001)
+click(controls.Fight)
+assert(math.abs(launched.hp_a-3300)<0.001)
+assert(launched.spec_a_obj.combat_stats.max_health==3000)
+assert(launched.spec_a_obj.combat_stats.stamina==200)
+for _,path in ipairs(launched.temporary_specs) do os.remove(path) end
+local gearModule=require('gear')
+local resolved,totals=gearModule.resolve(gearModule.prebis('warlock'),'warlock',{max_health=2000,stamina=50})
+assert(resolved.stamina==50+totals.stamina)
+local legacy={class='warlock',gear=gearModule.prebis('warlock'),combat_stats={max_health=4000},trees={}}
+editor.loadSpec(legacy)
+assert(editor.getCurrentSpecConfig().combat_stats.stamina==totals.stamina)
+assert(editor.getCurrentSpecConfig().combat_stats.max_health==4000)
 generator.startFight=old
 print('Gear dropdown input, per-player loadouts, preview resources and serialized Fight snapshots passed.')
 editor.setClass('warlock');draw()

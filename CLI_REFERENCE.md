@@ -54,8 +54,12 @@ love visualizer matches/latest.lua
 The visualizer opens in the **Arena workspace (F1)**: select Fighter A or B on the left,
 edit Talents, Stats, Pets, or Abilities, and drag either portrait in the arena.
 Stat probabilities use 0–1 values; click a value, type its replacement, and press
-Enter to apply or Escape to cancel. In Abilities, select a slot and choose an
-available ability below; right-click a slot to clear it.
+Enter to apply or Escape to cancel. Abilities automatically lists every supported action available from the current
+class, talents, race and active pet. Build changes update the list immediately.
+Old saved slot lists migrate to automatic capabilities when opened in the editor;
+direct CLI specs retain explicit loadouts unless `automatic_actions` is true.
+Fight recordings save action masks for cooldown filtering; older recordings without
+capability metadata retain their historical cooldown indicators.
 Fight uses the current drafts without saving; Save spec stores a named build.
 Completed fights play in the center panel with the existing Arena effects,
 telemetry, camera, and timeline controls. Use **Edit positions** to return to the
@@ -170,6 +174,17 @@ simulation assumptions, not verified Forever naked-character or gear-derived
 stats. Base/gear probabilities are separate from talent bonuses. Omitted fields
 preserve the legacy compact baseline: level 60, 100% owner/pet hit, zero base
 crit, resistance, penetration, avoidance, and armor reduction.
+
+`combat_stats.stamina` records total stamina before talents (0–10000; default 0).
+`max_health` is health before talents and already includes that stamina's health;
+entering stamina does not add it a second time. Gear adds its stamina to this
+field and 10 HP per point to maximum health. Demonic Embrace adds another
+`stamina × 0.03 × rank × 10` HP (ranks 0–5). This uses the existing compact
+10-HP-per-stamina model without integer stat rounding. Legacy specs without
+stamina retain their health; the editor recovers gear stamina for old gear saves.
+Base/racial stamina is supplied explicitly; verified naked-character baselines
+remain pending. Fight previews and replay maximum health include the bonus.
+CLI fights start at full resolved health unless `--hp-a` / `--hp-b` is supplied.
 
 Owner direct damage, DoT applications, channel starts, crowd control, and
 interrupts now resolve hit/full resist. A failed action still spends mana, GCD,
@@ -291,3 +306,19 @@ The Love2D check runs two fights from unsaved edits, verifies replay metadata,
 returns to setup, changes the pet/loadout/position, and runs again. It also checks
 resizing and dropdown bounds/dismissal at 960x540, 1280x720 and 2560x1080.
 Omit `SDL_VIDEODRIVER=offscreen` to watch the check in a window.
+
+### Pet-dependent Warlock talents
+
+The checked-in Forever Demonic Knowledge (105893) grants spell damage equal to
+33%/67%/100% of owner level, rather than scaling from pet stamina/intellect. It
+applies while the owner and a summoned demon are alive. Owner school spell power
+and pet Firebolt gain the bonus; pet melee does not. Firebolt uses the compact
+2/3.5 spell-power coefficient, with Improved Imp and existing pet damage bonuses.
+Master Demonologist (105891) grants 2% per rank: Imp Fire damage, Succubus Shadow
+damage, Voidwalker physical damage reduction, or Felhunter magic damage
+reduction. Effects depend on the active pet, independently of the sacrificed pet
+when Demonic Pact allows both. Death removes these bonuses from subsequent
+casts/ticks. Missiles retain damage calculated at launch. Search caches retain
+only static talents; live pet bonuses are recomputed after snapshot restore.
+Pet-targeted attacks and pet Shadow damage spells are not modeled yet. Soul Link
+transfers damage after owner mitigation without applying mitigation twice.

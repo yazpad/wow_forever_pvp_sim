@@ -11,7 +11,14 @@ local json = require('json')
 local browser = require('match_browser')
 local matrix = require('matrix_view')
 local gear = require('gear')
+local demonPassives = require('demon_passives')
 local workspace = {}
+local function maximumHealth(spec)
+    local stats=spec.combat_stats
+    local t=spec.trees and spec.trees.Demonology or {}
+    local rank=spec.class=='warlock' and (t['105907'] or t[105907] or 0) or 0
+    return stats.max_health+(stats.stamina or 0)*0.03*rank*10
+end
 local settingsScroll, settingsMax, settingsFocus = 0, 0, nil
 local settingsOpen = {replays=false,matrix=false}
 function workspace.toggleSettingsSection(name)
@@ -20,7 +27,7 @@ function workspace.toggleSettingsSection(name)
 end
 local drafts, selected, saved, buttons = {}, 1, nil, {}
 local scroll, maxScroll, message = 0, 0, ''
-local expanded, loadoutSlot, tooltip, tokenFrame = true, 2, nil, nil
+local expanded, tooltip, tokenFrame = true, nil, nil
 local schoolOpen = {{},{}}
 local sectionsOpen = {{},{}}
 local input, dragging, arena = nil, nil, nil
@@ -123,7 +130,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             if i~=selected then editor.loadSpec(drafts[selected]) else scroll=0 end
             workspace.editPositions();message=''
         end,function(class) return class=='frost_mage' and 'Mage' or 'Warlock' end,nil,
-            {icon=s.class=='frost_mage' and 'mage' or 'warlock',menuWidth=180})
+            {icon=s.class=='frost_mage' and 'mage' or (s.class=='priest' and 'priest' or 'warlock'),menuWidth=180})
         buttons[#buttons+1]={x=32,y=y+8,w=42,h=42,action=function(b)
             if b==1 and commitInput() then classAction() end
         end}
@@ -200,7 +207,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             ui.setFont('small'); g.setColor(ui.colors.textMuted)
             if section~='Gear' and y>=top and y+16<=bottom then
                 g.print(section=='Talents' and 'Left + / right - · Hover for details' or
-                    section=='Abilities' and 'Click slot, then choose an ability' or
+                    section=='Abilities' and 'Available automatically from your build' or
                     section=='Gear' and 'Vanilla level 60 · Pre-raid gear' or 'Click a value to edit',24,y)
             end
             ui.resetFont()
@@ -269,11 +276,16 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                 end
                 y=y+32
                 local stats=spec.combat_stats
-                local power=spec.class=='frost_mage' and stats.frost_power or stats.shadow_power
+                local passive=demonPassives.describe(spec)
+                local power=(spec.class=='frost_mage' and stats.frost_power or stats.shadow_power)+passive.power
+                local demonology=spec.trees and spec.trees.Demonology or {}
+                local felVitality=demonology['105903'] or demonology[105903] or 0
+                local maxMana=races.maxMana(spec.race,stats.max_mana)*(spec.class=='warlock' and (1+0.05*felVitality) or 1)
                 local summary={
-                    string.format('HP %d   MP %d   SP %d',stats.max_health,races.maxMana(spec.race,stats.max_mana),power),
+                    string.format('HP %.0f   MP %.0f   SP %.0f',maximumHealth(spec),maxMana,power),
                     string.format('Hit %.1f%%   Crit %.2f%%',stats.spell_hit_chance*100,math.min(1,stats.spell_crit_chance+races.critBonus(spec.race or 'human'))*100),
                 }
+                if passive.mastery then summary[#summary+1]=passive.mastery end
                 for _,line in ipairs(summary) do
                     if y>=top and y+16<=bottom then ui.setFont('small');g.setColor(ui.colors.textMuted);g.print(line,24,y);ui.resetFont() end
                     y=y+18
@@ -333,36 +345,16 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                 local columns=5
                 local cell=(left-24)/columns
                 local size=math.min(44,cell-6)
-                local slotCount=#spec.action_slots
-                for slot=1,slotCount do
-                    local current=spec.action_slots[slot] or ''
-                    local tx,ty=24+((slot-1)%columns)*cell,y+math.floor((slot-1)/columns)*(size+16)
-                    if ty>=top and ty+size<=bottom then
-                        tile(tx,ty,size,actions.icons[current],current=='' and '+' or current,tostring(slot),slot==loadoutSlot or current~='',
-                            'Slot '..slot..': '..(current=='' and 'Empty' or abilityDetail(current))..
-                            ((slot==1 or slot==slotCount) and '\nAlways available' or '\nClick to replace · Right click to clear'),function(b)
-                                if slot==1 or slot==slotCount then return end
-                                if b==2 then edit(function() editor.setActionSlot(slot,'') end)()
-                                else loadoutSlot=slot end
-                            end)
-                        if slot==loadoutSlot then
-                            g.setColor(1,0.83,0.35,1); g.setLineWidth(2)
-                            g.rectangle('line',tx-1,ty-1,size+2,size+2,4)
-                        end
-                    end
-                end
-                y=y+math.ceil(slotCount/columns)*(size+16)+12
-                g.setColor(ui.colors.primary); g.print('Choose for slot '..loadoutSlot,24,y); y=y+28
-                local available=editor.getAvailableActions()
+                local available=spec.action_loadout
                 for idx,name in ipairs(available) do
                     local tx,ty=24+((idx-1)%columns)*cell,y+math.floor((idx-1)/columns)*(size+16)
                     if ty>=top and ty+size<=bottom then
-                        tile(tx,ty,size,actions.icons[name],name=='' and '×' or name,'',name~='',
-                            name=='' and 'Clear selected slot' or abilityDetail(name)..'\nAdd to slot '..loadoutSlot,
-                            edit(function() editor.setActionSlot(loadoutSlot,name) end))
+                        tile(tx,ty,size,actions.icons[name],name,'',true,
+                            abilityDetail(name)..'\nAutomatically available from this build',function() end)
                     end
                 end
                 y=y+math.ceil(#available/columns)*(size+16)
+
             end
             y=y+12
         end
@@ -471,7 +463,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             end
             f:write(json.encode(drafts[i])); f:close()
             launch.temporary_specs[#launch.temporary_specs+1]=path
-            launch['hp_'..side]=drafts[i].combat_stats.max_health
+            launch['hp_'..side]=maximumHealth(drafts[i])
             launch['spec_'..side..'_obj']=clone(drafts[i])
             launch['spec_'..side..'_obj'].filename=path
             launch['spec_'..side]=drafts[i].class
@@ -605,13 +597,17 @@ function workspace.preview()
     local cfg=generator.getConfig()
     for i,side in ipairs({'a','b'}) do
         local spec=drafts[i]
-        meta['max_health_'..side]=spec.combat_stats.max_health
-        meta['max_mana_'..side]=races.maxMana(spec.race,spec.combat_stats.max_mana)
+        meta['max_health_'..side]=maximumHealth(spec)
+        local t = spec.trees and spec.trees.Demonology or {}
+        local felVitality = spec.class=='warlock' and (t['105903'] or t[105903] or 0) or 0
+        local maxMana = races.maxMana(spec.race,spec.combat_stats.max_mana)*(1+0.05*felVitality)
+        meta['max_mana_'..side]=maxMana
+        meta['action_loadout_'..side]=spec.action_loadout
         meta['race_'..side]=spec.race or 'human'
         meta['spec_'..side]=spec.class
         meta['name_'..side]=spec.name or spec.class
         frame[2+i]=positions[i].x; frame[48+i]=positions[i].y
-        frame[4+i]=spec.combat_stats.max_health; frame[6+i]=races.maxMana(spec.race,spec.combat_stats.max_mana or 1000)
+        frame[4+i]=maximumHealth(spec); frame[6+i]=maxMana
         if spec.class=='warlock' then
             local t = spec.trees and spec.trees.Demonology or {}
             local sl = t['105892'] or t[105892] or 0
@@ -619,6 +615,9 @@ function workspace.preview()
             local sacPetKind = kinds[spec.sacrifice_pet] or 0
             meta['warlock_talents_'..side] = {
                 soul_link = sl,
+                fel_vitality = felVitality,
+                demonic_knowledge = t['105893'] or t[105893] or 0,
+                master_demonologist = t['105891'] or t[105891] or 0,
                 demonic_sacrifice = ds,
                 demonic_sacrifice_pet = sacPetKind,
             }
@@ -626,7 +625,7 @@ function workspace.preview()
         local kind=spec.class=='warlock' and kinds[spec.pet] or nil
         if kind then
             local idx=83+(i-1)*5
-            frame[idx]=kind; frame[idx+1]=hp[kind]
+            frame[idx]=kind; frame[idx+1]=hp[kind]*(1+0.05*felVitality)
             frame[idx+2]=positions[i].x; frame[idx+3]=positions[i].y+1.5
         end
     end

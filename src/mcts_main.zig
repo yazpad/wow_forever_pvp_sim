@@ -80,6 +80,8 @@ const Options = struct {
     y_a: ?f32 = null,
     x_b: ?f32 = null,
     y_b: ?f32 = null,
+    hp_a_set: bool = false,
+    hp_b_set: bool = false,
     hp_a: f32 = 2000,
     hp_b: f32 = 2000,
     stop_file: ?[]const u8 = null,
@@ -126,7 +128,13 @@ pub fn main() !void {
             const seconds = try std.fmt.parseFloat(f32, value);
             if (!std.math.isFinite(seconds) or seconds <= 0 or seconds > 600) return error.InvalidDuration;
             o.config.max_ticks = @intFromFloat(seconds * 100);
-        } else if (std.mem.eql(u8, arg, "--ms")) o.config.milliseconds = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--algorithm")) o.config.algorithm = std.meta.stringToEnum(mcts.Algorithm, value) orelse return error.UnknownAlgorithm else if (std.mem.eql(u8, arg, "--evaluator")) o.config.evaluator = std.meta.stringToEnum(mcts.EvaluatorType, value) orelse return error.UnknownEvaluator else if (std.mem.eql(u8, arg, "--boundary")) o.config.boundary = std.meta.stringToEnum(mcts.BoundaryMode, value) orelse return error.UnknownBoundary else if (std.mem.eql(u8, arg, "--c-puct")) o.config.c_puct = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--truncation-ticks")) o.config.truncation_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--output")) o.output = value else if (std.mem.eql(u8, arg, "--rounds")) o.rounds = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--start-ticks")) o.start_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--distance")) o.distance = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--hp-a")) o.hp_a = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--hp-b")) o.hp_b = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--stop-file")) o.stop_file = value else return error.UnknownOption;
+        } else if (std.mem.eql(u8, arg, "--ms")) o.config.milliseconds = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--algorithm")) o.config.algorithm = std.meta.stringToEnum(mcts.Algorithm, value) orelse return error.UnknownAlgorithm else if (std.mem.eql(u8, arg, "--evaluator")) o.config.evaluator = std.meta.stringToEnum(mcts.EvaluatorType, value) orelse return error.UnknownEvaluator else if (std.mem.eql(u8, arg, "--boundary")) o.config.boundary = std.meta.stringToEnum(mcts.BoundaryMode, value) orelse return error.UnknownBoundary else if (std.mem.eql(u8, arg, "--c-puct")) o.config.c_puct = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--truncation-ticks")) o.config.truncation_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--output")) o.output = value else if (std.mem.eql(u8, arg, "--rounds")) o.rounds = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--start-ticks")) o.start_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--distance")) o.distance = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--hp-a")) {
+            o.hp_a = try std.fmt.parseFloat(f32, value);
+            o.hp_a_set = true;
+        } else if (std.mem.eql(u8, arg, "--hp-b")) {
+            o.hp_b = try std.fmt.parseFloat(f32, value);
+            o.hp_b_set = true;
+        } else if (std.mem.eql(u8, arg, "--stop-file")) o.stop_file = value else return error.UnknownOption;
     }
     if (!std.math.isFinite(o.distance) or o.distance < 0 or o.distance > 35 or !std.math.isFinite(o.hp_a) or !std.math.isFinite(o.hp_b) or o.hp_a <= 0 or o.hp_b <= 0 or o.hp_a > 100000 or o.hp_b > 100000 or o.rounds == 0 or o.start_ticks >= o.config.max_ticks) return error.InvalidStartingConditions;
 
@@ -171,6 +179,8 @@ pub fn main() !void {
     // Persist resolved defaults in search metadata so saved runs are explicit.
     o.pet_a = o.pet_a orelse (if (o.a == .warlock) pets.Kind.imp else pets.Kind.none);
     o.pet_b = o.pet_b orelse (if (o.b == .warlock) pets.Kind.imp else pets.Kind.none);
+    o.action_mask_a = spec_mod.filterActionCapabilities(o.a, o.action_mask_a, o.warlock_talents_a, o.priest_talents_a, o.race_a, o.pet_a.?);
+    o.action_mask_b = spec_mod.filterActionCapabilities(o.b, o.action_mask_b, o.warlock_talents_b, o.priest_talents_b, o.race_b, o.pet_b.?);
     if ((o.a != .warlock and o.pet_a.? != .none) or (o.b != .warlock and o.pet_b.? != .none)) return error.PetRequiresWarlock;
     // Resummoning the sacrificed demon cancels the effect even with Demonic Pact.
     if (o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_a.?))) == o.warlock_talents_a.demonic_sacrifice_pet) o.warlock_talents_a.demonic_sacrifice = 0;
@@ -203,8 +213,6 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     state.hp_b[0] = o.hp_b;
     const active_pet_a = if (a == .warlock and o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_sacrifice_pet != 0 and o.warlock_talents_a.demonic_pact == 0) pets.Kind.none else o.pet_a.?;
     const active_pet_b = if (b == .warlock and o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_sacrifice_pet != 0 and o.warlock_talents_b.demonic_pact == 0) pets.Kind.none else o.pet_b.?;
-    pets.set(state, true, 0, active_pet_a);
-    pets.set(state, false, 0, active_pet_b);
     const encoded_a = switch (a) {
         .warlock => o.warlock_talents_a.encode(),
         .priest => o.priest_talents_a.encode(),
@@ -217,14 +225,16 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     };
     d.setWarlockTalentRanksA(encoded_a);
     d.setWarlockTalentRanksB(encoded_b);
+    pets.set(state, true, 0, active_pet_a);
+    pets.set(state, false, 0, active_pet_b);
     d.setRace(true, o.race_a);
     d.setRace(false, o.race_b);
     try d.setCombatStats(true, o.combat_stats_a);
     try d.setCombatStats(false, o.combat_stats_b);
-    state.mana_a[0] = o.combat_stats_a.max_mana;
-    state.mana_b[0] = o.combat_stats_b.max_mana;
-    state.hp_a[0] = @min(state.hp_a[0], o.combat_stats_a.max_health);
-    state.hp_b[0] = @min(state.hp_b[0], o.combat_stats_b.max_health);
+    state.mana_a[0] = state.max_mana_a[0];
+    state.mana_b[0] = state.max_mana_b[0];
+    state.hp_a[0] = if (o.hp_a_set) @min(o.hp_a, state.max_health_a[0]) else state.max_health_a[0];
+    state.hp_b[0] = if (o.hp_b_set) @min(o.hp_b, state.max_health_b[0]) else state.max_health_b[0];
     d.setActionMaskA(o.action_mask_a);
     d.setActionMaskB(o.action_mask_b);
     var rng = std.Random.DefaultPrng.init(o.config.seed ^ 0xbadc0ffee);
@@ -281,10 +291,12 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     };
     var traj = try recorder.MatchTrajectory.init(allocator, display_a, display_b, 0, 0);
     defer traj.deinit();
-    traj.max_health_a = o.combat_stats_a.max_health;
-    traj.max_health_b = o.combat_stats_b.max_health;
-    traj.max_mana_a = o.combat_stats_a.max_mana;
-    traj.max_mana_b = o.combat_stats_b.max_mana;
+    traj.max_health_a = state.max_health_a[0];
+    traj.max_health_b = state.max_health_b[0];
+    traj.max_mana_a = state.max_mana_a[0];
+    traj.max_mana_b = state.max_mana_b[0];
+    traj.action_mask_a = o.action_mask_a;
+    traj.action_mask_b = o.action_mask_b;
     traj.spec_a = a;
     traj.race_a = o.race_a;
     traj.spec_b = b;

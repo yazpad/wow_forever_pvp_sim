@@ -453,3 +453,45 @@ Unknown details below are verification tasks, not permission to use Classic valu
   specs, simulator initialization and recorded replay values; document expected
   ranges and resolve discrepancies so each selected loadout produces plausible
   character stats.
+
+## 16. Automatic actions and available cooldowns
+
+- [x] Derive the supported action set from class baseline abilities, selected
+  talents, equipped items (including supported item actives), race, and active
+  pet. Recompute on build changes so users do not need to maintain action slots.
+  Talent unlocks and essential class abilities should be retained automatically;
+  Fear is a high-priority baseline Warlock action.
+- [x] Separate build availability from priority and temporary combat legality.
+  Use one capability definition for editor display, simulator action masks,
+  search choices, Fight snapshots, and replay metadata.
+- [x] Expand UI slots and runtime/search capacity as needed to retain every
+  supported available action initially. Use shared default priorities for display
+  and search ordering; avoid silently excluding actions and biasing build
+  comparisons. Optional advanced overrides can follow automatic defaults.
+- [ ] Introduce pruning only if search measurements justify it. If a hard limit
+  becomes necessary, retain reserved movement/cancel controls, essential class
+  actions, and selected talent unlocks/build-defining interactions first. Define
+  deterministic overflow priorities and visibly report excluded actions and why.
+- [x] Render unit-frame cooldown indicators from the build's action capabilities
+  saved at Fight start, with the same rules in setup and replay. A Shadow Priest
+  without Power Infusion must not show a PI cooldown. Keep indicators when an
+  available action is temporarily blocked by cooldown, mana, silence, or other
+  combat conditions; pet indicators should additionally reflect pet state.
+- [x] Cover talent, gear, race, and pet changes, capacity growth, and Fight/replay
+  round trips. Preserve compatibility with existing saved loadouts and recordings
+  using an explicit fallback when older data has no capability metadata.
+
+Implemented: the editor migrates old slot lists to automatic capabilities from the
+shared action catalog, recomputes on build changes, and displays a read-only ability
+grid. All currently supported actions fit; capacity follows catalog growth. Gear
+currently has no supported item-active actions, so gear changes only affect stats.
+No search pruning is introduced. Direct CLI legacy specs retain explicit loadouts;
+`automatic_actions: true` opts into derived actions. New Lua/JSON recordings save
+per-side action masks. Recordings without capability metadata explicitly retain
+historical cooldown indicators. Overhead HP/mana and unit frames share maximum-stat
+normalization, fixing the hardcoded 2000 HP / 1000 mana bars.
+
+Validation: automatic action/cooldown/vitals regressions, workspace checks at three
+sizes, racial/Priest/gear/passive checks, ReleaseFast build and tests, and recorded
+Priest fight capability round trips. Debug tests hit a Zig LLVM register-copy error;
+ReleaseFast tests pass.

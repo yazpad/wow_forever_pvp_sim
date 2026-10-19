@@ -13,8 +13,10 @@ it here. Last reviewed: 2026-10-16.
 3. [x] Implement Improved Shadow Bolt: landed-crit trigger, Shadow vulnerability,
    duration, charges, consumption and refresh behavior.
 4. [x] Implement Agonizing Flames: Searing Pain crit chance and Destruction damage.
-5. Implement passive owner/pet stat talents, starting with Demonic Embrace and
-   Fel Vitality, then Demonic Knowledge and Master Demonologist. Ensure maximum
+5. Continue passive owner/pet stat talents: Demonic Embrace is implemented and
+   Fel Vitality owner mana/pet health decoding is corrected. Demonic Knowledge
+   and Master Demonologist now use live pet state. Remaining pet spell and
+   pet-targeting extensions are tracked in WARLOCK_TODO.md. Ensure maximum
    HP/mana and pet-dependent effects agree between simulation and visualizer.
 
 Steps 2–5 are tracked in [WARLOCK_TODO.md](WARLOCK_TODO.md). This order prioritizes
@@ -38,7 +40,7 @@ Sacrifice effects. Talent selection in the editor does not guarantee a runtime
 effect: many talents remain missing or partially modeled. Consult the detailed
 Warlock checklist before relying on a build comparison.
 
-- Finish partial existing talent hooks: Cataclysm beyond Shadow Bolt, timed
+- Finish partial existing talent hooks: timed
   Shadowburn/Shadow and Flame behavior, and remaining pet utility effects.
 - Expand spells: curses, Wrack, Bane of Doom, Soul Fire, Drain Soul/Mana, armor
   buffs and Health Funnel. Life Tap and Curse of Weakness remain excluded.
@@ -70,3 +72,17 @@ verification tasks are in
   stats, including Pre-BiS totals, baseline assumptions, talent/buff effects and
   agreement between editor, simulator and replay. See
   [Visualizer section 15](VISUALIZER_TODO.md#15-gear-defaults-and-stat-audit).
+
+## Automatic action availability and cooldown display
+
+- [x] Derive actions automatically from class baseline abilities, talents, gear,
+  race, and active pet, replacing manual action-slot maintenance. Retain all
+  supported available actions initially; expand capacity as needed and use shared
+  priorities for display and search ordering. Fear should be a high-priority
+  baseline Warlock action. See [Visualizer section 16](VISUALIZER_TODO.md#16-automatic-actions-and-available-cooldowns).
+- [x] Show unit-frame cooldown indicators only for actions in the capabilities
+  saved at Fight start, consistently in setup and replay. A Priest without Power
+  Infusion must not show its cooldown. See section 16 for acceptance details.
+
+Overhead mana/HP bars now use the same stat maxima as unit frames; see Visualizer
+section 16 for implementation and compatibility details.

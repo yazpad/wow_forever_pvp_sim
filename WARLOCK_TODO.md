@@ -55,7 +55,7 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [x] 105923 Malediction: periodic Warlock damage bonus applies to all currently modeled periodic damage, including Drain Life and Siphon Life's transferred healing; add it to future periodic spells as they are implemented.
 - [ ] 105922 Soul Harvest: kill-triggered mana regeneration and casting regeneration; requires kill attribution and regen state.
 - [x] 105920 Improved Drains: rank-based Drain Life damage and healing are implemented; extend to Drain Soul and Wrack when those spells are added.
-- [x] 105919 Improved Bane of Agony: both ranks increase Agony damage by 5% per rank, matching the checked-in talent description.
+- [x] 105919 Improved Bane of Agony: both ranks increase Agony damage by 5% per rank, matching the checked-in talent description. The full rank is retained in the extended talent word for mirror, mixed-class, and cached search effects.
 - [x] 105918 Fel Concentration: 23%/47%/70% chance to resist direct-damage pushback while channeling modeled Drain Life. Extend eligibility to Drain Mana, Drain Soul, and Wrack when implemented; periodic damage never causes pushback.
 - [ ] 105916 Amplify Curse: empower next eligible curse.
 - [x] 105917 Pandemic: rank-based 33%/67%/100% increase to the critical damage bonus applies to modeled Affliction periodic/channel ticks; extend to future eligible spells when added.
@@ -69,10 +69,10 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 
 - [ ] 105905 Improved Health Funnel: increase healing, reduce health cost/threat, and remove pet-health restriction.
 - [x] 105908 Improved Imp: rank-scaled Imp Firebolt damage (+10% per rank) is applied; the Fire Shield effect remains unsupported until Fire Shield exists.
-- [ ] 105907 Demonic Embrace: increase Warlock stamina/health.
+- [x] 105907 Demonic Embrace: +3% total stamina per rank, with the resulting health applied to both sides, mixed combat, cached search, editor previews, Fight starting health, and replay maxima. Uses explicit pre-talent stamina and the compact 10 HP per point model; legacy gear saves recover stamina in the editor. Verified base/racial stamina and authentic rounding remain stat accuracy work.
 - [ ] 105902 Demonic Aegis: increase Demon Skin/Demon Armor effects.
 - [ ] 105904 Improved Voidwalker: increase Voidwalker ability effects.
-- [ ] 105903 Fel Vitality: increase pet health/mana and Warlock maximum mana.
+- [ ] 105903 Fel Vitality: Warlock maximum mana and pet maximum health now increase by 5% per rank (up to 15%). Pet mana is not modeled; add pet mana and apply this talent's pet-mana bonus when that resource is introduced.
 - [ ] 105899 Demonic Energies: heal pet from spell damage and transfer Life Tap mana to pet.
 - [ ] 105901 Improved Sayaad: Seduction duration now increases by 10% per rank before diminishing returns in mirror and mixed combat. Lash of Pain, Soothing Kiss, and Lesser Invisibility hooks remain pending those abilities.
 - [x] 105900 Demonic Sacrifice: select a sacrifice pet per spec and apply its checked-in Forever effect (Imp: +15% Shadow; Voidwalker: +2% max Mana / 4 sec; Succubus/Incubus: +15% Fire; Felhunter: +3% max Health / 4 sec). With Demonic Pact, select a separate active demon. Mid-fight summon cancellation and pet replacement remain unmodeled.
@@ -82,8 +82,8 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [ ] 105896 Demonic Brand: Searing Pain brand and empowered pet attacks.
 - [ ] 105894 Improved Felhunter: Spell Lock cooldown now decreases by 2 seconds per rank (24/22/20/18 seconds) in mirror and mixed combat. Tainted Blood, Devour Magic, and Paranoia hooks remain pending those abilities.
 - [x] 105892 Soul Link: redirect 30% of incoming damage to an active pet and increase Warlock and pet damage by 3%; pet damage recipient, overkill, and simultaneous death behavior are implemented.
-- [ ] 105893 Demonic Knowledge: add pet-dependent spell damage.
-- [ ] 105891 Master Demonologist: apply pet-type-specific owner and pet effects.
+- [x] 105893 Demonic Knowledge: the checked-in Forever talent grants owner and pet spell damage equal to 33%/67%/100% of owner level while a living demon is active. Owner school spell power and Imp Firebolt use this bonus; melee pets do not. Recomputed from live state in scalar setup, mirror/mixed SIMD and cached search; pet death removes the bonus. The Imp uses the compact 2/3.5 Firebolt spell-power coefficient.
+- [x] 105891 Master Demonologist: living Imp grants +2% Fire damage/rank to owner and pet Firebolt; living Succubus grants +2% Shadow damage/rank to owner (pet Shadow spells are not yet modeled); living Voidwalker reduces physical damage by 2%/rank; living Felhunter reduces magic damage by 2%/rank. Physical pet melee and magical owner/Imp attacks use distinct mitigation. Bonuses disappear on pet death. Pet-targeted attacks are not supported; Soul Link transfers already-mitigated damage without a second reduction. Setup and replay show active badges.
 - [ ] 105890 Demonic Pact: initial spec setup permits a separate active pet alongside the selected sacrifice effect. Retention/cancellation across mid-fight summons remains pending summon actions.
 
 ### Destruction
@@ -91,7 +91,7 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [ ] 105881 Destructive Reach: increase damaging spell range.
 - [x] 105889 Improved Shadow Bolt: landed Shadow Bolt crits apply a 12-second debuff increasing Shadow damage taken by 4% per rank (up to 20%), with 4 charges consumed by incoming Shadow damage hits/ticks, refreshing on new landed SB crits. debuff duration, stack count, and timers are recorded in telemetry and displayed in unit frames and overhead nameplates.
 - [x] 105885 Molten Skin: reduces all incoming player damage by 2% per rank, including spell, drain, and pet damage.
-- [x] 105887 Cataclysm: reduces Shadow Bolt mana cost by 3%/rank (10% at rank 3); extend the cost reduction to other eligible modeled Destruction spells; the current hook only affects Shadow Bolt.
+- [x] 105887 Cataclysm: reduces mana cost by 3%/6%/10% for Shadow Bolt, Shadowburn, Searing Pain, Incinerate, Immolate, and Conflagrate. Action availability uses the same discounted costs.
 - [x] 105886 Aftermath: +10% Immolate initial damage per rank and 20% Conflagrate daze chance per rank (50% movement slow for 5 seconds).
 - [x] 105883 Ruin: +20% critical damage bonus per rank for currently modeled direct Destruction spells (1.5x base crit through 2x at rank 5). Extend to future eligible spells as added.
 - [x] 105884 Shadowburn: talent unlock gates the action; modeled direct hit, range, mana cost, and cooldown.
@@ -139,6 +139,11 @@ progress alongside talent work.
 
 ## Action and spec configuration
 
+- [x] Replace manual action-slot maintenance with automatically derived class,
+  talent, gear, race, and pet capabilities. Retain all supported available actions
+  initially and prioritize Fear among baseline Warlock actions. Shared capacity,
+  ordering, overflow, and cooldown-display requirements are tracked in
+  [Visualizer section 16](VISUALIZER_TODO.md#16-automatic-actions-and-available-cooldowns).
 - [x] Let the spec editor track a spec's available action capabilities from the supported action catalog and save/load that list; keep movement intent (advance, stand, kite) separate from action slots.
 - [x] Apply each saved action loadout to runtime action masks and search choices; always retain the reserved Idle/Maneuver and Cancel Cast actions.
 - [x] Generate action IDs, counts, and maximum choice capacity from the shared catalog for specs, mixed-class simulation, and search. The MCTS choice buffer scales to three movement variants per action.
