@@ -23,6 +23,11 @@ pub const ArenaOptions = struct {
     convergence_threshold: f32 = 0.02,
     output_weights: []const u8 = "matches/neuro_champion",
     output_replay: ?[]const u8 = null,
+    /// When > 0, skip training and bulk-evaluate `--policy-a` vs `--policy-b` over this many fights.
+    evaluate: usize = 0,
+    /// Summary JSON path for `--evaluate` (default: `<output-weights>_eval.json`).
+    output_eval: ?[]const u8 = null,
+    jitter: neuro_evolution.Jitter = .{},
 };
 
 pub fn main() !void {
@@ -34,12 +39,21 @@ pub fn main() !void {
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help")) {
             try std.io.getStdOut().writeAll(
-                "neuro_arena [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--fights-per-epoch 100000] [--epochs 10] [--population-size 128] [--workers 8] [--convergence-threshold 0.02] [--output-replay matches/neuro_custom.lua] [--output-weights matches/neuro_champion]\n",
+                "neuro_arena [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--fights-per-epoch 100000] [--epochs 10] [--population-size 128] [--workers 8] [--convergence-threshold 0.02] [--output-replay matches/neuro_custom.lua] [--output-weights matches/neuro_champion]\n" ++
+                    "Bulk evaluation (no training): neuro_arena --evaluate 1000 --policy-a A.nepl --policy-b B.nepl [--seed N] [--jitter-start-lag SEC] [--jitter-pos YARDS] [--output-eval matches/neuro_champion_eval.json]\n",
             );
             return;
         }
         const value = args.next() orelse return error.MissingValue;
-        if (std.mem.eql(u8, arg, "--fights-per-epoch")) {
+        if (std.mem.eql(u8, arg, "--evaluate")) {
+            opts.evaluate = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.eql(u8, arg, "--output-eval")) {
+            opts.output_eval = value;
+        } else if (std.mem.eql(u8, arg, "--jitter-start-lag")) {
+            opts.jitter.start_lag = try std.fmt.parseFloat(f32, value);
+        } else if (std.mem.eql(u8, arg, "--jitter-pos")) {
+            opts.jitter.pos = try std.fmt.parseFloat(f32, value);
+        } else if (std.mem.eql(u8, arg, "--fights-per-epoch")) {
             opts.fights_per_epoch = try std.fmt.parseInt(usize, value, 10);
         } else if (std.mem.eql(u8, arg, "--epochs")) {
             opts.epochs = try std.fmt.parseInt(usize, value, 10);
@@ -60,7 +74,10 @@ pub fn main() !void {
     try mcts_main.finalize(&opts.base);
     switch (opts.base.a) {
         inline else => |spec_a| switch (opts.base.b) {
-            inline else => |spec_b| try runArena(spec_a, spec_b, opts),
+            inline else => |spec_b| if (opts.evaluate > 0)
+                try runEvaluate(spec_a, spec_b, opts)
+            else
+                try runArena(spec_a, spec_b, opts),
         },
     }
 }
@@ -400,4 +417,183 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     replay_opts.policy_b = path_b;
     if (opts.output_replay) |rep| replay_opts.output = rep;
     try mcts_main.run(a, b, replay_opts);
+}
+
+// ---------------------------------------------------------------------------
+// Bulk evaluation: N fights between two frozen policies (no training).
+// ---------------------------------------------------------------------------
+
+fn EvalContext(comptime a: Spec, comptime b: Spec) type {
+    return struct {
+        const Self = @This();
+        duel: sim.Duel(a, b),
+        base_snapshot: sim.Snapshot,
+        max_ticks: u32,
+        next_batch: *std.atomic.Value(usize),
+        num_batches: usize,
+        policy_a: *const Policy,
+        policy_b: *const Policy,
+        seed: u64,
+        jitter: neuro_evolution.Jitter,
+        outcomes: []neuro_evolution.LaneOutcome,
+
+        pub fn run(self: *Self) void {
+            while (true) {
+                const idx = self.next_batch.fetchAdd(1, .monotonic);
+                if (idx >= self.num_batches) break;
+                const slot: *[16]neuro_evolution.LaneOutcome = self.outcomes[idx * 16 ..][0..16];
+                _ = neuro_evolution.evaluateBatch16Ex(
+                    a,
+                    b,
+                    &self.duel,
+                    self.base_snapshot,
+                    self.policy_a,
+                    self.policy_b,
+                    true,
+                    self.max_ticks,
+                    self.seed +% (@as(u64, idx) +% 1) *% 0x9e3779b97f4a7c15,
+                    self.jitter,
+                    slot,
+                );
+            }
+        }
+    };
+}
+
+fn runEvaluate(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
+    const allocator = std.heap.page_allocator;
+    const path_a = opts.base.policy_a orelse return error.MissingPolicyA;
+    const path_b = opts.base.policy_b orelse return error.MissingPolicyB;
+    const policy_a = try Policy.loadFile(path_a);
+    const policy_b = try Policy.loadFile(path_b);
+
+    const fights = opts.evaluate;
+    const num_batches = (fights + 15) / 16;
+    const workers = @max(1, @min(opts.base.config.workers, num_batches));
+    const max_ticks = opts.base.config.max_ticks;
+
+    var base_duel = try initBaseDuel(a, b, allocator, opts.base);
+    defer base_duel.deinit();
+    const base_snapshot = base_duel.snapshot(0);
+
+    const outcomes = try allocator.alloc(neuro_evolution.LaneOutcome, num_batches * 16);
+    defer allocator.free(outcomes);
+
+    var next_batch = std.atomic.Value(usize).init(0);
+    const ECtx = EvalContext(a, b);
+    const contexts = try allocator.alloc(ECtx, workers);
+    defer allocator.free(contexts);
+    var initialized: usize = 0;
+    defer for (contexts[0..initialized]) |*c| c.duel.deinit();
+    for (contexts) |*c| {
+        c.* = .{
+            .duel = try initBaseDuel(a, b, allocator, opts.base),
+            .base_snapshot = base_snapshot,
+            .max_ticks = max_ticks,
+            .next_batch = &next_batch,
+            .num_batches = num_batches,
+            .policy_a = &policy_a,
+            .policy_b = &policy_b,
+            .seed = opts.base.config.seed ^ 0xe7a1_0000_0000,
+            .jitter = opts.jitter,
+            .outcomes = outcomes,
+        };
+        initialized += 1;
+    }
+
+    const t0 = std.time.nanoTimestamp();
+    const threads = try allocator.alloc(std.Thread, workers - 1);
+    defer allocator.free(threads);
+    for (1..workers) |w| threads[w - 1] = try std.Thread.spawn(.{}, ECtx.run, .{&contexts[w]});
+    contexts[0].run();
+    for (threads) |t| t.join();
+    const seconds = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000_000.0;
+
+    // Aggregate exactly `fights` outcomes (the last batch may overshoot).
+    const used = outcomes[0..fights];
+    var wins_a: u64 = 0;
+    var wins_b: u64 = 0;
+    var draws: u64 = 0;
+    var timeouts: u64 = 0;
+    var hp_sum_a_wins: f64 = 0;
+    var hp_sum_b_wins: f64 = 0;
+    var dur_sum_a_wins: f64 = 0;
+    var dur_sum_b_wins: f64 = 0;
+    const durations = try allocator.alloc(f32, fights);
+    defer allocator.free(durations);
+    var dur_sum: f64 = 0;
+    for (used, 0..) |o, i| {
+        const dur = @as(f32, @floatFromInt(o.finish_tick)) * 0.01;
+        durations[i] = dur;
+        dur_sum += dur;
+        if (o.finish_tick >= max_ticks) timeouts += 1;
+        if (o.reward_a > 0) {
+            wins_a += 1;
+            hp_sum_a_wins += o.hp_ratio_a;
+            dur_sum_a_wins += dur;
+        } else if (o.reward_a < 0) {
+            wins_b += 1;
+            hp_sum_b_wins += o.hp_ratio_b;
+            dur_sum_b_wins += dur;
+        } else draws += 1;
+    }
+    std.mem.sort(f32, durations, {}, std.sort.asc(f32));
+
+    const n = @as(f64, @floatFromInt(fights));
+    const win_rate_a = (@as(f64, @floatFromInt(wins_a)) + 0.5 * @as(f64, @floatFromInt(draws))) / n;
+    const ci95 = 1.96 * @sqrt(@max(0.0, win_rate_a * (1.0 - win_rate_a)) / n);
+    const safeDiv = struct {
+        fn f(num: f64, den: u64) f64 {
+            return if (den == 0) 0.0 else num / @as(f64, @floatFromInt(den));
+        }
+    }.f;
+    const summary = .{
+        .fights = fights,
+        .wins_a = wins_a,
+        .wins_b = wins_b,
+        .draws = draws,
+        .timeouts = timeouts,
+        .win_rate_a = win_rate_a,
+        .win_rate_b = 1.0 - win_rate_a,
+        .ci95 = ci95,
+        .avg_fight_s = dur_sum / n,
+        .min_fight_s = durations[0],
+        .median_fight_s = durations[fights / 2],
+        .max_fight_s = durations[fights - 1],
+        .avg_fight_s_a_wins = safeDiv(dur_sum_a_wins, wins_a),
+        .avg_fight_s_b_wins = safeDiv(dur_sum_b_wins, wins_b),
+        .avg_hp_left_a_wins = safeDiv(hp_sum_a_wins, wins_a),
+        .avg_hp_left_b_wins = safeDiv(hp_sum_b_wins, wins_b),
+        .jitter_start_lag = opts.jitter.start_lag,
+        .jitter_pos = opts.jitter.pos,
+        .seed = opts.base.config.seed,
+        .seconds = seconds,
+        .policy_a = path_a,
+        .policy_b = path_b,
+    };
+
+    const default_eval = try std.fmt.allocPrint(allocator, "{s}_eval.json", .{opts.output_weights});
+    defer allocator.free(default_eval);
+    const eval_path = opts.output_eval orelse default_eval;
+    if (std.fs.path.dirname(eval_path)) |dir| try std.fs.cwd().makePath(dir);
+    {
+        const f = try std.fs.cwd().createFile(eval_path, .{});
+        defer f.close();
+        var bw = std.io.bufferedWriter(f.writer());
+        try std.json.stringify(summary, .{}, bw.writer());
+        try bw.writer().writeAll("\n");
+        try bw.flush();
+    }
+
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print(
+        "NEURO_EVAL fights={d} wins_a={d} wins_b={d} draws={d} timeouts={d} win_rate_a={d:.4} ci95={d:.4} avg_fight_s={d:.2} min_fight_s={d:.2} median_fight_s={d:.2} max_fight_s={d:.2} avg_fight_s_a_wins={d:.2} avg_fight_s_b_wins={d:.2} avg_hp_left_a_wins={d:.4} avg_hp_left_b_wins={d:.4} seconds={d:.3} summary={s}\n",
+        .{
+            summary.fights,              summary.wins_a,             summary.wins_b,             summary.draws,
+            summary.timeouts,            summary.win_rate_a,         summary.ci95,               summary.avg_fight_s,
+            summary.min_fight_s,         summary.median_fight_s,     summary.max_fight_s,        summary.avg_fight_s_a_wins,
+            summary.avg_fight_s_b_wins,  summary.avg_hp_left_a_wins, summary.avg_hp_left_b_wins, summary.seconds,
+            eval_path,
+        },
+    );
 }

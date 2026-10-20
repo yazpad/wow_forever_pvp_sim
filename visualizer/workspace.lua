@@ -487,24 +487,52 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                 convText,nt.epoch or 0,nt.max_epochs or cfg.epochs,nt.gens or 0,
                 (nt.win_rate_a or 0.5)*100,(nt.fights_sec or 0)/1000)
             sy=settingText(sy,info)
-            if nt.policy_a and nt.policy_b and not generator.isActive() then
-                settingButton(sy,'Champ A vs MCTS B',function()
-                    local launch=prepareLaunchConfig({policy_a=nt.policy_a,output='matches/neuro_vs_mcts.lua'})
-                    if not launch then return end
-                    local ok,err=generator.startFight(launch)
-                    if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
-                    message=ok and '' or tostring(err)
-                end)
-                sy=sy+32
-                settingButton(sy,'MCTS A vs Champ B',function()
-                    local launch=prepareLaunchConfig({policy_b=nt.policy_b,output='matches/mcts_vs_neuro.lua'})
-                    if not launch then return end
-                    local ok,err=generator.startFight(launch)
-                    if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
-                    message=ok and '' or tostring(err)
-                end)
-                sy=sy+34
-            end
+        end
+        local function launchWith(extra,start)
+            local launch=prepareLaunchConfig(extra)
+            if not launch then return end
+            local ok,err=start(launch)
+            if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
+            message=ok and '' or tostring(err)
+        end
+        if nt and nt.policy_a and nt.policy_b and not generator.isActive() then
+            sy=settingText(sy,'Champion models (overwritten each league run):\n'..nt.policy_a..'\n'..nt.policy_b)
+            settingButton(sy,'Sim 1 Champ vs Champ + Replay',function()
+                launchWith({policy_a=nt.policy_a,policy_b=nt.policy_b,seed=math.random(1,2^31-1),
+                    output='matches/neuro_champ_vs_champ.lua'},generator.startFight)
+            end)
+            sy=sy+40
+            dropdown('Bulk fights','bulk_fights',{100,1000,10000,100000})
+            dropdown('Start lag jitter (s)','jitter_start_lag',{0,0.25,0.5,1.0},function(v)
+                return v==0 and 'Off' or string.format('0 – %.2f s',v)
+            end)
+            dropdown('Position jitter (yd)','jitter_pos',{0,1,2.5,5},function(v)
+                return v==0 and 'Off' or string.format('± %.1f yd',v)
+            end)
+            settingButton(sy,string.format('Simulate %d Champ vs Champ',cfg.bulk_fights or 1000),function()
+                launchWith(nil,generator.startBulkEval)
+            end,true)
+            sy=sy+34
+        end
+        local be=generator.getBulkEval and generator.getBulkEval() or nil
+        if be then
+            local nameA=(drafts[1] and drafts[1].name) or 'A'
+            local nameB=(drafts[2] and drafts[2].name) or 'B'
+            sy=settingText(sy,string.format(
+                'Bulk result · %d fights in %.2fs\n'..
+                'A (%s) wins: %d (%.1f%% ± %.1f%%)\n'..
+                'B (%s) wins: %d (%.1f%%)\n'..
+                'Draws: %d · Timeouts: %d\n'..
+                'Fight length: avg %.1fs · median %.1fs · %.1f–%.1fs\n'..
+                'A wins: avg %.1fs, %.0f%% HP left\n'..
+                'B wins: avg %.1fs, %.0f%% HP left',
+                be.fights or 0,be.seconds or 0,
+                nameA,be.wins_a or 0,(be.win_rate_a or 0)*100,(be.ci95 or 0)*100,
+                nameB,be.wins_b or 0,(1-(be.win_rate_a or 0))*100,
+                be.draws or 0,be.timeouts or 0,
+                be.avg_fight_s or 0,be.median_fight_s or 0,be.min_fight_s or 0,be.max_fight_s or 0,
+                be.avg_fight_s_a_wins or 0,(be.avg_hp_left_a_wins or 0)*100,
+                be.avg_fight_s_b_wins or 0,(be.avg_hp_left_b_wins or 0)*100))
         end
     end
     local function openReplay(path)

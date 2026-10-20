@@ -193,6 +193,54 @@ pub const BatchResult = struct {
     matches: u64 = 0,
 };
 
+/// Per-fight randomization of initial conditions (never touches stats).
+pub const Jitter = struct {
+    /// Max extra opening delay (seconds) added independently to each side's GCD / reaction timer.
+    start_lag: f32 = 0.0,
+    /// Max offset (yards) added independently to each fighter's x/y start position (pets follow).
+    pos: f32 = 0.0,
+};
+
+/// Raw outcome of a single fight lane, used by bulk evaluation.
+pub const LaneOutcome = struct {
+    /// +1 = A won, -1 = B won, 0 = draw/timeout.
+    reward_a: f32 = 0.0,
+    finish_tick: u32 = 0,
+    hp_ratio_a: f32 = 0.0,
+    hp_ratio_b: f32 = 0.0,
+};
+
+fn applyJitter(state: anytype, jitter: Jitter, rng: std.Random) void {
+    if (jitter.start_lag <= 0.0 and jitter.pos <= 0.0) return;
+    for (0..16) |lane| {
+        if (jitter.start_lag > 0.0) {
+            const lag_a = rng.float(f32) * jitter.start_lag;
+            const lag_b = rng.float(f32) * jitter.start_lag;
+            state.gcd_a[lane] += lag_a;
+            state.react_timer_a[lane] += lag_a;
+            state.gcd_b[lane] += lag_b;
+            state.react_timer_b[lane] += lag_b;
+        }
+        if (jitter.pos > 0.0) {
+            const dxa = (rng.float(f32) * 2.0 - 1.0) * jitter.pos;
+            const dya = (rng.float(f32) * 2.0 - 1.0) * jitter.pos;
+            const dxb = (rng.float(f32) * 2.0 - 1.0) * jitter.pos;
+            const dyb = (rng.float(f32) * 2.0 - 1.0) * jitter.pos;
+            state.pos_x_a[lane] += dxa;
+            state.pos_y_a[lane] += dya;
+            state.pos_x_b[lane] += dxb;
+            state.pos_y_b[lane] += dyb;
+            state.pet_x_a[lane] += dxa;
+            state.pet_y_a[lane] += dya;
+            state.pet_x_b[lane] += dxb;
+            state.pet_y_b[lane] += dyb;
+            const dx = state.pos_x_b[lane] - state.pos_x_a[lane];
+            const dy = state.pos_y_b[lane] - state.pos_y_a[lane];
+            state.distance[lane] = @sqrt(dx * dx + dy * dy);
+        }
+    }
+}
+
 /// Evaluates 16 simultaneous fights in `duel` between `policy_a` and `policy_b`.
 /// Returns stats from the perspective of `perspective_a` (true = Side A, false = Side B).
 pub fn evaluateBatch16(
@@ -206,11 +254,30 @@ pub fn evaluateBatch16(
     max_ticks: u32,
     seed: u64,
 ) BatchResult {
+    return evaluateBatch16Ex(a, b, duel, base_snapshot, policy_a, policy_b, perspective_a, max_ticks, seed, .{}, null);
+}
+
+/// Same as `evaluateBatch16`, with optional initial-condition jitter and per-lane outcome output.
+pub fn evaluateBatch16Ex(
+    comptime a: Spec,
+    comptime b: Spec,
+    duel: *sim.Duel(a, b),
+    base_snapshot: sim.Snapshot,
+    policy_a: *const Policy,
+    policy_b: *const Policy,
+    perspective_a: bool,
+    max_ticks: u32,
+    seed: u64,
+    jitter: Jitter,
+    lanes_out: ?*[16]LaneOutcome,
+) BatchResult {
     duel.restoreAll(base_snapshot);
     const state = duel.arena.combat();
 
     var prng = std.Random.DefaultPrng.init(seed);
     const rng = prng.random();
+
+    applyJitter(state, jitter, rng);
 
     for (0..16) |lane| {
         const s1 = rng.int(u32) | 1;
@@ -277,6 +344,12 @@ pub fn evaluateBatch16(
         const hp_ratio_b = @max(0.0, state.hp_b[lane]) / @max(1.0, state.max_health_b[lane]);
         const mana_ratio_a = @max(0.0, state.mana_a[lane]) / @max(1.0, state.max_mana_a[lane]);
         const mana_ratio_b = @max(0.0, state.mana_b[lane]) / @max(1.0, state.max_mana_b[lane]);
+        if (lanes_out) |out| out[lane] = .{
+            .reward_a = rw_a,
+            .finish_tick = finish_tick[lane],
+            .hp_ratio_a = hp_ratio_a,
+            .hp_ratio_b = hp_ratio_b,
+        };
 
         // Reward winning decisively (remaining HP/mana + faster kills when winning, surviving longer when losing)
         const time_bonus = (1.0 - @as(f32, @floatFromInt(finish_tick[lane])) / @as(f32, @floatFromInt(@max(1, max_ticks)))) * 0.15;

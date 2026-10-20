@@ -57,6 +57,10 @@ local config = {
     epochs = 10,
     population_size = 64,
     convergence_threshold = 0,
+    -- Bulk champion-vs-champion evaluation
+    bulk_fights = 1000,
+    jitter_start_lag = 0,
+    jitter_pos = 0,
 }
 
 local neuroTelemetry = {
@@ -73,6 +77,29 @@ local neuroTelemetry = {
     policy_a = nil,
     policy_b = nil,
 }
+
+-- Default on-disk location of league champions (neuro_arena overwrites these every run).
+local CHAMPION_PREFIX = "matches/neuro_champion"
+local bulkEval = nil -- last NEURO_EVAL summary table
+
+local function fileExists(path)
+    local f = path and io.open(path, "rb")
+    if f then f:close(); return true end
+    return false
+end
+
+-- Pick up champions saved by a previous session so the buttons work after a restart.
+do
+    local pa, pb = CHAMPION_PREFIX .. "_a.nepl", CHAMPION_PREFIX .. "_b.nepl"
+    if fileExists(pa) and fileExists(pb) then
+        neuroTelemetry.policy_a = pa
+        neuroTelemetry.policy_b = pb
+    end
+end
+
+function match_generator.getBulkEval()
+    return bulkEval
+end
 
 local buttons = {}
 
@@ -122,13 +149,19 @@ function match_generator.update(dt)
                 neuroTelemetry.seconds = msg.seconds or 0
                 neuroTelemetry.policy_a = msg.policy_a
                 neuroTelemetry.policy_b = msg.policy_b
+                bulkEval = nil -- models changed; old bulk stats are stale
                 progress = 1.0
+            elseif msg.kind == "bulk_eval" then
+                bulkEval = msg.summary
             else
                 active = false
                 channel = nil
                 thread = nil
                 if msg.success then
-                    if msg.is_neuro then
+                    if msg.is_bulk then
+                        status = bulkEval and string.format("Simulated %d fights (%.1f%% A)",
+                            bulkEval.fights or 0, (bulkEval.win_rate_a or 0) * 100) or "Simulated"
+                    elseif msg.is_neuro then
                         status = string.format("Evolved (%d ep, %.0f%% A)",
                             neuroTelemetry.epoch, (neuroTelemetry.win_rate_a or 0.5) * 100)
                     else
@@ -242,6 +275,9 @@ function match_generator.startFight(overrideConfig)
     end
     if cfg.policy_b then
         table.insert(args, "--policy-b"); table.insert(args, cfg.policy_b)
+    end
+    if cfg.seed then
+        table.insert(args, "--seed"); table.insert(args, tostring(cfg.seed))
     end
 
     for i, arg in ipairs(args) do
@@ -379,6 +415,79 @@ function match_generator.startLeaguePlay(overrideConfig)
     active = true
     progress = 0.0
     status = string.format("Evolving 0/%d...", maxEpochs)
+    errorMsg = nil
+    completedMatchPath = nil
+    return true
+end
+
+function match_generator.startBulkEval(overrideConfig)
+    if active then return false, "Generation already running" end
+    local cfg = overrideConfig or config
+    local polA = cfg.policy_a or neuroTelemetry.policy_a
+    local polB = cfg.policy_b or neuroTelemetry.policy_b
+    if not (fileExists(polA) and fileExists(polB)) then
+        return false, "No trained champion models found. Run Evolve & Fight first."
+    end
+
+    local binPath = findBinary("neuro_arena")
+    if not binPath then
+        return false, "neuro_arena binary not found. Build with zig build -Doptimize=ReleaseFast"
+    end
+
+    local fights = cfg.bulk_fights or config.bulk_fights or 1000
+    local args = { binPath }
+    appendCommonArgs(args, cfg)
+    table.insert(args, "--evaluate"); table.insert(args, tostring(fights))
+    table.insert(args, "--policy-a"); table.insert(args, polA)
+    table.insert(args, "--policy-b"); table.insert(args, polB)
+    table.insert(args, "--seed"); table.insert(args, tostring(cfg.seed or math.random(1, 2 ^ 31 - 1)))
+    table.insert(args, "--jitter-start-lag"); table.insert(args, tostring(cfg.jitter_start_lag or 0))
+    table.insert(args, "--jitter-pos"); table.insert(args, tostring(cfg.jitter_pos or 0))
+    table.insert(args, "--output-eval"); table.insert(args, cfg.output_eval or (CHAMPION_PREFIX .. "_eval.json"))
+
+    for i, arg in ipairs(args) do
+        args[i] = "'" .. tostring(arg):gsub("'", "'\"'\"'") .. "'"
+    end
+    local cmd = table.concat(args, " ")
+
+    bulkEval = nil
+    channel = love.thread.newChannel()
+    thread = love.thread.newThread([[
+        local command, chan, temporarySpecs = ...
+        local pipe = io.popen(command .. " 2>&1", "r")
+        if not pipe then
+            for _, path in ipairs(temporarySpecs or {}) do os.remove(path) end
+            chan:push({ is_bulk = true, success = false, error = "Failed to spawn neuro_arena" })
+            return
+        end
+        local outputLines, gotSummary = {}, false
+        for line in pipe:lines() do
+            outputLines[#outputLines + 1] = line
+            if line:find("^NEURO_EVAL ") then
+                local summary = {}
+                for k, v in line:gmatch("(%S+)=(%S+)") do
+                    summary[k] = tonumber(v) or v
+                end
+                gotSummary = true
+                chan:push({ kind = "bulk_eval", summary = summary })
+            end
+        end
+        local ok, reason, code = pipe:close()
+        for _, path in ipairs(temporarySpecs or {}) do os.remove(path) end
+        local success = gotSummary and (ok == true or ok == 0)
+        local details = table.concat(outputLines, "\n")
+        chan:push({
+            is_bulk = true,
+            success = success,
+            code = code,
+            error = success and nil or (details ~= "" and details:sub(-2000) or tostring(reason)),
+        })
+    ]])
+
+    thread:start(cmd, channel, cfg.temporary_specs or {})
+    active = true
+    progress = 0.0
+    status = string.format("Simulating %d fights...", fights)
     errorMsg = nil
     completedMatchPath = nil
     return true

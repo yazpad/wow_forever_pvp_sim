@@ -684,15 +684,52 @@ width,height=1280,720
 upvalue(workspace.wheelmoved,'settingsScroll',0)
 render()
 mx,my=physical(workspace.settingsX+10,150)
-love.wheelmoved(0,-5);render()
 local startLeague=generator.startLeaguePlay
 local launchedLeague
 generator.startLeaguePlay=function(cfg) launchedLeague=cfg;return true end
-for _,v in ipairs(controls) do
-    if v.label=='Evolve & Fight' then click(v.x+v.w/2,v.y+v.h/2);break end
+local function findControl(label)
+    for _,v in ipairs(controls) do if v.label==label then return v end end
 end
+-- Scroll step by step: the section height varies (e.g. when champion models exist on disk).
+upvalue(workspace.wheelmoved,'settingsScroll',0);render()
+for _=1,40 do
+    if findControl('Evolve & Fight') then break end
+    love.wheelmoved(0,-1);render()
+end
+local evolveBtn=findControl('Evolve & Fight')
+if evolveBtn then click(evolveBtn.x+evolveBtn.w/2,evolveBtn.y+evolveBtn.h/2) end
 generator.startLeaguePlay=startLeague
 assert(launchedLeague and launchedLeague.fights_per_epoch==50000 and launchedLeague.epochs==10)
 for _,path in ipairs(launchedLeague.temporary_specs) do os.remove(path) end
 print('League Play (Neuroevolution) UI and Evolve & Fight launch checks passed.')
+
+-- Champion vs Champion: bulk simulation and single-fight replay buttons.
+do
+    local nt=generator.getNeuroTelemetry()
+    local savedA,savedB=nt.policy_a,nt.policy_b
+    nt.policy_a,nt.policy_b='matches/test_champ_a.nepl','matches/test_champ_b.nepl'
+    local startBulk,startFight=generator.startBulkEval,generator.startFight
+    local bulkCfg,fightCfg
+    generator.startBulkEval=function(cfg) bulkCfg=cfg;return true end
+    generator.startFight=function(cfg) fightCfg=cfg;return true end
+    upvalue(workspace.wheelmoved,'settingsScroll',0);render()
+    local bulkLabel='Simulate 1000 Champ vs Champ'
+    local simLabel='Sim 1 Champ vs Champ + Replay'
+    for _=1,80 do
+        if findControl(bulkLabel) and findControl(simLabel) then break end
+        love.wheelmoved(0,-1);render()
+    end
+    local b=findControl(bulkLabel);assert(b,'bulk simulate button missing')
+    click(b.x+b.w/2,b.y+b.h/2)
+    local s=findControl(simLabel);assert(s,'sim 1 button missing')
+    click(s.x+s.w/2,s.y+s.h/2)
+    generator.startBulkEval,generator.startFight=startBulk,startFight
+    nt.policy_a,nt.policy_b=savedA,savedB
+    assert(bulkCfg and bulkCfg.bulk_fights==1000 and bulkCfg.jitter_start_lag==0 and bulkCfg.jitter_pos==0)
+    assert(fightCfg and fightCfg.policy_a=='matches/test_champ_a.nepl' and fightCfg.policy_b=='matches/test_champ_b.nepl' and fightCfg.seed)
+    for _,cfg in ipairs({bulkCfg,fightCfg}) do
+        for _,path in ipairs(cfg.temporary_specs) do os.remove(path) end
+    end
+    print('Champion vs Champion bulk simulation and single replay launch checks passed.')
+end
 
