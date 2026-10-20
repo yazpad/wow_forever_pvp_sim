@@ -31,6 +31,7 @@ making existing builds faithful before expanding the spell catalog.
 | [WARLOCK_TODO.md](WARLOCK_TODO.md) | Warlock spells, talents, pets, combat accuracy and mechanic validation. |
 | [VISUALIZER_TODO.md](VISUALIZER_TODO.md) | Arena/editor UI, replay presentation and visual validation. |
 | [MCTS_TODO.md](MCTS_TODO.md) | Search, performance and historical implementation roadmap. Older UI/combat entries may be superseded by the focused checklists. |
+| [NEUROEVOLUTION_TODO.md](NEUROEVOLUTION_TODO.md) | Alternating neuroevolution self-play, SIMD policy network, and UI integration. |
 
 ## Warlock status and later work
 

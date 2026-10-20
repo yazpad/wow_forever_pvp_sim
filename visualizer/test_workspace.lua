@@ -675,5 +675,24 @@ panelDraw();assert(panelButtons['100% · 3.00s · Replay'])
 panelButtons['100% · 3.00s · Replay']();assert(loaded=='last_match.lua')
 upvalue(matrix.drawPanel,'matrixData',matrixState)
 upvalue(matrix.drawPanel,'savedSpecs',matrixSpecs)
+upvalue(matrix.drawPanel,'savedSpecs',matrixSpecs)
 upvalue(matrix.drawPanel,'selectedSpecs',matrixSelected)
 print('Matrix panel: filters, batch pair count, preset launch values and recorded-match replay passed.')
+
+-- League Play (Neuroevolution) section: dropdowns, Evolve & Fight button, and Champion vs MCTS launch.
+width,height=1280,720
+upvalue(workspace.wheelmoved,'settingsScroll',0)
+render()
+mx,my=physical(workspace.settingsX+10,150)
+love.wheelmoved(0,-5);render()
+local startLeague=generator.startLeaguePlay
+local launchedLeague
+generator.startLeaguePlay=function(cfg) launchedLeague=cfg;return true end
+for _,v in ipairs(controls) do
+    if v.label=='Evolve & Fight' then click(v.x+v.w/2,v.y+v.h/2);break end
+end
+generator.startLeaguePlay=startLeague
+assert(launchedLeague and launchedLeague.fights_per_epoch==50000 and launchedLeague.epochs==10)
+for _,path in ipairs(launchedLeague.temporary_specs) do os.remove(path) end
+print('League Play (Neuroevolution) UI and Evolve & Fight launch checks passed.')
+

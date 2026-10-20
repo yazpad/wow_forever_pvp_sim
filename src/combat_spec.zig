@@ -2252,21 +2252,19 @@ pub const WarlockArenaPool = struct {
         mana_a = select16(is_act2, mana_a - @as(f32x16, @splat(WarlockConstants.CorruptionMana)), mana_a);
         gcd_a = select16(is_act2, v_gcd_std, gcd_a);
 
-        // Action 3: Fear (1.5s Hard cast, stationary)
+        // Action 3: Fear (1.5s Hard cast, stationary; mana spent on completion)
         const is_act3: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Fear)));
         cast_id = @select(u32, is_act3, @as(u32x16, @splat(3)), cast_id);
         cast_tmr = select16(is_act3, @as(f32x16, @splat(WarlockConstants.FearCastTime)), cast_tmr);
         cast_tot = select16(is_act3, @as(f32x16, @splat(WarlockConstants.FearCastTime)), cast_tot);
-        mana_a = select16(is_act3, mana_a - @as(f32x16, @splat(WarlockConstants.FearMana)), mana_a);
         gcd_a = select16(is_act3, v_gcd_std, gcd_a);
         move_a = select16(is_act3, v_zeros, move_a); // Must stand still to cast
 
-        // Action 4: Shadow Bolt (1.8s Hard cast, stationary)
+        // Action 4: Shadow Bolt (1.8s Hard cast, stationary; mana spent on completion)
         const is_act4: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.ShadowBolt)));
         cast_id = @select(u32, is_act4, @as(u32x16, @splat(4)), cast_id);
         cast_tmr = select16(is_act4, effects_a.shadow_bolt_cast_time, cast_tmr);
         cast_tot = select16(is_act4, effects_a.shadow_bolt_cast_time, cast_tot);
-        mana_a = select16(is_act4, mana_a - @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_act4, v_gcd_std, gcd_a);
         move_a = select16(is_act4, v_zeros, move_a);
 
@@ -2310,21 +2308,18 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
         cast_tmr = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tmr);
         cast_tot = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tot);
-        mana_a = select16(is_sp, mana_a - @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_sp, v_gcd_std, gcd_a);
         move_a = select16(is_sp, v_zeros, move_a);
         const is_inc = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Incinerate)));
         cast_id = @select(u32, is_inc, @as(u32x16, @splat(12)), cast_id);
         cast_tmr = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tmr);
         cast_tot = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tot);
-        mana_a = select16(is_inc, mana_a - @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_inc, v_gcd_std, gcd_a);
         move_a = select16(is_inc, v_zeros, move_a);
         const is_immolate = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Immolate)));
         cast_id = @select(u32, is_immolate, @as(u32x16, @splat(13)), cast_id);
         cast_tmr = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tmr);
         cast_tot = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tot);
-        mana_a = select16(is_immolate, mana_a - @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_a.shadow_bolt_mana, mana_a);
         gcd_a = select16(is_immolate, v_gcd_std, gcd_a);
         move_a = select16(is_immolate, v_zeros, move_a);
 
@@ -2457,7 +2452,6 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_act3, @as(u32x16, @splat(3)), cast_id);
         cast_tmr = select16(is_act3, @as(f32x16, @splat(WarlockConstants.FearCastTime)), cast_tmr);
         cast_tot = select16(is_act3, @as(f32x16, @splat(WarlockConstants.FearCastTime)), cast_tot);
-        mana_b = select16(is_act3, mana_b - @as(f32x16, @splat(WarlockConstants.FearMana)), mana_b);
         gcd_b = select16(is_act3, v_gcd_std, gcd_b);
         move_b = select16(is_act3, v_zeros, move_b);
 
@@ -2466,7 +2460,6 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_act4, @as(u32x16, @splat(4)), cast_id);
         cast_tmr = select16(is_act4, effects_b.shadow_bolt_cast_time, cast_tmr);
         cast_tot = select16(is_act4, effects_b.shadow_bolt_cast_time, cast_tot);
-        mana_b = select16(is_act4, mana_b - @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_act4, v_gcd_std, gcd_b);
         move_b = select16(is_act4, v_zeros, move_b);
 
@@ -2510,21 +2503,18 @@ pub const WarlockArenaPool = struct {
         cast_id = @select(u32, is_sp, @as(u32x16, @splat(11)), cast_id);
         cast_tmr = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tmr);
         cast_tot = select16(is_sp, @as(f32x16, @splat(WarlockConstants.SearingPainCastTime)), cast_tot);
-        mana_b = select16(is_sp, mana_b - @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_sp, v_gcd_std, gcd_b);
         move_b = select16(is_sp, v_zeros, move_b);
         const is_inc = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Incinerate)));
         cast_id = @select(u32, is_inc, @as(u32x16, @splat(12)), cast_id);
         cast_tmr = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tmr);
         cast_tot = select16(is_inc, @as(f32x16, @splat(WarlockConstants.IncinerateCastTime)), cast_tot);
-        mana_b = select16(is_inc, mana_b - @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_inc, v_gcd_std, gcd_b);
         move_b = select16(is_inc, v_zeros, move_b);
         const is_immolate = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.Immolate)));
         cast_id = @select(u32, is_immolate, @as(u32x16, @splat(13)), cast_id);
         cast_tmr = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tmr);
         cast_tot = select16(is_immolate, @as(f32x16, @splat(WarlockConstants.ImmolateCastTime)), cast_tot);
-        mana_b = select16(is_immolate, mana_b - @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_b.shadow_bolt_mana, mana_b);
         gcd_b = select16(is_immolate, v_gcd_std, gcd_b);
         move_b = select16(is_immolate, v_zeros, move_b);
 
@@ -2882,7 +2872,9 @@ pub const WarlockArenaPool = struct {
             const a_drain_dmg = drain_tick_a.damage * mit_b;
             hp_a = @min(@as(f32x16, self.max_health_a[i..][0..VEC_LEN].*), hp_a + drain_tick_a.healing);
 
-            const a_sb_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(4)));
+            const a_sb_cost = @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_a.shadow_bolt_mana;
+            const a_sb_hit = vAnd16(a_cast_finished, vAnd16(c_id_a == @as(u32x16, @splat(4)), mana_a >= a_sb_cost));
+            mana_a = select16(a_sb_hit, mana_a - a_sb_cost, mana_a);
             @import("projectiles.zig").launchClass(self, true, i, 4, (@as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.8571428571428571))) * effects_a.shadow_damage, a_sb_hit, .warlock);
             if (@reduce(.Or, a_sb_hit)) {
                 const a_sb_crit = vAnd16(a_sb_hit, vAnd16(self.spell_outcome_a[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(@import("spell_resolution.zig").Outcome.crit))), effects_a.improved_shadow_bolt_mult > v_zeros));
@@ -2890,15 +2882,24 @@ pub const WarlockArenaPool = struct {
                 self.isb_charges_b[i..][0..VEC_LEN].* = select16(a_sb_crit, @as(f32x16, @splat(4.0)), self.isb_charges_b[i..][0..VEC_LEN].*);
                 self.isb_vuln_b[i..][0..VEC_LEN].* = select16(a_sb_crit, effects_a.improved_shadow_bolt_mult, self.isb_vuln_b[i..][0..VEC_LEN].*);
             }
-            const a_sp_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(11)));
+            const a_sp_cost = @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_a.shadow_bolt_mana;
+            const a_sp_hit = vAnd16(a_cast_finished, vAnd16(c_id_a == @as(u32x16, @splat(11)), mana_a >= a_sp_cost));
+            mana_a = select16(a_sp_hit, mana_a - a_sp_cost, mana_a);
             @import("projectiles.zig").launchClass(self, true, i, 11, (@as(f32x16, @splat(WarlockConstants.SearingPainDamage)) + @import("spell_resolution.zig").spellPower(self, true, i, .fire) * @as(f32x16, @splat(0.42857142857142855))) * effects_a.fire_damage, a_sp_hit, .warlock);
-            const a_inc_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(12)));
+            const a_inc_cost = @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_a.shadow_bolt_mana;
+            const a_inc_hit = vAnd16(a_cast_finished, vAnd16(c_id_a == @as(u32x16, @splat(12)), mana_a >= a_inc_cost));
+            mana_a = select16(a_inc_hit, mana_a - a_inc_cost, mana_a);
             const a_inc_bonus = select16(immolate_b > v_zeros, @as(f32x16, @splat(1.25)), @as(f32x16, @splat(1.0)));
             @import("projectiles.zig").launchClass(self, true, i, 12, (@as(f32x16, @splat(WarlockConstants.IncinerateDamage)) + @import("spell_resolution.zig").spellPower(self, true, i, .fire) * @as(f32x16, @splat(0.7142857142857143))) * a_inc_bonus * effects_a.fire_damage, a_inc_hit, .warlock);
-            const a_immolate_hit = vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(13)));
+            const a_immolate_cost = @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_a.shadow_bolt_mana;
+            const a_immolate_hit = vAnd16(a_cast_finished, vAnd16(c_id_a == @as(u32x16, @splat(13)), mana_a >= a_immolate_cost));
+            mana_a = select16(a_immolate_hit, mana_a - a_immolate_cost, mana_a);
             @import("projectiles.zig").launchClass(self, true, i, 13, (@as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) + @import("spell_resolution.zig").spellPower(self, true, i, .fire) * @as(f32x16, @splat(0.2))) * effects_a.immolate_initial_damage, a_immolate_hit, .warlock);
 
-            const a_fear_hit = @import("periodic.zig").control(self, true, i, vAnd16(a_cast_finished, c_id_a == @as(u32x16, @splat(3))), effects_a.spell_hit_bonus, .shadow, false);
+            const a_fear_cost = @as(f32x16, @splat(WarlockConstants.FearMana));
+            const a_fear_cast_done = vAnd16(a_cast_finished, vAnd16(c_id_a == @as(u32x16, @splat(3)), mana_a >= a_fear_cost));
+            mana_a = select16(a_fear_cast_done, mana_a - a_fear_cost, mana_a);
+            const a_fear_hit = @import("periodic.zig").control(self, true, i, a_fear_cast_done, effects_a.spell_hit_bonus, .shadow, false);
             const a_fear_dr_mult = getDrMultiplier(fear_dr_t_b);
             const a_fear_dur = @as(f32x16, @splat(WarlockConstants.FearDuration)) * a_fear_dr_mult;
             fear_b = select16(a_fear_hit, a_fear_dur, fear_b);
@@ -2922,7 +2923,9 @@ pub const WarlockArenaPool = struct {
             const b_drain_dmg = drain_tick_b.damage * mit_a;
             hp_b = @min(@as(f32x16, self.max_health_b[i..][0..VEC_LEN].*), hp_b + drain_tick_b.healing);
 
-            const b_sb_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(4)));
+            const b_sb_cost = @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_b.shadow_bolt_mana;
+            const b_sb_hit = vAnd16(b_cast_finished, vAnd16(c_id_b == @as(u32x16, @splat(4)), mana_b >= b_sb_cost));
+            mana_b = select16(b_sb_hit, mana_b - b_sb_cost, mana_b);
             @import("projectiles.zig").launchClass(self, false, i, 4, (@as(f32x16, @splat(WarlockConstants.ShadowBoltDamage)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.8571428571428571))) * effects_b.shadow_damage, b_sb_hit, .warlock);
             if (@reduce(.Or, b_sb_hit)) {
                 const b_sb_crit = vAnd16(b_sb_hit, vAnd16(self.spell_outcome_b[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(@import("spell_resolution.zig").Outcome.crit))), effects_b.improved_shadow_bolt_mult > v_zeros));
@@ -2930,15 +2933,24 @@ pub const WarlockArenaPool = struct {
                 self.isb_charges_a[i..][0..VEC_LEN].* = select16(b_sb_crit, @as(f32x16, @splat(4.0)), self.isb_charges_a[i..][0..VEC_LEN].*);
                 self.isb_vuln_a[i..][0..VEC_LEN].* = select16(b_sb_crit, effects_b.improved_shadow_bolt_mult, self.isb_vuln_a[i..][0..VEC_LEN].*);
             }
-            const b_sp_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(11)));
+            const b_sp_cost = @as(f32x16, @splat(WarlockConstants.SearingPainMana)) * effects_b.shadow_bolt_mana;
+            const b_sp_hit = vAnd16(b_cast_finished, vAnd16(c_id_b == @as(u32x16, @splat(11)), mana_b >= b_sp_cost));
+            mana_b = select16(b_sp_hit, mana_b - b_sp_cost, mana_b);
             @import("projectiles.zig").launchClass(self, false, i, 11, (@as(f32x16, @splat(WarlockConstants.SearingPainDamage)) + @import("spell_resolution.zig").spellPower(self, false, i, .fire) * @as(f32x16, @splat(0.42857142857142855))) * effects_b.fire_damage, b_sp_hit, .warlock);
-            const b_inc_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(12)));
+            const b_inc_cost = @as(f32x16, @splat(WarlockConstants.IncinerateMana)) * effects_b.shadow_bolt_mana;
+            const b_inc_hit = vAnd16(b_cast_finished, vAnd16(c_id_b == @as(u32x16, @splat(12)), mana_b >= b_inc_cost));
+            mana_b = select16(b_inc_hit, mana_b - b_inc_cost, mana_b);
             const b_inc_bonus = select16(immolate_a > v_zeros, @as(f32x16, @splat(1.25)), @as(f32x16, @splat(1.0)));
             @import("projectiles.zig").launchClass(self, false, i, 12, (@as(f32x16, @splat(WarlockConstants.IncinerateDamage)) + @import("spell_resolution.zig").spellPower(self, false, i, .fire) * @as(f32x16, @splat(0.7142857142857143))) * b_inc_bonus * effects_b.fire_damage, b_inc_hit, .warlock);
-            const b_immolate_hit = vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(13)));
+            const b_immolate_cost = @as(f32x16, @splat(WarlockConstants.ImmolateMana)) * effects_b.shadow_bolt_mana;
+            const b_immolate_hit = vAnd16(b_cast_finished, vAnd16(c_id_b == @as(u32x16, @splat(13)), mana_b >= b_immolate_cost));
+            mana_b = select16(b_immolate_hit, mana_b - b_immolate_cost, mana_b);
             @import("projectiles.zig").launchClass(self, false, i, 13, (@as(f32x16, @splat(WarlockConstants.ImmolateInitialDamage)) + @import("spell_resolution.zig").spellPower(self, false, i, .fire) * @as(f32x16, @splat(0.2))) * effects_b.immolate_initial_damage, b_immolate_hit, .warlock);
 
-            const b_fear_hit = @import("periodic.zig").control(self, false, i, vAnd16(b_cast_finished, c_id_b == @as(u32x16, @splat(3))), effects_b.spell_hit_bonus, .shadow, false);
+            const b_fear_cost = @as(f32x16, @splat(WarlockConstants.FearMana));
+            const b_fear_cast_done = vAnd16(b_cast_finished, vAnd16(c_id_b == @as(u32x16, @splat(3)), mana_b >= b_fear_cost));
+            mana_b = select16(b_fear_cast_done, mana_b - b_fear_cost, mana_b);
+            const b_fear_hit = @import("periodic.zig").control(self, false, i, b_fear_cast_done, effects_b.spell_hit_bonus, .shadow, false);
             const b_fear_dr_mult = getDrMultiplier(fear_dr_t_a);
             const b_fear_dur = @as(f32x16, @splat(WarlockConstants.FearDuration)) * b_fear_dr_mult;
             fear_a = select16(b_fear_hit, b_fear_dur, fear_a);

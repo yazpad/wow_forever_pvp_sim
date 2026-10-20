@@ -20,7 +20,7 @@ local function maximumHealth(spec)
     return stats.max_health+(stats.stamina or 0)*0.03*rank*10
 end
 local settingsScroll, settingsMax, settingsFocus = 0, 0, nil
-local settingsOpen = {replays=false,matrix=false}
+local settingsOpen = {league=true,replays=false,matrix=false}
 function workspace.toggleSettingsSection(name)
     settingsOpen[name]=not settingsOpen[name]
     settingsFocus=settingsOpen[name] and name or nil
@@ -395,13 +395,16 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
         ui.resetFont()
         return y+height
     end
-    local function dropdown(label,key,values)
-        g.setColor(ui.colors.textMuted); g.print(label,rx,sy); sy=sy+22
+    local function dropdown(label,key,values,fmt)
+        if sy>=56 and sy+18<=settingsBottom then
+            g.setColor(ui.colors.textMuted); g.print(label,rx,sy)
+        end
+        sy=sy+22
         if sy>=56 and sy+26<=settingsBottom then
         local action=ui.dropdown(key,rx,sy,right-24,26,cfg[key],values,function(value)
             cfg[key]=value
             if key=='distance' then resetPositions(value); workspace.editPositions() end
-        end,function(value)
+        end,fmt or function(value)
             return key=='distance' and string.format('%.1f m',value) or tostring(value)
         end)
         buttons[#buttons+1]={x=rx,y=sy,w=right-24,h=26,action=function(b)
@@ -409,6 +412,32 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
         end}
         end
         sy=sy+42
+    end
+    local function prepareLaunchConfig(extra)
+        if generator.isActive() then return nil end
+        if not commitInput() then return nil end
+        capture()
+        local launch=clone(cfg)
+        if extra then for k,v in pairs(extra) do launch[k]=v end end
+        launch.temporary_specs={}
+        launch.positions=clone(positions)
+        launch.distance=distance()
+        for i,side in ipairs({'a','b'}) do
+            local path=os.tmpname()
+            local f,err=io.open(path,'w')
+            if not f then
+                for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end
+                message=tostring(err); return nil
+            end
+            f:write(json.encode(drafts[i])); f:close()
+            launch.temporary_specs[#launch.temporary_specs+1]=path
+            launch['hp_'..side]=maximumHealth(drafts[i])
+            launch['spec_'..side..'_obj']=clone(drafts[i])
+            launch['spec_'..side..'_obj'].filename=path
+            launch['spec_'..side]=drafts[i].class
+            launch['pet_'..side]=drafts[i].pet
+        end
+        return launch
     end
     dropdown('Rollouts / decision','rollouts',{1024,4096,16384,65536})
     dropdown('Worker threads','workers',{1,2,4,8,16,32})
@@ -425,6 +454,58 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
         end,settingsOpen[name])
         sy=sy+34
         return settingsOpen[name]
+    end
+    if sectionHeader('league','League Play (Neuroevolution)') then
+        dropdown('Fights / epoch','fights_per_epoch',{10000,50000,100000,250000},function(v)
+            return string.format('%dk',math.floor(v/1000))
+        end)
+        dropdown('Max epochs','epochs',{4,6,10,20})
+        dropdown('Population size','population_size',{32,64,128})
+        dropdown('Early stop threshold','convergence_threshold',{0,0.01,0.02,0.05},function(v)
+            return v==0 and 'Off' or string.format('%.0f%%',v*100)
+        end)
+        settingButton(sy,generator.isActive() and 'Evolving...' or 'Evolve & Fight',function()
+            local launch=prepareLaunchConfig()
+            if not launch then return end
+            local ok,err=generator.startLeaguePlay(launch)
+            if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
+            message=ok and '' or tostring(err)
+        end,true)
+        sy=sy+34
+        local nt=generator.getNeuroTelemetry and generator.getNeuroTelemetry() or nil
+        if nt and (generator.isActive() or (nt.epoch and nt.epoch>0)) then
+            local prog=generator.getProgress and generator.getProgress() or 0
+            if sy>=56 and sy+10<=settingsBottom then
+                g.setColor(0.08,0.12,0.18,0.95)
+                g.rectangle('fill',rx,sy,right-24,8,3)
+                g.setColor(ui.colors.primary)
+                g.rectangle('fill',rx,sy,(right-24)*math.max(0,math.min(1,prog)),8,3)
+            end
+            sy=sy+14
+            local convText=nt.converged and 'Converged' or (generator.isActive() and ('Evolving '..tostring(nt.side)) or 'Completed')
+            local info=string.format('%s · Ep %d/%d (%d gens)\nWin A: %.1f%% · %.0fk fights/s',
+                convText,nt.epoch or 0,nt.max_epochs or cfg.epochs,nt.gens or 0,
+                (nt.win_rate_a or 0.5)*100,(nt.fights_sec or 0)/1000)
+            sy=settingText(sy,info)
+            if nt.policy_a and nt.policy_b and not generator.isActive() then
+                settingButton(sy,'Champ A vs MCTS B',function()
+                    local launch=prepareLaunchConfig({policy_a=nt.policy_a,output='matches/neuro_vs_mcts.lua'})
+                    if not launch then return end
+                    local ok,err=generator.startFight(launch)
+                    if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
+                    message=ok and '' or tostring(err)
+                end)
+                sy=sy+32
+                settingButton(sy,'MCTS A vs Champ B',function()
+                    local launch=prepareLaunchConfig({policy_b=nt.policy_b,output='matches/mcts_vs_neuro.lua'})
+                    if not launch then return end
+                    local ok,err=generator.startFight(launch)
+                    if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
+                    message=ok and '' or tostring(err)
+                end)
+                sy=sy+34
+            end
+        end
     end
     local function openReplay(path)
         if not commitInput() then return end
@@ -447,28 +528,8 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
         g.setColor(ui.colors.primary);g.rectangle('fill',w-22,56+(track-thumb)*settingsScroll/settingsMax,3,thumb)
     end
     button(rx,h-110,right-24,generator.isActive() and 'Searching...' or 'Fight',function()
-        if generator.isActive() then return end
-        if not commitInput() then return end
-        capture()
-        local launch=clone(cfg)
-        launch.temporary_specs={}
-        launch.positions=clone(positions)
-        launch.distance=distance()
-        for i,side in ipairs({'a','b'}) do
-            local path=os.tmpname()
-            local f,err=io.open(path,'w')
-            if not f then
-                for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end
-                message=tostring(err); return
-            end
-            f:write(json.encode(drafts[i])); f:close()
-            launch.temporary_specs[#launch.temporary_specs+1]=path
-            launch['hp_'..side]=maximumHealth(drafts[i])
-            launch['spec_'..side..'_obj']=clone(drafts[i])
-            launch['spec_'..side..'_obj'].filename=path
-            launch['spec_'..side]=drafts[i].class
-            launch['pet_'..side]=drafts[i].pet
-        end
+        local launch=prepareLaunchConfig()
+        if not launch then return end
         local ok,err=generator.startFight(launch)
         if not ok then for _,tmp in ipairs(launch.temporary_specs) do os.remove(tmp) end end
         message=ok and '' or tostring(err)

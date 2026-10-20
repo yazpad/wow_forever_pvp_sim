@@ -1,0 +1,403 @@
+//! High-Throughput Alternating Neuroevolution Self-Play Runner (Fictitious Play / PSRO).
+//! Alternates freezing Spec B to evolve Spec A, then freezing Spec A to evolve Spec B,
+//! maintaining a Hall of Fame to prevent cyclical rock-paper-scissors amnesia.
+const std = @import("std");
+const mcts_main = @import("mcts_main.zig");
+const neuro_policy = @import("neuro_policy.zig");
+const neuro_evolution = @import("neuro_evolution.zig");
+const sim = @import("search_sim.zig");
+const Spec = @import("spec.zig").Spec;
+const pets = @import("pets.zig");
+
+const Policy = neuro_policy.Policy;
+const Population = neuro_evolution.Population;
+const HallOfFame = neuro_evolution.HallOfFame;
+
+pub const ArenaOptions = struct {
+    base: mcts_main.Options = .{
+        .output = "matches/neuro_custom.lua",
+    },
+    fights_per_epoch: usize = 100_000,
+    epochs: usize = 10,
+    population_size: usize = 128,
+    convergence_threshold: f32 = 0.02,
+    output_weights: []const u8 = "matches/neuro_champion",
+    output_replay: ?[]const u8 = null,
+};
+
+pub fn main() !void {
+    var args = std.process.args();
+    _ = args.next();
+    var opts: ArenaOptions = .{};
+    opts.base.config.workers = std.Thread.getCpuCount() catch 8;
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--help")) {
+            try std.io.getStdOut().writeAll(
+                "neuro_arena [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--fights-per-epoch 100000] [--epochs 10] [--population-size 128] [--workers 8] [--convergence-threshold 0.02] [--output-replay matches/neuro_custom.lua] [--output-weights matches/neuro_champion]\n",
+            );
+            return;
+        }
+        const value = args.next() orelse return error.MissingValue;
+        if (std.mem.eql(u8, arg, "--fights-per-epoch")) {
+            opts.fights_per_epoch = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.eql(u8, arg, "--epochs")) {
+            opts.epochs = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.eql(u8, arg, "--population-size")) {
+            opts.population_size = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.eql(u8, arg, "--convergence-threshold")) {
+            opts.convergence_threshold = try std.fmt.parseFloat(f32, value);
+        } else if (std.mem.eql(u8, arg, "--output-replay")) {
+            opts.output_replay = value;
+            opts.base.output = value;
+        } else if (std.mem.eql(u8, arg, "--output-weights")) {
+            opts.output_weights = value;
+        } else if (!try mcts_main.applyOption(&opts.base, arg, value)) {
+            return error.UnknownOption;
+        }
+    }
+
+    try mcts_main.finalize(&opts.base);
+    switch (opts.base.a) {
+        inline else => |spec_a| switch (opts.base.b) {
+            inline else => |spec_b| try runArena(spec_a, spec_b, opts),
+        },
+    }
+}
+
+fn initBaseDuel(comptime a: Spec, comptime b: Spec, allocator: std.mem.Allocator, o: mcts_main.Options) !sim.Duel(a, b) {
+    var d = try sim.Duel(a, b).init(allocator);
+    errdefer d.deinit();
+    d.staggerOpening();
+    const state = d.arena.combat();
+    state.distance[0] = o.distance;
+    state.pos_x_a[0] = o.x_a orelse (-o.distance * 0.5);
+    state.pos_y_a[0] = o.y_a orelse 0;
+    state.pos_x_b[0] = o.x_b orelse (o.distance * 0.5);
+    state.pos_y_b[0] = o.y_b orelse 0;
+    state.hp_a[0] = o.hp_a;
+    state.hp_b[0] = o.hp_b;
+    const active_pet_a = if (a == .warlock and o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_sacrifice_pet != 0 and o.warlock_talents_a.demonic_pact == 0) pets.Kind.none else o.pet_a.?;
+    const active_pet_b = if (b == .warlock and o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_sacrifice_pet != 0 and o.warlock_talents_b.demonic_pact == 0) pets.Kind.none else o.pet_b.?;
+    const encoded_a = switch (a) {
+        .warlock => o.warlock_talents_a.encode(),
+        .priest => o.priest_talents_a.encode(),
+        .frost_mage => 0,
+    };
+    const encoded_b = switch (b) {
+        .warlock => o.warlock_talents_b.encode(),
+        .priest => o.priest_talents_b.encode(),
+        .frost_mage => 0,
+    };
+    d.setWarlockTalentRanksA(encoded_a);
+    d.setWarlockTalentRanksB(encoded_b);
+    pets.set(state, true, 0, active_pet_a);
+    pets.set(state, false, 0, active_pet_b);
+    d.setRace(true, o.race_a);
+    d.setRace(false, o.race_b);
+    try d.setCombatStats(true, o.combat_stats_a);
+    try d.setCombatStats(false, o.combat_stats_b);
+    state.mana_a[0] = state.max_mana_a[0];
+    state.mana_b[0] = state.max_mana_b[0];
+    state.hp_a[0] = if (o.hp_a_set) @min(o.hp_a, state.max_health_a[0]) else state.max_health_a[0];
+    state.hp_b[0] = if (o.hp_b_set) @min(o.hp_b, state.max_health_b[0]) else state.max_health_b[0];
+    d.setActionMaskA(o.action_mask_a);
+    d.setActionMaskB(o.action_mask_b);
+    return d;
+}
+
+fn WorkerContext(comptime a: Spec, comptime b: Spec) type {
+    return struct {
+        const Self = @This();
+        duel: sim.Duel(a, b),
+        base_snapshot: sim.Snapshot,
+        max_ticks: u32,
+        next_idx: *std.atomic.Value(usize),
+        individuals: []neuro_evolution.Individual,
+        batches_per_ind: usize,
+        evolving_a: bool,
+        frozen_champ: *const Policy,
+        hof: *const HallOfFame,
+        epoch_seed: u64,
+
+        pub fn run(self: *Self) void {
+            while (true) {
+                const idx = self.next_idx.fetchAdd(1, .monotonic);
+                if (idx >= self.individuals.len) break;
+                var ind = &self.individuals[idx];
+                ind.resetStats();
+
+                var prng = std.Random.DefaultPrng.init(self.epoch_seed ^ (@as(u64, idx) *% 0x9e3779b97f4a7c15));
+                const rng = prng.random();
+
+                for (0..self.batches_per_ind) |b_idx| {
+                    const opp = self.hof.sampleOpponent(self.frozen_champ, rng);
+                    const pol_a = if (self.evolving_a) &ind.policy else opp;
+                    const pol_b = if (self.evolving_a) opp else &ind.policy;
+                    const batch_seed = self.epoch_seed ^ (@as(u64, idx) << 16) ^ @as(u64, b_idx);
+                    const res = neuro_evolution.evaluateBatch16(
+                        a,
+                        b,
+                        &self.duel,
+                        self.base_snapshot,
+                        pol_a,
+                        pol_b,
+                        self.evolving_a,
+                        self.max_ticks,
+                        batch_seed,
+                    );
+                    ind.fitness += res.fitness_sum;
+                    ind.wins += res.wins;
+                    ind.losses += res.losses;
+                    ind.draws += res.draws;
+                    ind.ticks += res.ticks;
+                    ind.matches += res.matches;
+                }
+
+                if (ind.matches > 0) {
+                    const denom = @as(f64, @floatFromInt(ind.matches));
+                    ind.fitness /= denom;
+                    ind.win_rate = (@as(f64, @floatFromInt(ind.wins)) + 0.5 * @as(f64, @floatFromInt(ind.draws))) / denom;
+                }
+            }
+        }
+    };
+}
+
+fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
+    const allocator = std.heap.page_allocator;
+    const pop_size = @max(8, opts.population_size);
+    const workers = @max(1, @min(opts.base.config.workers, pop_size));
+    // Use 2 SIMD batches (32 fights) per individual per generation so each epoch runs many generations!
+    const batches_per_ind: usize = 2;
+    const fights_per_gen = pop_size * batches_per_ind * 16;
+    const gens_per_epoch = @max(4, (opts.fights_per_epoch + fights_per_gen - 1) / fights_per_gen);
+    const actual_fights_per_epoch = fights_per_gen * gens_per_epoch;
+
+    var base_duel = try initBaseDuel(a, b, allocator, opts.base);
+    defer base_duel.deinit();
+    const base_snapshot = base_duel.snapshot(0);
+
+    var pop_a = try Population.init(allocator, pop_size, opts.base.config.seed ^ 0x1111_2222);
+    defer pop_a.deinit();
+    var pop_b = try Population.init(allocator, pop_size, opts.base.config.seed ^ 0x3333_4444);
+    defer pop_b.deinit();
+
+    var hof_a = HallOfFame.init();
+    var hof_b = HallOfFame.init();
+
+    var prng = std.Random.DefaultPrng.init(opts.base.config.seed ^ 0x5555_6666);
+    const rng = prng.random();
+
+    var champ_a = pop_a.individuals[0].policy;
+    var champ_b = pop_b.individuals[0].policy;
+    hof_a.add(champ_a, rng);
+    hof_b.add(champ_b, rng);
+
+    const WCtx = WorkerContext(a, b);
+    var contexts = try allocator.alloc(WCtx, workers);
+    defer allocator.free(contexts);
+    for (0..workers) |w| {
+        contexts[w] = .{
+            .duel = try initBaseDuel(a, b, allocator, opts.base),
+            .base_snapshot = base_snapshot,
+            .max_ticks = opts.base.config.max_ticks,
+            .next_idx = undefined,
+            .individuals = undefined,
+            .batches_per_ind = batches_per_ind,
+            .evolving_a = true,
+            .frozen_champ = &champ_b,
+            .hof = &hof_b,
+            .epoch_seed = 0,
+        };
+    }
+    defer for (0..workers) |w| contexts[w].duel.deinit();
+
+    var threads = try allocator.alloc(std.Thread, workers - 1);
+    defer allocator.free(threads);
+
+    const stdout = std.io.getStdOut().writer();
+    const total_start = std.time.nanoTimestamp();
+
+    var prev_win_rate_a: f64 = 0.5;
+    var prev_win_rate_b: f64 = 0.5;
+    var prev_fitness_a: f64 = 0.0;
+    var prev_fitness_b: f64 = 0.0;
+    var consecutive_converged: usize = 0;
+    var epochs_completed: usize = 0;
+    var total_generations: usize = 0;
+    var converged = false;
+
+    for (0..opts.epochs) |epoch| {
+        if (opts.base.stop_file) |stop_path| {
+            if (std.fs.cwd().access(stop_path, .{})) |_| break else |_| {}
+        }
+
+        const evolving_a = (epoch % 2 == 0);
+        var active_pop = if (evolving_a) &pop_a else &pop_b;
+        const frozen_champ = if (evolving_a) &champ_b else &champ_a;
+        const opp_hof = if (evolving_a) &hof_b else &hof_a;
+
+        const epoch_t0 = std.time.nanoTimestamp();
+        var total_ticks: u64 = 0;
+        var best_ind: neuro_evolution.Individual = active_pop.individuals[0];
+
+        for (0..gens_per_epoch) |gen| {
+            var next_idx = std.atomic.Value(usize).init(0);
+            const gen_seed = opts.base.config.seed +% (@as(u64, epoch * 1024 + gen + 1) *% 0x9e3779b97f4a7c15);
+
+            for (0..workers) |w| {
+                contexts[w].next_idx = &next_idx;
+                contexts[w].individuals = active_pop.individuals;
+                contexts[w].evolving_a = evolving_a;
+                contexts[w].frozen_champ = frozen_champ;
+                contexts[w].hof = opp_hof;
+                contexts[w].epoch_seed = gen_seed;
+            }
+
+            for (1..workers) |w| {
+                threads[w - 1] = try std.Thread.spawn(.{}, WCtx.run, .{&contexts[w]});
+            }
+            contexts[0].run();
+            for (1..workers) |w| {
+                threads[w - 1].join();
+            }
+
+            active_pop.sortByFitness();
+            best_ind = active_pop.best().*;
+            for (active_pop.individuals) |ind| total_ticks += ind.ticks;
+            total_generations += 1;
+
+            if (gen + 1 < gens_per_epoch) {
+                active_pop.evolveNextGeneration(epoch * gens_per_epoch + gen, rng);
+            }
+        }
+
+        const epoch_sec = @max(1e-6, @as(f64, @floatFromInt(std.time.nanoTimestamp() - epoch_t0)) / 1_000_000_000.0);
+        const fights_per_sec = @as(f64, @floatFromInt(actual_fights_per_epoch)) / epoch_sec;
+        const ticks_per_sec = @as(f64, @floatFromInt(total_ticks)) / epoch_sec;
+        const avg_fight_sec = (@as(f64, @floatFromInt(total_ticks)) / @as(f64, @floatFromInt(actual_fights_per_epoch))) * 0.01;
+
+        if (evolving_a) {
+            champ_a = best_ind.policy;
+            hof_a.add(champ_a, rng);
+        } else {
+            champ_b = best_ind.policy;
+            hof_b.add(champ_b, rng);
+        }
+
+        const win_rate_a_est = if (evolving_a) best_ind.win_rate else (1.0 - best_ind.win_rate);
+        const delta = if (evolving_a) @abs(best_ind.win_rate - prev_win_rate_a) else @abs(best_ind.win_rate - prev_win_rate_b);
+        const fit_delta = if (evolving_a) @abs(best_ind.fitness - prev_fitness_a) else @abs(best_ind.fitness - prev_fitness_b);
+        if (evolving_a) {
+            prev_win_rate_a = best_ind.win_rate;
+            prev_fitness_a = best_ind.fitness;
+        } else {
+            prev_win_rate_b = best_ind.win_rate;
+            prev_fitness_b = best_ind.fitness;
+        }
+
+        epochs_completed = epoch + 1;
+
+        try stdout.print(
+            "NEURO_EPOCH epoch={d}/{d} gens={d} side={s} win_rate={d:.4} win_rate_a={d:.4} fitness={d:.4} avg_fight_s={d:.2} fights_sec={d:.0} ticks_sec={d:.0} delta={d:.4}\n",
+            .{
+                epoch + 1,
+                opts.epochs,
+                total_generations,
+                if (evolving_a) "A" else "B",
+                best_ind.win_rate,
+                win_rate_a_est,
+                best_ind.fitness,
+                avg_fight_sec,
+                fights_per_sec,
+                ticks_per_sec,
+                delta,
+            },
+        );
+
+        const is_saturated = (best_ind.win_rate < 0.02 or best_ind.win_rate > 0.98);
+        if (opts.convergence_threshold > 0.0 and epoch >= 4 and !is_saturated and delta < opts.convergence_threshold and fit_delta < opts.convergence_threshold) {
+            consecutive_converged += 1;
+            if (consecutive_converged >= 2) {
+                converged = true;
+                break;
+            }
+        } else {
+            consecutive_converged = 0;
+        }
+
+        if (epoch + 1 < opts.epochs) {
+            active_pop.evolveNextGeneration((epoch + 1) * gens_per_epoch, rng);
+        }
+    }
+
+    // Save champion weights
+    const path_a = try std.fmt.allocPrint(allocator, "{s}_a.nepl", .{opts.output_weights});
+    defer allocator.free(path_a);
+    const path_b = try std.fmt.allocPrint(allocator, "{s}_b.nepl", .{opts.output_weights});
+    defer allocator.free(path_b);
+    try champ_a.saveFile(path_a);
+    try champ_b.saveFile(path_b);
+
+    // Evaluate head-to-head champion vs champion winrate over 320 matches (20 batches of 16)
+    var h2h_wins_a: u64 = 0;
+    var h2h_draws: u64 = 0;
+    var h2h_matches: u64 = 0;
+    for (0..20) |b_idx| {
+        const res = neuro_evolution.evaluateBatch16(
+            a,
+            b,
+            &base_duel,
+            base_snapshot,
+            &champ_a,
+            &champ_b,
+            true,
+            opts.base.config.max_ticks,
+            opts.base.config.seed ^ 0x7777_8888 ^ @as(u64, b_idx),
+        );
+        h2h_wins_a += res.wins;
+        h2h_draws += res.draws;
+        h2h_matches += res.matches;
+    }
+    const final_wr_a = (@as(f64, @floatFromInt(h2h_wins_a)) + 0.5 * @as(f64, @floatFromInt(h2h_draws))) / @as(f64, @floatFromInt(h2h_matches));
+    const total_sec = @as(f64, @floatFromInt(std.time.nanoTimestamp() - total_start)) / 1_000_000_000.0;
+
+    // Write summary telemetry JSON
+    const summary_path = try std.fmt.allocPrint(allocator, "{s}.json", .{opts.output_weights});
+    defer allocator.free(summary_path);
+    if (std.fs.path.dirname(summary_path)) |dir| try std.fs.cwd().makePath(dir);
+    {
+        const sf = try std.fs.cwd().createFile(summary_path, .{});
+        defer sf.close();
+        var bw = std.io.bufferedWriter(sf.writer());
+        const w = bw.writer();
+        try std.json.stringify(.{
+            .epochs_completed = epochs_completed,
+            .max_epochs = opts.epochs,
+            .generations_completed = total_generations,
+            .converged = converged,
+            .fights_per_epoch = actual_fights_per_epoch,
+            .population_size = pop_size,
+            .win_rate_a = final_wr_a,
+            .win_rate_b = 1.0 - final_wr_a,
+            .total_seconds = total_sec,
+            .policy_a = path_a,
+            .policy_b = path_b,
+        }, .{}, w);
+        try w.writeAll("\n");
+        try bw.flush();
+    }
+
+    try stdout.print(
+        "NEURO_CONVERGED epochs={d} gens={d} converged={} win_rate_a={d:.4} seconds={d:.2} policy_a={s} policy_b={s}\n",
+        .{ epochs_completed, total_generations, converged, final_wr_a, total_sec, path_a, path_b },
+    );
+
+    // Generate final champion vs champion replay trajectory
+    var replay_opts = opts.base;
+    replay_opts.policy_a = path_a;
+    replay_opts.policy_b = path_b;
+    if (opts.output_replay) |rep| replay_opts.output = rep;
+    try mcts_main.run(a, b, replay_opts);
+}

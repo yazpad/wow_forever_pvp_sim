@@ -51,12 +51,37 @@ local config = {
     pet_a = nil,
     pet_b = nil,
     output = "matches/mcts_custom.lua",
+    -- Neuroevolution League Play settings
+    mode = "MCTS Search",
+    fights_per_epoch = 50000,
+    epochs = 10,
+    population_size = 64,
+    convergence_threshold = 0,
+}
+
+local neuroTelemetry = {
+    epoch = 0,
+    max_epochs = 10,
+    gens = 0,
+    side = "A",
+    win_rate_a = 0.5,
+    fitness = 0.0,
+    fights_sec = 0,
+    ticks_sec = 0,
+    converged = false,
+    seconds = 0,
+    policy_a = nil,
+    policy_b = nil,
 }
 
 local buttons = {}
 
 function match_generator.getConfig()
     return config
+end
+
+function match_generator.getNeuroTelemetry()
+    return neuroTelemetry
 end
 
 function match_generator.isActive()
@@ -67,19 +92,55 @@ function match_generator.getStatus()
     return status, errorMsg
 end
 
+function match_generator.getProgress()
+    return progress
+end
+
 function match_generator.update(dt)
     if active and channel then
-        local msg = channel:pop()
-        if msg then
-            active = false
-            channel = nil
-            thread = nil
-            if msg.success then
-                status = "Complete"
-                completedMatchPath = msg.output_path
+        while true do
+            local msg = channel:pop()
+            if not msg then break end
+            if msg.kind == "progress" then
+                neuroTelemetry.epoch = msg.epoch or neuroTelemetry.epoch
+                neuroTelemetry.max_epochs = msg.max_epochs or neuroTelemetry.max_epochs
+                neuroTelemetry.gens = msg.gens or neuroTelemetry.gens
+                neuroTelemetry.side = msg.side or neuroTelemetry.side
+                neuroTelemetry.win_rate_a = msg.win_rate_a or neuroTelemetry.win_rate_a
+                neuroTelemetry.fitness = msg.fitness or neuroTelemetry.fitness
+                neuroTelemetry.fights_sec = msg.fights_sec or neuroTelemetry.fights_sec
+                neuroTelemetry.ticks_sec = msg.ticks_sec or neuroTelemetry.ticks_sec
+                progress = neuroTelemetry.max_epochs > 0 and (neuroTelemetry.epoch / neuroTelemetry.max_epochs) or 0
+                status = string.format("Ep %d/%d (Gen %d) · %.0f%% A · %.0fk/s",
+                    neuroTelemetry.epoch, neuroTelemetry.max_epochs, neuroTelemetry.gens,
+                    neuroTelemetry.win_rate_a * 100, neuroTelemetry.fights_sec / 1000)
+            elseif msg.kind == "converged" then
+                neuroTelemetry.epoch = msg.epochs or neuroTelemetry.epoch
+                neuroTelemetry.gens = msg.gens or neuroTelemetry.gens
+                neuroTelemetry.converged = msg.converged or false
+                neuroTelemetry.win_rate_a = msg.win_rate_a or neuroTelemetry.win_rate_a
+                neuroTelemetry.seconds = msg.seconds or 0
+                neuroTelemetry.policy_a = msg.policy_a
+                neuroTelemetry.policy_b = msg.policy_b
+                progress = 1.0
             else
-                status = "Failed"
-                errorMsg = msg.error or "Simulation process error"
+                active = false
+                channel = nil
+                thread = nil
+                if msg.success then
+                    if msg.is_neuro then
+                        status = string.format("Evolved (%d ep, %.0f%% A)",
+                            neuroTelemetry.epoch, (neuroTelemetry.win_rate_a or 0.5) * 100)
+                    else
+                        status = "Complete"
+                    end
+                    progress = 1.0
+                    completedMatchPath = msg.output_path
+                else
+                    status = "Failed"
+                    errorMsg = msg.error or "Simulation process error"
+                end
+                break
             end
         end
     end
@@ -94,23 +155,24 @@ function match_generator.pollCompleted()
     return nil
 end
 
-function match_generator.startFight(overrideConfig)
-    if active then return false, "Fight generation already running" end
-    local cfg = overrideConfig or config
-
-    local root = love.filesystem.getWorkingDirectory()
-    local binPath = root .. "/zig-out/bin/mcts_fight"
-    local f = io.open(binPath, "rb")
-    if not f then
-        f = io.open("../zig-out/bin/mcts_fight", "rb")
-        if f then binPath = "../zig-out/bin/mcts_fight" end
+local function findBinary(name)
+    local root = love.filesystem and love.filesystem.getWorkingDirectory and love.filesystem.getWorkingDirectory() or "."
+    local candidates = {
+        root .. "/zig-out/bin/" .. name,
+        "../zig-out/bin/" .. name,
+        "zig-out/bin/" .. name,
+    }
+    for _, p in ipairs(candidates) do
+        local f = io.open(p, "rb")
+        if f then
+            f:close()
+            return p
+        end
     end
-    if f then f:close() else
-        return false, "mcts_fight binary not found. Build with zig build -Doptimize=ReleaseFast"
-    end
+    return nil
+end
 
-    local outPath = cfg.output or "matches/mcts_custom.lua"
-
+local function appendCommonArgs(args, cfg)
     local nameA = (cfg.spec_a_obj and cfg.spec_a_obj.name) or cfg.name_a or (cfg.spec_a == "warlock" and "Warlock" or "Frost Mage")
     local nameB = (cfg.spec_b_obj and cfg.spec_b_obj.name) or cfg.name_b or (cfg.spec_b == "warlock" and "Warlock" or "Frost Mage")
     local specA = (cfg.spec_a_obj and cfg.spec_a_obj.class) or cfg.spec_a or "warlock"
@@ -119,23 +181,14 @@ function match_generator.startFight(overrideConfig)
     local specIdA = (cfg.spec_a_obj and (cfg.spec_a_obj.filename or cfg.spec_a_obj.filepath)) or cfg.spec_id_a
     local specIdB = (cfg.spec_b_obj and (cfg.spec_b_obj.filename or cfg.spec_b_obj.filepath)) or cfg.spec_id_b
 
-    local args = {
-        binPath,
-        "--spec-a", specA,
-        "--spec-b", specB,
-        "--name-a", nameA,
-        "--name-b", nameB,
-        "--rollouts", tostring(cfg.rollouts),
-        "--workers", tostring(cfg.workers),
-        "--algorithm", cfg.algorithm,
-        "--evaluator", cfg.evaluator,
-        "--c-puct", string.format("%.3f", cfg.c_puct or 1.414),
-        "--distance", tostring(cfg.distance),
-        "--hp-a", tostring(cfg.hp_a),
-        "--hp-b", tostring(cfg.hp_b),
-        "--boundary", "event",
-        "--output", outPath,
-    }
+    table.insert(args, "--spec-a"); table.insert(args, specA)
+    table.insert(args, "--spec-b"); table.insert(args, specB)
+    table.insert(args, "--name-a"); table.insert(args, nameA)
+    table.insert(args, "--name-b"); table.insert(args, nameB)
+    table.insert(args, "--workers"); table.insert(args, tostring(cfg.workers))
+    table.insert(args, "--distance"); table.insert(args, tostring(cfg.distance))
+    table.insert(args, "--hp-a"); table.insert(args, tostring(cfg.hp_a))
+    table.insert(args, "--hp-b"); table.insert(args, tostring(cfg.hp_b))
 
     if cfg.pet_a then
         table.insert(args, "--pet-a")
@@ -163,6 +216,34 @@ function match_generator.startFight(overrideConfig)
             end
         end
     end
+end
+
+function match_generator.startFight(overrideConfig)
+    if active then return false, "Fight generation already running" end
+    local cfg = overrideConfig or config
+
+    local binPath = findBinary("mcts_fight")
+    if not binPath then
+        return false, "mcts_fight binary not found. Build with zig build -Doptimize=ReleaseFast"
+    end
+
+    local outPath = cfg.output or "matches/mcts_custom.lua"
+    local args = { binPath }
+    appendCommonArgs(args, cfg)
+    table.insert(args, "--rollouts"); table.insert(args, tostring(cfg.rollouts))
+    table.insert(args, "--algorithm"); table.insert(args, cfg.algorithm)
+    table.insert(args, "--evaluator"); table.insert(args, cfg.evaluator)
+    table.insert(args, "--c-puct"); table.insert(args, string.format("%.3f", cfg.c_puct or 1.414))
+    table.insert(args, "--boundary"); table.insert(args, "event")
+    table.insert(args, "--output"); table.insert(args, outPath)
+
+    if cfg.policy_a then
+        table.insert(args, "--policy-a"); table.insert(args, cfg.policy_a)
+    end
+    if cfg.policy_b then
+        table.insert(args, "--policy-b"); table.insert(args, cfg.policy_b)
+    end
+
     for i, arg in ipairs(args) do
         args[i] = "'" .. tostring(arg):gsub("'", "'\"'\"'") .. "'"
     end
@@ -184,7 +265,120 @@ function match_generator.startFight(overrideConfig)
 
     thread:start(cmd, outPath, channel, cfg.temporary_specs or {})
     active = true
+    progress = 0.0
     status = "Searching..."
+    errorMsg = nil
+    completedMatchPath = nil
+    return true
+end
+
+function match_generator.startLeaguePlay(overrideConfig)
+    if active then return false, "Generation already running" end
+    local cfg = overrideConfig or config
+
+    local binPath = findBinary("neuro_arena")
+    if not binPath then
+        return false, "neuro_arena binary not found. Build with zig build -Doptimize=ReleaseFast"
+    end
+
+    local outPath = cfg.output_replay or "matches/neuro_custom.lua"
+    local weightsPrefix = cfg.output_weights or "matches/neuro_champion"
+    local fightsPerEpoch = cfg.fights_per_epoch or config.fights_per_epoch or 50000
+    local maxEpochs = cfg.epochs or config.epochs or 10
+    local popSize = cfg.population_size or config.population_size or 64
+    local convThreshold = cfg.convergence_threshold
+    if convThreshold == nil then convThreshold = config.convergence_threshold or 0 end
+
+    local args = { binPath }
+    appendCommonArgs(args, cfg)
+    table.insert(args, "--fights-per-epoch"); table.insert(args, tostring(fightsPerEpoch))
+    table.insert(args, "--epochs"); table.insert(args, tostring(maxEpochs))
+    table.insert(args, "--population-size"); table.insert(args, tostring(popSize))
+    table.insert(args, "--convergence-threshold"); table.insert(args, tostring(convThreshold))
+    table.insert(args, "--output-replay"); table.insert(args, outPath)
+    table.insert(args, "--output-weights"); table.insert(args, weightsPrefix)
+
+    for i, arg in ipairs(args) do
+        args[i] = "'" .. tostring(arg):gsub("'", "'\"'\"'") .. "'"
+    end
+    local cmd = table.concat(args, " ")
+
+    neuroTelemetry.epoch = 0
+    neuroTelemetry.max_epochs = maxEpochs
+    neuroTelemetry.gens = 0
+    neuroTelemetry.converged = false
+
+    channel = love.thread.newChannel()
+    thread = love.thread.newThread([[
+        local command, outPath, chan, temporarySpecs = ...
+        local pipe = io.popen(command .. " 2>&1", "r")
+        local outputLines = {}
+        if pipe then
+            for line in pipe:lines() do
+                outputLines[#outputLines + 1] = line
+                if line:find("^NEURO_EPOCH ") then
+                    local ep, maxEp = line:match("epoch=(%d+)/(%d+)")
+                    local gens = line:match("gens=(%d+)")
+                    local side = line:match("side=(%S+)")
+                    local wrA = line:match("win_rate_a=([%d%.%-]+)")
+                    local fit = line:match("fitness=([%d%.%-]+)")
+                    local fps = line:match("fights_sec=([%d%.%-]+)")
+                    local tps = line:match("ticks_sec=([%d%.%-]+)")
+                    chan:push({
+                        kind = "progress",
+                        epoch = tonumber(ep),
+                        max_epochs = tonumber(maxEp),
+                        gens = tonumber(gens),
+                        side = side,
+                        win_rate_a = tonumber(wrA),
+                        fitness = tonumber(fit),
+                        fights_sec = tonumber(fps),
+                        ticks_sec = tonumber(tps),
+                    })
+                elseif line:find("^NEURO_CONVERGED ") then
+                    local ep = line:match("epochs=(%d+)")
+                    local gens = line:match("gens=(%d+)")
+                    local conv = line:match("converged=(%S+)")
+                    local wrA = line:match("win_rate_a=([%d%.%-]+)")
+                    local sec = line:match("seconds=([%d%.%-]+)")
+                    local polA = line:match("policy_a=(%S+)")
+                    local polB = line:match("policy_b=(%S+)")
+                    chan:push({
+                        kind = "converged",
+                        epochs = tonumber(ep),
+                        gens = tonumber(gens),
+                        converged = (conv == "true"),
+                        win_rate_a = tonumber(wrA),
+                        seconds = tonumber(sec),
+                        policy_a = polA,
+                        policy_b = polB,
+                    })
+                end
+            end
+            local ok, reason, code = pipe:close()
+            for _, path in ipairs(temporarySpecs or {}) do os.remove(path) end
+            local details = table.concat(outputLines, "\n")
+            local f = io.open(outPath, "r")
+            local fileExists = (f ~= nil)
+            if f then f:close() end
+            local success = (ok == true or ok == 0) or fileExists
+            chan:push({
+                is_neuro = true,
+                success = success,
+                output_path = outPath,
+                code = code,
+                error = success and nil or (details ~= "" and details:sub(-2000) or tostring(reason)),
+            })
+        else
+            for _, path in ipairs(temporarySpecs or {}) do os.remove(path) end
+            chan:push({ is_neuro = true, success = false, output_path = outPath, error = "Failed to spawn neuro_arena" })
+        end
+    ]])
+
+    thread:start(cmd, outPath, channel, cfg.temporary_specs or {})
+    active = true
+    progress = 0.0
+    status = string.format("Evolving 0/%d...", maxEpochs)
     errorMsg = nil
     completedMatchPath = nil
     return true

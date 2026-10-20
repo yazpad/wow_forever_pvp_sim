@@ -328,9 +328,8 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     col(state, "cast_total", !side_a, i).* = select16(scream_applied, splat(0), col(state, "cast_total", !side_a, i).*);
     col(state, "react_timer", !side_a, i).* = select16(scream_applied, splat(0), col(state, "react_timer", !side_a, i).*);
 
-    // 4: Mind Blast (1.5s cast)
+    // 4: Mind Blast (1.5s cast; mana spent on completion)
     const is_mb = actions == ids(4);
-    mana.* = select16(is_mb, mana.* - splat(Priest.MindBlastMana) * shadow_cast_mult, mana.*);
     gcd.* = select16(is_mb, gcd_dur, gcd.*);
     cast.* = @select(u32, is_mb, ids(4), cast.*);
     timer.* = select16(is_mb, splat(Priest.MindBlastCast), timer.*);
@@ -398,9 +397,8 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
         procShadowWeaving(state, side_a, i, resolved.landed, effects);
     }
 
-    // 11: Flash Heal (1.5s cast)
+    // 11: Flash Heal (1.5s cast; mana spent on completion)
     const is_fh = actions == ids(11);
-    mana.* = select16(is_fh, mana.* - splat(Priest.FlashHealMana) * cost_mult, mana.*);
     gcd.* = select16(is_fh, gcd_dur, gcd.*);
     cast.* = @select(u32, is_fh, ids(11), cast.*);
     timer.* = select16(is_fh, splat(Priest.FlashHealCast), timer.*);
@@ -413,18 +411,16 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     gcd.* = select16(is_renew, gcd_dur, gcd.*);
     col(state, "shadow_lockout", side_a, i).* = select16(is_renew, splat(Priest.RenewDuration), col(state, "shadow_lockout", side_a, i).*);
 
-    // 13: Holy Fire (3.5s - Divine Fury cast)
+    // 13: Holy Fire (3.5s - Divine Fury cast; mana spent on completion)
     const is_hf = actions == ids(13);
-    mana.* = select16(is_hf, mana.* - splat(Priest.HolyFireMana) * holy_inst_mult, mana.*);
     gcd.* = select16(is_hf, gcd_dur, gcd.*);
     cast.* = @select(u32, is_hf, ids(13), cast.*);
     timer.* = select16(is_hf, effects.holy_fire_cast_time, timer.*);
     total.* = select16(is_hf, effects.holy_fire_cast_time, total.*);
     col(state, "move_intent", side_a, i).* = select16(is_hf, splat(0), col(state, "move_intent", side_a, i).*);
 
-    // 14: Smite (2.5s - Divine Fury cast)
+    // 14: Smite (2.5s - Divine Fury cast; mana spent on completion)
     const is_smite = actions == ids(14);
-    mana.* = select16(is_smite, mana.* - splat(Priest.SmiteMana) * holy_inst_mult, mana.*);
     gcd.* = select16(is_smite, gcd_dur, gcd.*);
     cast.* = @select(u32, is_smite, ids(14), cast.*);
     timer.* = select16(is_smite, effects.smite_cast_time, timer.*);
@@ -468,15 +464,14 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     const is_burn = actions == ids(24);
     const burn_rank = (ucol(state, "talent_extra", side_a, i).* >> @as(@Vector(16, u5), @splat(6))) & ids(3);
     const burn_cast = splat(3) - @as(f32x16, @floatFromInt(burn_rank)) * splat(0.5);
-    mana.* = select16(is_burn, mana.* - splat(270) * shadow_cast_mult, mana.*);
     gcd.* = select16(is_burn, gcd_dur, gcd.*);
     cast.* = @select(u32, is_burn, ids(24), cast.*);
     timer.* = select16(is_burn, burn_cast, timer.*);
     total.* = select16(is_burn, burn_cast, total.*);
     col(state, "move_intent", side_a, i).* = select16(is_burn, splat(0), col(state, "move_intent", side_a, i).*);
 
-    // Consume Inner Focus on instant spells (cast-time spells consume Inner Focus upon cast completion)
-    const old_instant_consumed_if = vOr16(vOr16(is_swp, is_dp), vOr16(vOr16(is_scream, is_pws), vOr16(is_ve, vOr16(is_swd, vOr16(is_renew, is_penance)))));
+    // Consume Inner Focus on instant/channeled spells (cast-time spells consume Inner Focus upon cast completion)
+    const old_instant_consumed_if = vOr16(vOr16(is_swp, is_dp), vOr16(vOr16(is_scream, is_mf), vOr16(is_pws, vOr16(is_ve, vOr16(is_swd, vOr16(is_renew, is_penance))))));
     const instant_consumed_if = vOr16(old_instant_consumed_if, vOr16(is_pi, is_dispel));
     inner_focus_flag.* = @select(u32, instant_consumed_if, ids(0), inner_focus_flag.*);
 
@@ -612,6 +607,7 @@ pub fn tickCasts(
     mb_cd: anytype,
     shield_dur: anytype,
     caster_hp: anytype,
+    caster_mana: *f32x16,
     target_hf_timer: f32x16,
     target_mana: *f32x16,
 ) struct { shadow_dmg: f32x16, holy_dmg: f32x16, burn_dmg: f32x16 } {
@@ -628,6 +624,9 @@ pub fn tickCasts(
     const sp_holy = resolution.spellPower(state, caster_side_a, i, .holy);
     const inner_focus_flag = ucol(state, "soul_link", caster_side_a, i);
     const if_active = inner_focus_flag.* != ids(0);
+    const cost_mult = select16(if_active, splat(0.0), splat(1.0));
+    const shadow_cast_mult = cost_mult * effects.shadow_mana_mult;
+    const holy_inst_mult = cost_mult * effects.instant_mana_mult;
     const pil_mult = select16(target_hf_timer > v_zeros, effects.power_in_light_mult, splat(1.0));
 
     // 1. Mind Flay Channel (cast_id == 5, 3s duration, 1s tick interval)
@@ -668,7 +667,9 @@ pub fn tickCasts(
     const penance_damage = penance_tick.damage + opening_bolt.damage * (splat(131.0) + sp_holy * splat(0.285)) * effects.holy_damage_mult * pil_mult;
 
     // 3. Mind Blast completion (cast_id == 4)
-    const mb_hit = vAnd16(vAnd16(cast_finished, dist <= (splat(Priest.MindBlastRange) * effects.shadow_range_mult)), cast_id.* == ids(4));
+    const mb_cost = splat(Priest.MindBlastMana) * shadow_cast_mult;
+    const mb_hit = vAnd16(vAnd16(cast_finished, dist <= (splat(Priest.MindBlastRange) * effects.shadow_range_mult)), vAnd16(cast_id.* == ids(4), caster_mana.* >= mb_cost));
+    caster_mana.* = select16(mb_hit, caster_mana.* - mb_cost, caster_mana.*);
     mb_cd.* = select16(mb_hit, effects.mind_blast_cooldown, mb_cd.*);
     projectiles.launchClass(
         state,
@@ -682,7 +683,9 @@ pub fn tickCasts(
     procShadowWeaving(state, caster_side_a, i, mb_hit, effects);
 
     // 4. Flash Heal completion (cast_id == 11)
-    const fh_done = vAnd16(cast_finished, cast_id.* == ids(11));
+    const fh_cost = splat(Priest.FlashHealMana) * cost_mult;
+    const fh_done = vAnd16(cast_finished, vAnd16(cast_id.* == ids(11), caster_mana.* >= fh_cost));
+    caster_mana.* = select16(fh_done, caster_mana.* - fh_cost, caster_mana.*);
     if (@reduce(.Or, fh_done)) {
         const shield_val = arena.extra(.shield, caster_side_a, i);
         const shielded = shield_val.* > v_zeros;
@@ -709,7 +712,9 @@ pub fn tickCasts(
     }
 
     // 5. Holy Fire completion (cast_id == 13)
-    const hf_hit = vAnd16(vAnd16(cast_finished, dist <= splat(Priest.HolyFireRange)), cast_id.* == ids(13));
+    const hf_cost = splat(Priest.HolyFireMana) * holy_inst_mult;
+    const hf_hit = vAnd16(vAnd16(cast_finished, dist <= splat(Priest.HolyFireRange)), vAnd16(cast_id.* == ids(13), caster_mana.* >= hf_cost));
+    caster_mana.* = select16(hf_hit, caster_mana.* - hf_cost, caster_mana.*);
     projectiles.launchClass(
         state,
         caster_side_a,
@@ -721,7 +726,9 @@ pub fn tickCasts(
     );
 
     // 6. Smite completion (cast_id == 14)
-    const smite_hit = vAnd16(vAnd16(cast_finished, dist <= splat(Priest.SmiteRange)), cast_id.* == ids(14));
+    const smite_cost = splat(Priest.SmiteMana) * holy_inst_mult;
+    const smite_hit = vAnd16(vAnd16(cast_finished, dist <= splat(Priest.SmiteRange)), vAnd16(cast_id.* == ids(14), caster_mana.* >= smite_cost));
+    caster_mana.* = select16(smite_hit, caster_mana.* - smite_cost, caster_mana.*);
     projectiles.launchClass(
         state,
         caster_side_a,
@@ -732,7 +739,9 @@ pub fn tickCasts(
         Spec.priest,
     );
 
-    const burn_done = vAnd16(cast_finished, vAnd16(cast_id.* == ids(24), dist <= splat(30) * effects.shadow_range_mult));
+    const burn_cost = splat(270) * shadow_cast_mult;
+    const burn_done = vAnd16(cast_finished, vAnd16(cast_id.* == ids(24), vAnd16(dist <= splat(30) * effects.shadow_range_mult, caster_mana.* >= burn_cost)));
+    caster_mana.* = select16(burn_done, caster_mana.* - burn_cost, caster_mana.*);
     const burn_hit = periodic.application(state, caster_side_a, i, burn_done, effects.shadow_hit_bonus, .shadow);
     const burned = select16(burn_hit, @min(@as(f32x16, target_mana.*), splat(767)), v_zeros);
     target_mana.* = @as(f32x16, target_mana.*) - burned;
@@ -740,8 +749,9 @@ pub fn tickCasts(
     const burn_damage = burned * splat(0.5) * effects.shadow_damage_mult * sw_mult * target_mit;
     procShadowWeaving(state, caster_side_a, i, burn_hit, effects);
 
-    // Consume Inner Focus when a cast-time spell finishes
-    inner_focus_flag.* = @select(u32, cast_finished, ids(0), inner_focus_flag.*);
+    // Consume Inner Focus when a cast-time spell succeeds
+    const hardcast_succeeded = vOr16(vOr16(mb_hit, fh_done), vOr16(vOr16(hf_hit, smite_hit), burn_done));
+    inner_focus_flag.* = @select(u32, hardcast_succeeded, ids(0), inner_focus_flag.*);
 
     cast_id.* = @select(u32, cast_finished, ids(0), cast_id.*);
     cast_timer.* = select16(cast_finished, v_zeros, cast_timer.*);

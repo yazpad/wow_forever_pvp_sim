@@ -279,7 +279,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             inline for (.{ 1, 2, 3, 4, 5, 6 }) |action| {
                 const costs = [_]f32{ 0, Frost.LanceMana, Frost.NovaMana, Frost.PolymorphMana, Frost.BoltMana, Frost.BlinkMana, Frost.BarrierMana };
                 const used = actions == ids(action);
-                mana.* -= select16(used, splat(costs[action]), splat(0));
+                if (action != 3 and action != 4) mana.* -= select16(used, splat(costs[action]), splat(0));
                 if (action <= 4) gcd.* = select16(used, @max(splat(1), splat(1) / @import("racials.zig").hasteMultiplier(&self.state, side_a, i)), gcd.*);
             }
             const lance = actions == ids(1);
@@ -692,7 +692,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 // --- Unit A Cast Progress ---
                 var a_drain_dmg: f32x16 = v_zeros;
                 if (spec_a == .priest) {
-                    const c_res_a = priest_combat.tickCasts(self, true, i, dt, dist, priest_effects_a, mit_b, &c_id_a, &c_tmr_a, &c_tot_a, &r_tmr_a, &dc_cd_a, &un_dur_a, &hp_a, immolate_b, &mana_b);
+                    const c_res_a = priest_combat.tickCasts(self, true, i, dt, dist, priest_effects_a, mit_b, &c_id_a, &c_tmr_a, &c_tot_a, &r_tmr_a, &dc_cd_a, &un_dur_a, &hp_a, &mana_a, immolate_b, &mana_b);
                     a_drain_dmg = c_res_a.shadow_dmg;
                     if (i == 0) if (self.priest_recording) |record| {
                         record[0].damage[24] = c_res_a.burn_dmg[0];
@@ -709,7 +709,9 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     a_drain_dmg = drain_tick_a.damage * mit_b;
                     hp_a = @min(@as(f32x16, self.state.max_health_a[i..][0..VEC_LEN].*), hp_a + drain_tick_a.healing);
 
-                    const a_sb_hit = vAnd16(vAnd16(a_cast_finished, dist <= v_max_dist), c_id_a == @as(u32x16, @splat(4)));
+                    const a_sb_cost = if (spec_a == .frost_mage) splat(Frost.BoltMana) else splat(WarlockConstants.ShadowBoltMana) * effects_a.shadow_bolt_mana;
+                    const a_sb_hit = vAnd16(vAnd16(a_cast_finished, dist <= v_max_dist), vAnd16(c_id_a == @as(u32x16, @splat(4)), mana_a >= a_sb_cost));
+                    mana_a = select16(a_sb_hit, mana_a - a_sb_cost, mana_a);
                     @import("projectiles.zig").launchClass(&self.state, true, i, 4, (@as(f32x16, @splat(if (spec_a == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) + (if (spec_a == .warlock) @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * splat(3.0 / 3.5) else splat(0))) * (if (spec_a == .warlock) effects_a.shadow_damage else splat(1)), a_sb_hit, spec_a);
                     if (spec_a == .warlock and @reduce(.Or, a_sb_hit)) {
                         const a_sb_crit = vAnd16(a_sb_hit, vAnd16(self.state.spell_outcome_a[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(@import("spell_resolution.zig").Outcome.crit))), effects_a.improved_shadow_bolt_mult > v_zeros));
@@ -717,16 +719,25 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                         self.state.isb_charges_b[i..][0..VEC_LEN].* = select16(a_sb_crit, @as(f32x16, @splat(4.0)), self.state.isb_charges_b[i..][0..VEC_LEN].*);
                         self.state.isb_vuln_b[i..][0..VEC_LEN].* = select16(a_sb_crit, effects_a.improved_shadow_bolt_mult, self.state.isb_vuln_b[i..][0..VEC_LEN].*);
                     }
-                    const a_sp_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(11)) else @as(bool16, @splat(false));
+                    const a_sp_cost = splat(WarlockConstants.SearingPainMana) * effects_a.shadow_bolt_mana;
+                    const a_sp_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, vAnd16(c_id_a == ids(11), mana_a >= a_sp_cost)) else @as(bool16, @splat(false));
+                    mana_a = select16(a_sp_hit, mana_a - a_sp_cost, mana_a);
                     @import("projectiles.zig").launchClass(&self.state, true, i, 11, (splat(WarlockConstants.SearingPainDamage) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .fire) * @as(f32x16, @splat(0.42857142857142855))) * (if (spec_a == .warlock) effects_a.fire_damage else splat(1)), a_sp_hit, spec_a);
-                    const a_inc_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(12)) else @as(bool16, @splat(false));
+                    const a_inc_cost = splat(WarlockConstants.IncinerateMana) * effects_a.shadow_bolt_mana;
+                    const a_inc_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, vAnd16(c_id_a == ids(12), mana_a >= a_inc_cost)) else @as(bool16, @splat(false));
+                    mana_a = select16(a_inc_hit, mana_a - a_inc_cost, mana_a);
                     const a_inc_bonus = select16(immolate_b > v_zeros, splat(1.25), splat(1.0));
                     @import("projectiles.zig").launchClass(&self.state, true, i, 12, (splat(WarlockConstants.IncinerateDamage) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .fire) * @as(f32x16, @splat(0.7142857142857143))) * a_inc_bonus * (if (spec_a == .warlock) effects_a.fire_damage else splat(1)), a_inc_hit, spec_a);
-                    const a_immolate_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, c_id_a == ids(13)) else @as(bool16, @splat(false));
+                    const a_immolate_cost = splat(WarlockConstants.ImmolateMana) * effects_a.shadow_bolt_mana;
+                    const a_immolate_hit = if (spec_a == .warlock) vAnd16(a_cast_finished, vAnd16(c_id_a == ids(13), mana_a >= a_immolate_cost)) else @as(bool16, @splat(false));
+                    mana_a = select16(a_immolate_hit, mana_a - a_immolate_cost, mana_a);
                     @import("projectiles.zig").launchClass(&self.state, true, i, 13, (splat(WarlockConstants.ImmolateInitialDamage) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .fire) * @as(f32x16, @splat(0.2))) * (if (spec_a == .warlock) effects_a.immolate_initial_damage else splat(1)), a_immolate_hit, spec_a);
                     if (spec_a == .frost_mage) crp_b = select16(vAnd16(hits_a.bolt > v_zeros, @import("racials.zig").canImpair(&self.state, false, i)), splat(Frost.SlowDuration), crp_b);
 
-                    const a_fear_hit = @import("periodic.zig").control(&self.state, true, i, vAnd16(vAnd16(a_cast_finished, dist <= splat(if (spec_a == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_a == @as(u32x16, @splat(3))), (if (spec_a == .warlock) effects_a.spell_hit_bonus else @as(f32x16, @splat(0))), (if (spec_a == .frost_mage) .arcane else .shadow), false);
+                    const a_fear_cost = splat(if (spec_a == .frost_mage) Frost.PolymorphMana else WarlockConstants.FearMana);
+                    const a_fear_cast_done = vAnd16(vAnd16(a_cast_finished, dist <= splat(if (spec_a == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), vAnd16(c_id_a == @as(u32x16, @splat(3)), mana_a >= a_fear_cost));
+                    mana_a = select16(a_fear_cast_done, mana_a - a_fear_cost, mana_a);
+                    const a_fear_hit = @import("periodic.zig").control(&self.state, true, i, a_fear_cast_done, (if (spec_a == .warlock) effects_a.spell_hit_bonus else @as(f32x16, @splat(0))), (if (spec_a == .frost_mage) .arcane else .shadow), false);
                     const a_fear_dr_mult = getDrMultiplier(fear_dr_t_b);
                     const a_fear_dur = @as(f32x16, @splat(if (spec_a == .frost_mage) Frost.PolymorphDuration else WarlockConstants.FearDuration)) * a_fear_dr_mult * (if (spec_b == .priest) priest_effects_b.cc_duration_mult else splat(1));
                     fear_b = select16(vAnd16(a_fear_hit, a_fear_dur > v_zeros), a_fear_dur, fear_b);
@@ -748,7 +759,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 // --- Unit B Cast Progress ---
                 var b_drain_dmg: f32x16 = v_zeros;
                 if (spec_b == .priest) {
-                    const c_res_b = priest_combat.tickCasts(self, false, i, dt, dist, priest_effects_b, mit_a, &c_id_b, &c_tmr_b, &c_tot_b, &r_tmr_b, &dc_cd_b, &un_dur_b, &hp_b, immolate_a, &mana_a);
+                    const c_res_b = priest_combat.tickCasts(self, false, i, dt, dist, priest_effects_b, mit_a, &c_id_b, &c_tmr_b, &c_tot_b, &r_tmr_b, &dc_cd_b, &un_dur_b, &hp_b, &mana_b, immolate_a, &mana_a);
                     b_drain_dmg = c_res_b.shadow_dmg;
                     if (i == 0) if (self.priest_recording) |record| {
                         record[1].damage[24] = c_res_b.burn_dmg[0];
@@ -765,7 +776,9 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     b_drain_dmg = drain_tick_b.damage * mit_a;
                     hp_b = @min(@as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*), hp_b + drain_tick_b.healing);
 
-                    const b_sb_hit = vAnd16(vAnd16(b_cast_finished, dist <= v_max_dist), c_id_b == @as(u32x16, @splat(4)));
+                    const b_sb_cost = if (spec_b == .frost_mage) splat(Frost.BoltMana) else splat(WarlockConstants.ShadowBoltMana) * effects_b.shadow_bolt_mana;
+                    const b_sb_hit = vAnd16(vAnd16(b_cast_finished, dist <= v_max_dist), vAnd16(c_id_b == @as(u32x16, @splat(4)), mana_b >= b_sb_cost));
+                    mana_b = select16(b_sb_hit, mana_b - b_sb_cost, mana_b);
                     @import("projectiles.zig").launchClass(&self.state, false, i, 4, (@as(f32x16, @splat(if (spec_b == .frost_mage) Frost.BoltDamage else WarlockConstants.ShadowBoltDamage)) + (if (spec_b == .warlock) @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * splat(3.0 / 3.5) else splat(0))) * (if (spec_b == .warlock) effects_b.shadow_damage else splat(1)), b_sb_hit, spec_b);
                     if (spec_b == .warlock and @reduce(.Or, b_sb_hit)) {
                         const b_sb_crit = vAnd16(b_sb_hit, vAnd16(self.state.spell_outcome_b[i..][0..VEC_LEN].* == @as(u32x16, @splat(@intFromEnum(@import("spell_resolution.zig").Outcome.crit))), effects_b.improved_shadow_bolt_mult > v_zeros));
@@ -773,16 +786,25 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                         self.state.isb_charges_a[i..][0..VEC_LEN].* = select16(b_sb_crit, @as(f32x16, @splat(4.0)), self.state.isb_charges_a[i..][0..VEC_LEN].*);
                         self.state.isb_vuln_a[i..][0..VEC_LEN].* = select16(b_sb_crit, effects_b.improved_shadow_bolt_mult, self.state.isb_vuln_a[i..][0..VEC_LEN].*);
                     }
-                    const b_sp_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(11)) else @as(bool16, @splat(false));
+                    const b_sp_cost = splat(WarlockConstants.SearingPainMana) * effects_b.shadow_bolt_mana;
+                    const b_sp_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, vAnd16(c_id_b == ids(11), mana_b >= b_sp_cost)) else @as(bool16, @splat(false));
+                    mana_b = select16(b_sp_hit, mana_b - b_sp_cost, mana_b);
                     @import("projectiles.zig").launchClass(&self.state, false, i, 11, (splat(WarlockConstants.SearingPainDamage) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .fire) * @as(f32x16, @splat(0.42857142857142855))) * (if (spec_b == .warlock) effects_b.fire_damage else splat(1)), b_sp_hit, spec_b);
-                    const b_inc_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(12)) else @as(bool16, @splat(false));
+                    const b_inc_cost = splat(WarlockConstants.IncinerateMana) * effects_b.shadow_bolt_mana;
+                    const b_inc_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, vAnd16(c_id_b == ids(12), mana_b >= b_inc_cost)) else @as(bool16, @splat(false));
+                    mana_b = select16(b_inc_hit, mana_b - b_inc_cost, mana_b);
                     const b_inc_bonus = select16(immolate_a > v_zeros, splat(1.25), splat(1.0));
                     @import("projectiles.zig").launchClass(&self.state, false, i, 12, (splat(WarlockConstants.IncinerateDamage) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .fire) * @as(f32x16, @splat(0.7142857142857143))) * b_inc_bonus * (if (spec_b == .warlock) effects_b.fire_damage else splat(1)), b_inc_hit, spec_b);
-                    const b_immolate_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, c_id_b == ids(13)) else @as(bool16, @splat(false));
+                    const b_immolate_cost = splat(WarlockConstants.ImmolateMana) * effects_b.shadow_bolt_mana;
+                    const b_immolate_hit = if (spec_b == .warlock) vAnd16(b_cast_finished, vAnd16(c_id_b == ids(13), mana_b >= b_immolate_cost)) else @as(bool16, @splat(false));
+                    mana_b = select16(b_immolate_hit, mana_b - b_immolate_cost, mana_b);
                     @import("projectiles.zig").launchClass(&self.state, false, i, 13, (splat(WarlockConstants.ImmolateInitialDamage) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .fire) * @as(f32x16, @splat(0.2))) * (if (spec_b == .warlock) effects_b.immolate_initial_damage else splat(1)), b_immolate_hit, spec_b);
                     if (spec_b == .frost_mage) crp_a = select16(vAnd16(hits_b.bolt > v_zeros, @import("racials.zig").canImpair(&self.state, true, i)), splat(Frost.SlowDuration), crp_a);
 
-                    const b_fear_hit = @import("periodic.zig").control(&self.state, false, i, vAnd16(vAnd16(b_cast_finished, dist <= splat(if (spec_b == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), c_id_b == @as(u32x16, @splat(3))), (if (spec_b == .warlock) effects_b.spell_hit_bonus else @as(f32x16, @splat(0))), (if (spec_b == .frost_mage) .arcane else .shadow), false);
+                    const b_fear_cost = splat(if (spec_b == .frost_mage) Frost.PolymorphMana else WarlockConstants.FearMana);
+                    const b_fear_cast_done = vAnd16(vAnd16(b_cast_finished, dist <= splat(if (spec_b == .frost_mage) Frost.PolymorphRange else WarlockConstants.FearRange)), vAnd16(c_id_b == @as(u32x16, @splat(3)), mana_b >= b_fear_cost));
+                    mana_b = select16(b_fear_cast_done, mana_b - b_fear_cost, mana_b);
+                    const b_fear_hit = @import("periodic.zig").control(&self.state, false, i, b_fear_cast_done, (if (spec_b == .warlock) effects_b.spell_hit_bonus else @as(f32x16, @splat(0))), (if (spec_b == .frost_mage) .arcane else .shadow), false);
                     const b_fear_dr_mult = getDrMultiplier(fear_dr_t_a);
                     const b_fear_dur = @as(f32x16, @splat(if (spec_b == .frost_mage) Frost.PolymorphDuration else WarlockConstants.FearDuration)) * b_fear_dr_mult * (if (spec_a == .priest) priest_effects_a.cc_duration_mult else splat(1));
                     fear_a = select16(vAnd16(b_fear_hit, b_fear_dur > v_zeros), b_fear_dur, fear_a);

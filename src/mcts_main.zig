@@ -47,7 +47,7 @@ const default_shadow_priest_talents: PriestTalentRanks = .{
     .darkness = 4,
     .shadowform = 1,
 };
-const Options = struct {
+pub const Options = struct {
     config: mcts.Config = .{
         .evaluator = .rollout,
         .algorithm = .puct,
@@ -85,6 +85,10 @@ const Options = struct {
     hp_a: f32 = 2000,
     hp_b: f32 = 2000,
     stop_file: ?[]const u8 = null,
+    /// Evolved neural policy weights (neuro_arena). A side with a policy is
+    /// driven by argmax policy actions instead of the search result.
+    policy_a: ?[]const u8 = null,
+    policy_b: ?[]const u8 = null,
 };
 pub fn main() !void {
     var args = std.process.args();
@@ -100,42 +104,65 @@ pub fn main() !void {
             continue;
         }
         if (std.mem.eql(u8, arg, "--help")) {
-            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted.\n");
+            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH] [--policy-a WEIGHTS.nepl] [--policy-b WEIGHTS.nepl]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted. --policy-a/--policy-b drive that side with an evolved neuro_arena policy (argmax) instead of MCTS.\n");
             return;
         }
         const value = args.next() orelse return error.MissingValue;
-        if (std.mem.eql(u8, arg, "--x-a")) {
-            o.x_a = try std.fmt.parseFloat(f32, value);
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--y-a")) {
-            o.y_a = try std.fmt.parseFloat(f32, value);
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--x-b")) {
-            o.x_b = try std.fmt.parseFloat(f32, value);
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--y-b")) {
-            o.y_b = try std.fmt.parseFloat(f32, value);
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--pet-a")) o.pet_a = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--pet-b")) o.pet_b = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--spec-a")) o.a = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--spec-b")) o.b = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--name-a")) o.name_a = value else if (std.mem.eql(u8, arg, "--name-b")) o.name_b = value else if (std.mem.eql(u8, arg, "--spec-id-a")) o.spec_id_a = value else if (std.mem.eql(u8, arg, "--spec-id-b")) o.spec_id_b = value else if (std.mem.eql(u8, arg, "--rollouts")) o.config.rollouts = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--workers")) o.config.workers = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--memory-mb"))
-            o.config.memory_limit = try std.math.mul(usize, try std.fmt.parseInt(usize, value, 10), 1024 * 1024)
-        else if (std.mem.eql(u8, arg, "--depth"))
-            o.config.depth = try std.fmt.parseInt(usize, value, 10)
-        else if (std.mem.eql(u8, arg, "--nodes")) o.config.nodes = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--seed")) o.config.seed = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--seconds")) {
-            const seconds = try std.fmt.parseFloat(f32, value);
-            if (!std.math.isFinite(seconds) or seconds <= 0 or seconds > 600) return error.InvalidDuration;
-            o.config.max_ticks = @intFromFloat(seconds * 100);
-        } else if (std.mem.eql(u8, arg, "--ms")) o.config.milliseconds = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--algorithm")) o.config.algorithm = std.meta.stringToEnum(mcts.Algorithm, value) orelse return error.UnknownAlgorithm else if (std.mem.eql(u8, arg, "--evaluator")) o.config.evaluator = std.meta.stringToEnum(mcts.EvaluatorType, value) orelse return error.UnknownEvaluator else if (std.mem.eql(u8, arg, "--boundary")) o.config.boundary = std.meta.stringToEnum(mcts.BoundaryMode, value) orelse return error.UnknownBoundary else if (std.mem.eql(u8, arg, "--c-puct")) o.config.c_puct = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--truncation-ticks")) o.config.truncation_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--output")) o.output = value else if (std.mem.eql(u8, arg, "--rounds")) o.rounds = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--start-ticks")) o.start_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--distance")) o.distance = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--hp-a")) {
-            o.hp_a = try std.fmt.parseFloat(f32, value);
-            o.hp_a_set = true;
-        } else if (std.mem.eql(u8, arg, "--hp-b")) {
-            o.hp_b = try std.fmt.parseFloat(f32, value);
-            o.hp_b_set = true;
-        } else if (std.mem.eql(u8, arg, "--stop-file")) o.stop_file = value else return error.UnknownOption;
+        if (!try applyOption(&o, arg, value)) return error.UnknownOption;
     }
+    try finalize(&o);
+    switch (o.a) {
+        inline else => |spec_a| switch (o.b) {
+            inline else => |spec_b| try run(spec_a, spec_b, o),
+        },
+    }
+}
+/// Applies one `--flag value` pair. Returns false for an unknown flag so other
+/// front ends (neuro_arena) can layer their own options on top.
+pub fn applyOption(o: *Options, arg: []const u8, value: []const u8) !bool {
+    if (std.mem.eql(u8, arg, "--x-a")) {
+        o.x_a = try std.fmt.parseFloat(f32, value);
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--y-a")) {
+        o.y_a = try std.fmt.parseFloat(f32, value);
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--x-b")) {
+        o.x_b = try std.fmt.parseFloat(f32, value);
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--y-b")) {
+        o.y_b = try std.fmt.parseFloat(f32, value);
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--policy-a")) {
+        o.policy_a = value;
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--policy-b")) {
+        o.policy_b = value;
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--pet-a")) o.pet_a = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--pet-b")) o.pet_b = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--spec-a")) o.a = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--spec-b")) o.b = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--name-a")) o.name_a = value else if (std.mem.eql(u8, arg, "--name-b")) o.name_b = value else if (std.mem.eql(u8, arg, "--spec-id-a")) o.spec_id_a = value else if (std.mem.eql(u8, arg, "--spec-id-b")) o.spec_id_b = value else if (std.mem.eql(u8, arg, "--rollouts")) o.config.rollouts = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--workers")) o.config.workers = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--memory-mb"))
+        o.config.memory_limit = try std.math.mul(usize, try std.fmt.parseInt(usize, value, 10), 1024 * 1024)
+    else if (std.mem.eql(u8, arg, "--depth"))
+        o.config.depth = try std.fmt.parseInt(usize, value, 10)
+    else if (std.mem.eql(u8, arg, "--nodes")) o.config.nodes = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--seed")) o.config.seed = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--seconds")) {
+        const seconds = try std.fmt.parseFloat(f32, value);
+        if (!std.math.isFinite(seconds) or seconds <= 0 or seconds > 600) return error.InvalidDuration;
+        o.config.max_ticks = @intFromFloat(seconds * 100);
+    } else if (std.mem.eql(u8, arg, "--ms")) o.config.milliseconds = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, arg, "--algorithm")) o.config.algorithm = std.meta.stringToEnum(mcts.Algorithm, value) orelse return error.UnknownAlgorithm else if (std.mem.eql(u8, arg, "--evaluator")) o.config.evaluator = std.meta.stringToEnum(mcts.EvaluatorType, value) orelse return error.UnknownEvaluator else if (std.mem.eql(u8, arg, "--boundary")) o.config.boundary = std.meta.stringToEnum(mcts.BoundaryMode, value) orelse return error.UnknownBoundary else if (std.mem.eql(u8, arg, "--c-puct")) o.config.c_puct = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--truncation-ticks")) o.config.truncation_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--output")) o.output = value else if (std.mem.eql(u8, arg, "--rounds")) o.rounds = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--start-ticks")) o.start_ticks = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, arg, "--distance")) o.distance = try std.fmt.parseFloat(f32, value) else if (std.mem.eql(u8, arg, "--hp-a")) {
+        o.hp_a = try std.fmt.parseFloat(f32, value);
+        o.hp_a_set = true;
+    } else if (std.mem.eql(u8, arg, "--hp-b")) {
+        o.hp_b = try std.fmt.parseFloat(f32, value);
+        o.hp_b_set = true;
+    } else if (std.mem.eql(u8, arg, "--stop-file")) o.stop_file = value else return false;
+    return true;
+}
+/// Validates starting conditions and resolves spec IDs, pets and action masks.
+pub fn finalize(o: *Options) !void {
     if (!std.math.isFinite(o.distance) or o.distance < 0 or o.distance > 35 or !std.math.isFinite(o.hp_a) or !std.math.isFinite(o.hp_b) or o.hp_a <= 0 or o.hp_b <= 0 or o.hp_a > 100000 or o.hp_b > 100000 or o.rounds == 0 or o.start_ticks >= o.config.max_ticks) return error.InvalidStartingConditions;
 
     if (o.x_a != null or o.y_a != null or o.x_b != null or o.y_b != null) {
@@ -186,13 +213,8 @@ pub fn main() !void {
     if (o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_a.?))) == o.warlock_talents_a.demonic_sacrifice_pet) o.warlock_talents_a.demonic_sacrifice = 0;
     if (o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_b.?))) == o.warlock_talents_b.demonic_sacrifice_pet) o.warlock_talents_b.demonic_sacrifice = 0;
     o.config.stop_file = o.stop_file;
-    switch (o.a) {
-        inline else => |spec_a| switch (o.b) {
-            inline else => |spec_b| try run(spec_a, spec_b, o),
-        },
-    }
 }
-fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
+pub fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     const allocator = std.heap.page_allocator;
     var d = try sim.Duel(a, b).init(allocator);
     defer d.deinit();
@@ -239,6 +261,10 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     d.setActionMaskB(o.action_mask_b);
     var rng = std.Random.DefaultPrng.init(o.config.seed ^ 0xbadc0ffee);
     const random = rng.random();
+
+    const neuro_policy = @import("neuro_policy.zig");
+    const loaded_policy_a: ?neuro_policy.Policy = if (o.policy_a) |p| try neuro_policy.Policy.loadFile(p) else null;
+    const loaded_policy_b: ?neuro_policy.Policy = if (o.policy_b) |p| try neuro_policy.Policy.loadFile(p) else null;
 
     const search = try mcts.Search(a, b).init(allocator, o.config);
     defer search.deinit();
@@ -352,29 +378,49 @@ fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
                     break;
                 } else |_| {}
             }
-            const r = search.decide(d.snapshot(0), random);
-            if (o.stop_file) |path| {
-                if (std.fs.cwd().access(path, .{})) |_| {
-                    elapsed += r.seconds;
-                    totals.add(r.stats);
-                    cancelled = true;
-                    break;
-                } else |_| {}
+            const need_mcts = (ready_a and loaded_policy_a == null) or (ready_b and loaded_policy_b == null);
+            var chosen_actions: [2]sim.Action = .{ .{}, .{} };
+            if (need_mcts) {
+                const r = search.decide(d.snapshot(0), random);
+                if (o.stop_file) |path| {
+                    if (std.fs.cwd().access(path, .{})) |_| {
+                        elapsed += r.seconds;
+                        totals.add(r.stats);
+                        cancelled = true;
+                        break;
+                    } else |_| {}
+                }
+                chosen_actions = r.actions;
+                if (ready_a) {
+                    if (loaded_policy_a) |*pa| chosen_actions[0] = pa.selectActionSingle(a, b, &d, true);
+                }
+                if (ready_b) {
+                    if (loaded_policy_b) |*pb| chosen_actions[1] = pb.selectActionSingle(a, b, &d, false);
+                }
+                if (rounds > 0) try writer.writeAll(",\n");
+                try std.json.stringify(.{ .tick = d.ticks[0], .state = d.snapshot(0), .actions = chosen_actions, .choices = r.choices, .strategies = r.distributions, .stats = r.stats, .seconds = r.seconds }, .{}, writer);
+                totals.add(r.stats);
+                elapsed += r.seconds;
+            } else {
+                const t0 = std.time.nanoTimestamp();
+                if (ready_a) chosen_actions[0] = loaded_policy_a.?.selectActionSingle(a, b, &d, true);
+                if (ready_b) chosen_actions[1] = loaded_policy_b.?.selectActionSingle(a, b, &d, false);
+                const dt_s = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000_000.0;
+                const ca = if (o.config.boundary == .event) d.choicesTactical(true, 0, d.getActionMaskA(0)) else d.choices(true, 0, d.getActionMaskA(0));
+                const cb = if (o.config.boundary == .event) d.choicesTactical(false, 0, d.getActionMaskB(0)) else d.choices(false, 0, d.getActionMaskB(0));
+                if (rounds > 0) try writer.writeAll(",\n");
+                try std.json.stringify(.{ .tick = d.ticks[0], .state = d.snapshot(0), .actions = chosen_actions, .choices = [2]sim.Choices{ ca, cb }, .stats = mcts.Stats{}, .seconds = dt_s }, .{}, writer);
+                elapsed += dt_s;
             }
-            const actions = r.actions;
-            if (rounds > 0) try writer.writeAll(",\n");
-            try std.json.stringify(.{ .tick = d.ticks[0], .state = d.snapshot(0), .actions = actions, .choices = r.choices, .strategies = r.distributions, .stats = r.stats, .seconds = r.seconds }, .{}, writer);
-            totals.add(r.stats);
-            elapsed += r.seconds;
             rounds += 1;
-            action_a = if (ready_a) actions[0].ability else 0;
-            action_b = if (ready_b) actions[1].ability else 0;
+            action_a = if (ready_a) chosen_actions[0].ability else 0;
+            action_b = if (ready_b) chosen_actions[1].ability else 0;
             act_a_triggered = ready_a;
             act_b_triggered = ready_b;
             if (o.config.boundary == .event) {
-                d.applyTactical(@splat(actions[0]), @splat(actions[1]));
+                d.applyTactical(@splat(chosen_actions[0]), @splat(chosen_actions[1]));
             } else {
-                d.apply(@splat(actions[0]), @splat(actions[1]));
+                d.apply(@splat(chosen_actions[0]), @splat(chosen_actions[1]));
             }
             if (rounds % 25 == 0) std.debug.print("MCTS: fight {d:.2}s, decisions {d}, compute {d:.2}s\n", .{ @as(f32, @floatFromInt(d.ticks[0])) * 0.01, rounds, elapsed });
         }

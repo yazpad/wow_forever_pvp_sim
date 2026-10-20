@@ -61,6 +61,18 @@ pub fn build(b: *std.Build) void {
     learning.step.dependOn(&generate_identity.step);
     b.installArtifact(learning);
 
+    const neuro = b.addExecutable(.{
+        .name = "neuro_arena",
+        .root_source_file = b.path("src/neuro_arena.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    neuro.step.dependOn(&generate_identity.step);
+    b.installArtifact(neuro);
+    const run_neuro = b.addRunArtifact(neuro);
+    if (b.args) |args| run_neuro.addArgs(args);
+    b.step("neuro", "Run alternating neuroevolution self-play arena").dependOn(&run_neuro.step);
+
     const test_step = b.step("test", "Run library tests");
     const tests = b.addTest(.{
         .root_source_file = b.path("src/tests.zig"),

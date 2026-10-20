@@ -19,4 +19,6 @@ test {
     _ = @import("search_sim.zig");
     _ = @import("priest_talents.zig");
     _ = @import("priest_test.zig");
+    _ = @import("neuro_policy.zig");
+    _ = @import("neuro_evolution.zig");
 }

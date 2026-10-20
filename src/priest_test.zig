@@ -677,7 +677,8 @@ test "Holy Fire matches Forever rank eight cast cost impact and five noncritical
             if (side) duel.arena.applyActionA(0, act(.HolyFire), splat(0)) else duel.arena.applyActionB(0, act(.HolyFire), splat(0));
             const cast_time: f32 = if (fury == 0) 3.5 else 3.0;
             try std.testing.expectApproxEqAbs(cast_time, @field(state, "cast_timer" ++ own)[0], 0.0001);
-            try std.testing.expectApproxEqAbs(mana_before - 255, @field(state, "mana" ++ own)[0], 0.0001);
+            // Hardcasts do not deduct mana at cast start!
+            try std.testing.expectApproxEqAbs(mana_before, @field(state, "mana" ++ own)[0], 0.0001);
             // No damage or debuff before the cast completes.
             for (0..290) |_| _ = duel.arena.tickPhysics16(0.01, 0);
             try std.testing.expectEqual(@as(f32, 10000), @field(state, "hp" ++ target)[0]);
@@ -716,9 +717,19 @@ test "Priest audited healing mana costs gate spending and Inner Focus on both si
                 @field(s, "soul_link" ++ own)[0] = if (mode == 2) 1 else 0;
                 try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[spell[0]][0]);
                 if (side) d.apply(@splat(.{ .ability = spell[0] }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = spell[0] }));
-                try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
                 try std.testing.expect(@field(s, "gcd" ++ own)[0] > 0);
-                if (mode == 2) try std.testing.expectEqual(@as(u32, if (spell[0] == 11) 1 else 0), @field(s, "soul_link" ++ own)[0]);
+                if (spell[0] == 11) {
+                    // Flash Heal is a 1.5s hardcast: mana & Inner Focus are retained until completion!
+                    try std.testing.expectApproxEqAbs(if (mode == 2) @as(f32, 0) else cost, @field(s, "mana" ++ own)[0], 0.0001);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 1), @field(s, "soul_link" ++ own)[0]);
+                    for (0..151) |_| _ = d.arena.tickPhysics16(0.01, 0);
+                    const regen_approx: f32 = 151.0 * 0.01 * 15.0;
+                    try std.testing.expectApproxEqAbs(regen_approx, @field(s, "mana" ++ own)[0], 0.5);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+                } else {
+                    try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+                }
             }
         }
     }
@@ -745,12 +756,39 @@ test "Priest audited Shadow mana costs gate and spend correctly on both sides" {
                 }
                 try std.testing.expect((if (side) d.getActionMaskA(0) else d.getActionMaskB(0))[spell[0]][0]);
                 if (side) d.apply(@splat(.{ .ability = spell[0] }), @splat(.{})) else d.apply(@splat(.{}), @splat(.{ .ability = spell[0] }));
-                try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
-                // Cast-time spells retain Inner Focus until completion.
-                if (mode == 2 and spell[0] == 1) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+                if (spell[0] == 4) {
+                    // Mind Blast is a 1.5s hardcast: mana & Inner Focus are retained until completion!
+                    try std.testing.expectApproxEqAbs(if (mode == 2) @as(f32, 0) else cost, @field(s, "mana" ++ own)[0], 0.0001);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 1), @field(s, "soul_link" ++ own)[0]);
+                    for (0..151) |_| _ = d.arena.tickPhysics16(0.01, 0);
+                    const regen_approx: f32 = 151.0 * 0.01 * 15.0;
+                    try std.testing.expectApproxEqAbs(regen_approx, @field(s, "mana" ++ own)[0], 0.5);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+                } else {
+                    try std.testing.expectApproxEqAbs(@as(f32, 0), @field(s, "mana" ++ own)[0], 0.0001);
+                    if (mode == 2) try std.testing.expectEqual(@as(u32, 0), @field(s, "soul_link" ++ own)[0]);
+                }
             }
         }
     }
+}
+
+test "Hardcast spells abort without launching if Mana Burned below spell cost mid-cast" {
+    var d = try search_sim.Duel(.priest, .warlock).init(std.testing.allocator);
+    defer d.deinit();
+    const s = d.arena.combat();
+    s.distance[0] = 15;
+    s.mana_b[0] = 300;
+    // Warlock starts casting Shadow Bolt (1.8s cast)
+    d.arena.applyActionB(0, @splat(4), splat(0));
+    try std.testing.expectEqual(@as(u32, 4), s.cast_id_b[0]);
+    try std.testing.expectEqual(@as(f32, 300), s.mana_b[0]);
+    // Mid-cast, Warlock loses all mana (e.g. from Mana Burn)
+    s.mana_b[0] = 0;
+    for (0..185) |_| _ = d.arena.tickPhysics16(0.01, 0);
+    // Cast timer finished, but Warlock had < ShadowBoltMana, so no projectile launched!
+    try std.testing.expectEqual(@as(u32, 0), s.cast_id_b[0]);
+    try std.testing.expectEqual(@as(f32, 0), s.projectile_count_b[0]);
 }
 
 test "Priest spell GCD is 1.5s including haste; Shield gates Dispel and off-GCD buffs remain usable" {
