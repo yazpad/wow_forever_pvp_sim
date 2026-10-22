@@ -133,7 +133,6 @@ fn WorkerContext(comptime a: Spec, comptime b: Spec) type {
         individuals: []neuro_evolution.Individual,
         batches_per_ind: usize,
         evolving_a: bool,
-        frozen_champ: *const Policy,
         hof: *const HallOfFame,
         epoch_seed: u64,
 
@@ -148,7 +147,7 @@ fn WorkerContext(comptime a: Spec, comptime b: Spec) type {
                 const rng = prng.random();
 
                 for (0..self.batches_per_ind) |b_idx| {
-                    const opp = self.hof.sampleOpponent(self.frozen_champ, rng);
+                    const opp = self.hof.sampleOpponent(rng);
                     const pol_a = if (self.evolving_a) &ind.policy else opp;
                     const pol_b = if (self.evolving_a) opp else &ind.policy;
                     const batch_seed = self.epoch_seed ^ (@as(u64, idx) << 16) ^ @as(u64, b_idx);
@@ -181,6 +180,79 @@ fn WorkerContext(comptime a: Spec, comptime b: Spec) type {
     };
 }
 
+/// Scores one archived policy against every policy in the opponent archive.
+/// Each matchup uses 16 seeded fights, making final selection independent of
+/// which side happened to evolve last.
+fn scoreAgainstArchive(
+    comptime a: Spec,
+    comptime b: Spec,
+    duel: *sim.Duel(a, b),
+    base_snapshot: sim.Snapshot,
+    candidate: *const Policy,
+    opponents: *const HallOfFame,
+    candidate_is_a: bool,
+    max_ticks: u32,
+    seed: u64,
+) f64 {
+    if (opponents.len == 0) return -std.math.inf(f64);
+
+    var total: f64 = 0.0;
+    for (opponents.champions[0..opponents.len], 0..) |*opponent, idx| {
+        const policy_a = if (candidate_is_a) candidate else opponent;
+        const policy_b = if (candidate_is_a) opponent else candidate;
+        const res = neuro_evolution.evaluateBatch16(
+            a,
+            b,
+            duel,
+            base_snapshot,
+            policy_a,
+            policy_b,
+            candidate_is_a,
+            max_ticks,
+            seed ^ (@as(u64, idx) *% 0x9e3779b97f4a7c15),
+        );
+        total += res.fitness_sum / @as(f64, @floatFromInt(res.matches));
+    }
+    return total / @as(f64, @floatFromInt(opponents.len));
+}
+
+/// Measures a champion pair over 112 fights with small per-fight opening and
+/// position variation. Seven SIMD batches keep this evaluation inexpensive.
+fn evaluateJitteredPair(
+    comptime a: Spec,
+    comptime b: Spec,
+    duel: *sim.Duel(a, b),
+    base_snapshot: sim.Snapshot,
+    policy_a: *const Policy,
+    policy_b: *const Policy,
+    max_ticks: u32,
+    seed: u64,
+) f64 {
+    var wins_a: u64 = 0;
+    var draws: u64 = 0;
+    var matches: u64 = 0;
+    for (0..7) |batch| {
+        const res = neuro_evolution.evaluateBatch16Ex(
+            a,
+            b,
+            duel,
+            base_snapshot,
+            policy_a,
+            policy_b,
+            true,
+            max_ticks,
+            seed ^ (@as(u64, batch) *% 0x9e3779b97f4a7c15),
+            .{ .start_lag = 0.25, .pos = 1.0 },
+            null,
+        );
+        wins_a += res.wins;
+        draws += res.draws;
+        matches += res.matches;
+    }
+    return (@as(f64, @floatFromInt(wins_a)) + 0.5 * @as(f64, @floatFromInt(draws))) /
+        @as(f64, @floatFromInt(matches));
+}
+
 fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     const allocator = std.heap.page_allocator;
     const pop_size = @max(8, opts.population_size);
@@ -208,8 +280,8 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
 
     var champ_a = pop_a.individuals[0].policy;
     var champ_b = pop_b.individuals[0].policy;
-    hof_a.add(champ_a, rng);
-    hof_b.add(champ_b, rng);
+    hof_a.add(champ_a);
+    hof_b.add(champ_b);
 
     const WCtx = WorkerContext(a, b);
     var contexts = try allocator.alloc(WCtx, workers);
@@ -223,7 +295,6 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
             .individuals = undefined,
             .batches_per_ind = batches_per_ind,
             .evolving_a = true,
-            .frozen_champ = &champ_b,
             .hof = &hof_b,
             .epoch_seed = 0,
         };
@@ -236,10 +307,6 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     const stdout = std.io.getStdOut().writer();
     const total_start = std.time.nanoTimestamp();
 
-    var prev_win_rate_a: f64 = 0.5;
-    var prev_win_rate_b: f64 = 0.5;
-    var prev_fitness_a: f64 = 0.0;
-    var prev_fitness_b: f64 = 0.0;
     var consecutive_converged: usize = 0;
     var epochs_completed: usize = 0;
     var total_generations: usize = 0;
@@ -252,14 +319,13 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
 
         const evolving_a = (epoch % 2 == 0);
         var active_pop = if (evolving_a) &pop_a else &pop_b;
-        const frozen_champ = if (evolving_a) &champ_b else &champ_a;
         const opp_hof = if (evolving_a) &hof_b else &hof_a;
+        const previous_champ = if (evolving_a) champ_a else champ_b;
 
-        const epoch_t0 = std.time.nanoTimestamp();
-        var total_ticks: u64 = 0;
         var best_ind: neuro_evolution.Individual = active_pop.individuals[0];
 
         for (0..gens_per_epoch) |gen| {
+            const gen_t0 = std.time.nanoTimestamp();
             var next_idx = std.atomic.Value(usize).init(0);
             const gen_seed = opts.base.config.seed +% (@as(u64, epoch * 1024 + gen + 1) *% 0x9e3779b97f4a7c15);
 
@@ -267,7 +333,6 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
                 contexts[w].next_idx = &next_idx;
                 contexts[w].individuals = active_pop.individuals;
                 contexts[w].evolving_a = evolving_a;
-                contexts[w].frozen_champ = frozen_champ;
                 contexts[w].hof = opp_hof;
                 contexts[w].epoch_seed = gen_seed;
             }
@@ -282,59 +347,89 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
 
             active_pop.sortByFitness();
             best_ind = active_pop.best().*;
-            for (active_pop.individuals) |ind| total_ticks += ind.ticks;
+            var gen_ticks: u64 = 0;
+            for (active_pop.individuals) |ind| gen_ticks += ind.ticks;
             total_generations += 1;
+
+            if (evolving_a) {
+                champ_a = best_ind.policy;
+            } else {
+                champ_b = best_ind.policy;
+            }
+
+            const pair_win_rate_a = evaluateJitteredPair(
+                a,
+                b,
+                &base_duel,
+                base_snapshot,
+                &champ_a,
+                &champ_b,
+                opts.base.config.max_ticks,
+                opts.base.config.seed ^ 0xc4a9 ^ @as(u64, total_generations),
+            );
+            const gen_sec = @max(1e-6, @as(f64, @floatFromInt(std.time.nanoTimestamp() - gen_t0)) / 1_000_000_000.0);
+            const gen_fights_per_sec = @as(f64, @floatFromInt(fights_per_gen)) / gen_sec;
+            const gen_ticks_per_sec = @as(f64, @floatFromInt(gen_ticks)) / gen_sec;
+            const gen_avg_fight_sec = (@as(f64, @floatFromInt(gen_ticks)) / @as(f64, @floatFromInt(fights_per_gen))) * 0.01;
+            const win_rate_a_est = if (evolving_a) best_ind.win_rate else (1.0 - best_ind.win_rate);
+            try stdout.print(
+                "NEURO_EPOCH epoch={d}/{d} gens={d} side={s} win_rate={d:.4} win_rate_a={d:.4} pair_wr_a={d:.4} pair_fights=112 fitness={d:.4} avg_fight_s={d:.2} fights_sec={d:.0} ticks_sec={d:.0}\n",
+                .{
+                    epoch + 1,
+                    opts.epochs,
+                    total_generations,
+                    if (evolving_a) "A" else "B",
+                    best_ind.win_rate,
+                    win_rate_a_est,
+                    pair_win_rate_a,
+                    best_ind.fitness,
+                    gen_avg_fight_sec,
+                    gen_fights_per_sec,
+                    gen_ticks_per_sec,
+                },
+            );
 
             if (gen + 1 < gens_per_epoch) {
                 active_pop.evolveNextGeneration(epoch * gens_per_epoch + gen, rng);
             }
         }
 
-        const epoch_sec = @max(1e-6, @as(f64, @floatFromInt(std.time.nanoTimestamp() - epoch_t0)) / 1_000_000_000.0);
-        const fights_per_sec = @as(f64, @floatFromInt(actual_fights_per_epoch)) / epoch_sec;
-        const ticks_per_sec = @as(f64, @floatFromInt(total_ticks)) / epoch_sec;
-        const avg_fight_sec = (@as(f64, @floatFromInt(total_ticks)) / @as(f64, @floatFromInt(actual_fights_per_epoch))) * 0.01;
+        const convergence_seed = opts.base.config.seed ^ 0xc0ffee ^ @as(u64, epoch);
+        const previous_archive_score = scoreAgainstArchive(
+            a,
+            b,
+            &base_duel,
+            base_snapshot,
+            &previous_champ,
+            opp_hof,
+            evolving_a,
+            opts.base.config.max_ticks,
+            convergence_seed,
+        );
+        const candidate_archive_score = scoreAgainstArchive(
+            a,
+            b,
+            &base_duel,
+            base_snapshot,
+            &best_ind.policy,
+            opp_hof,
+            evolving_a,
+            opts.base.config.max_ticks,
+            convergence_seed,
+        );
+        const delta = @abs(candidate_archive_score - previous_archive_score);
 
         if (evolving_a) {
             champ_a = best_ind.policy;
-            hof_a.add(champ_a, rng);
+            hof_a.add(champ_a);
         } else {
             champ_b = best_ind.policy;
-            hof_b.add(champ_b, rng);
-        }
-
-        const win_rate_a_est = if (evolving_a) best_ind.win_rate else (1.0 - best_ind.win_rate);
-        const delta = if (evolving_a) @abs(best_ind.win_rate - prev_win_rate_a) else @abs(best_ind.win_rate - prev_win_rate_b);
-        const fit_delta = if (evolving_a) @abs(best_ind.fitness - prev_fitness_a) else @abs(best_ind.fitness - prev_fitness_b);
-        if (evolving_a) {
-            prev_win_rate_a = best_ind.win_rate;
-            prev_fitness_a = best_ind.fitness;
-        } else {
-            prev_win_rate_b = best_ind.win_rate;
-            prev_fitness_b = best_ind.fitness;
+            hof_b.add(champ_b);
         }
 
         epochs_completed = epoch + 1;
 
-        try stdout.print(
-            "NEURO_EPOCH epoch={d}/{d} gens={d} side={s} win_rate={d:.4} win_rate_a={d:.4} fitness={d:.4} avg_fight_s={d:.2} fights_sec={d:.0} ticks_sec={d:.0} delta={d:.4}\n",
-            .{
-                epoch + 1,
-                opts.epochs,
-                total_generations,
-                if (evolving_a) "A" else "B",
-                best_ind.win_rate,
-                win_rate_a_est,
-                best_ind.fitness,
-                avg_fight_sec,
-                fights_per_sec,
-                ticks_per_sec,
-                delta,
-            },
-        );
-
-        const is_saturated = (best_ind.win_rate < 0.02 or best_ind.win_rate > 0.98);
-        if (opts.convergence_threshold > 0.0 and epoch >= 4 and !is_saturated and delta < opts.convergence_threshold and fit_delta < opts.convergence_threshold) {
+        if (opts.convergence_threshold > 0.0 and epoch >= 4 and delta < opts.convergence_threshold) {
             consecutive_converged += 1;
             if (consecutive_converged >= 2) {
                 converged = true;
@@ -349,7 +444,60 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
         }
     }
 
-    // Save champion weights
+    // Select the final representatives by their average score against the
+    // opposing archive, rather than keeping whichever policy trained last.
+    var selected_a = hof_a.champions[0];
+    var selected_b = hof_b.champions[0];
+    var selected_score_a = -std.math.inf(f64);
+    var selected_score_b = -std.math.inf(f64);
+    for (hof_a.champions[0..hof_a.len]) |*candidate| {
+        const score = scoreAgainstArchive(
+            a,
+            b,
+            &base_duel,
+            base_snapshot,
+            candidate,
+            &hof_b,
+            true,
+            opts.base.config.max_ticks,
+            opts.base.config.seed ^ 0xa11ce,
+        );
+        if (score > selected_score_a) {
+            selected_score_a = score;
+            selected_a = candidate.*;
+        }
+    }
+    for (hof_b.champions[0..hof_b.len]) |*candidate| {
+        const score = scoreAgainstArchive(
+            a,
+            b,
+            &base_duel,
+            base_snapshot,
+            candidate,
+            &hof_a,
+            false,
+            opts.base.config.max_ticks,
+            opts.base.config.seed ^ 0xb0b,
+        );
+        if (score > selected_score_b) {
+            selected_score_b = score;
+            selected_b = candidate.*;
+        }
+    }
+    champ_a = selected_a;
+    champ_b = selected_b;
+    const final_pair_win_rate_a = evaluateJitteredPair(
+        a,
+        b,
+        &base_duel,
+        base_snapshot,
+        &champ_a,
+        &champ_b,
+        opts.base.config.max_ticks,
+        opts.base.config.seed ^ 0xf1a1,
+    );
+
+    // Save archive-selected representatives.
     const path_a = try std.fmt.allocPrint(allocator, "{s}_a.nepl", .{opts.output_weights});
     defer allocator.free(path_a);
     const path_b = try std.fmt.allocPrint(allocator, "{s}_b.nepl", .{opts.output_weights});
@@ -398,6 +546,9 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
             .population_size = pop_size,
             .win_rate_a = final_wr_a,
             .win_rate_b = 1.0 - final_wr_a,
+            .archive_score_a = selected_score_a,
+            .archive_score_b = selected_score_b,
+            .pair_win_rate_a = final_pair_win_rate_a,
             .total_seconds = total_sec,
             .policy_a = path_a,
             .policy_b = path_b,
@@ -407,8 +558,8 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     }
 
     try stdout.print(
-        "NEURO_CONVERGED epochs={d} gens={d} converged={} win_rate_a={d:.4} seconds={d:.2} policy_a={s} policy_b={s}\n",
-        .{ epochs_completed, total_generations, converged, final_wr_a, total_sec, path_a, path_b },
+        "NEURO_CONVERGED epochs={d} gens={d} converged={} win_rate_a={d:.4} pair_wr_a={d:.4} archive_score_a={d:.4} archive_score_b={d:.4} seconds={d:.2} policy_a={s} policy_b={s}\n",
+        .{ epochs_completed, total_generations, converged, final_wr_a, final_pair_win_rate_a, selected_score_a, selected_score_b, total_sec, path_a, path_b },
     );
 
     // Generate final champion vs champion replay trajectory

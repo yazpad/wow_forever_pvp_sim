@@ -279,7 +279,11 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             inline for (.{ 1, 2, 3, 4, 5, 6 }) |action| {
                 const costs = [_]f32{ 0, Frost.LanceMana, Frost.NovaMana, Frost.PolymorphMana, Frost.BoltMana, Frost.BlinkMana, Frost.BarrierMana };
                 const used = actions == ids(action);
-                if (action != 3 and action != 4) mana.* -= select16(used, splat(costs[action]), splat(0));
+                if (action != 3 and action != 4) {
+                    const spent = select16(used, splat(costs[action]), splat(0));
+                    mana.* -= spent;
+                    self.column("five_sec_timer", side_a, i).* = select16(spent > splat(0), splat(WarlockConstants.FiveSecondRule), self.column("five_sec_timer", side_a, i).*);
+                }
                 if (action <= 4) gcd.* = select16(used, @max(splat(1), splat(1) / @import("racials.zig").hasteMultiplier(&self.state, side_a, i)), gcd.*);
             }
             const lance = actions == ids(1);
@@ -370,9 +374,11 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 var effects_a = if (provided_a) |fx| fx.* else warlock_talents.decodeExtended(self.state.talent_ranks_a[i..][0..VEC_LEN].*, self.state.talent_flags_a[i..][0..VEC_LEN].*, self.state.talent_extra_a[i..][0..VEC_LEN].*);
                 if (spec_a == .warlock) @import("conflagrate.zig").tickEffects(&self.state, true, i, dt, &effects_a);
                 if (spec_a == .priest) @import("priest_combat.zig").tickCooldowns(&self.state, true, i, dt);
+                @import("priest_combat.zig").tickInnerFire(&self.state, true, i, dt);
                 var effects_b = if (provided_b) |fx| fx.* else warlock_talents.decodeExtended(self.state.talent_ranks_b[i..][0..VEC_LEN].*, self.state.talent_flags_b[i..][0..VEC_LEN].*, self.state.talent_extra_b[i..][0..VEC_LEN].*);
                 if (spec_b == .warlock) @import("conflagrate.zig").tickEffects(&self.state, false, i, dt, &effects_b);
                 if (spec_b == .priest) @import("priest_combat.zig").tickCooldowns(&self.state, false, i, dt);
+                @import("priest_combat.zig").tickInnerFire(&self.state, false, i, dt);
                 const priest_effects_a = if (spec_a == .priest) priest_combat.dynamicEffects(&self.state, true, i) else undefined;
                 const priest_effects_b = if (spec_b == .priest) priest_combat.dynamicEffects(&self.state, false, i) else undefined;
 
@@ -542,10 +548,17 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 const horror_dr_reset_b = vAnd16(horror_dr_ticking_b, horror_dr_tmr_b <= v_zeros);
                 horror_dr_t_b = select16(horror_dr_reset_b, v_zeros, horror_dr_t_b);
 
-                // Mana passive regen
-                const regen: f32x16 = @splat(WarlockConstants.ManaRegenPerSec * dt);
-                mana_a = @min(@as(f32x16, self.state.max_mana_a[i..][0..VEC_LEN].*), mana_a + regen + @select(f32, is_vw_a, @as(f32x16, self.state.max_mana_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
-                mana_b = @min(@as(f32x16, self.state.max_mana_b[i..][0..VEC_LEN].*), mana_b + regen + @select(f32, is_vw_b, @as(f32x16, self.state.max_mana_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
+                // Mana passive regen (Five-Second Rule: natural regen paused while five_sec_timer > 0)
+                var five_sec_a = self.state.five_sec_timer_a[i..][0..VEC_LEN].*;
+                var five_sec_b = self.state.five_sec_timer_b[i..][0..VEC_LEN].*;
+                five_sec_a = @max(v_zeros, five_sec_a - v_dt);
+                five_sec_b = @max(v_zeros, five_sec_b - v_dt);
+                const regen_a: f32x16 = select16(five_sec_a <= v_zeros, @as(f32x16, @splat(WarlockConstants.ManaRegenPerSec * dt)), v_zeros);
+                const regen_b: f32x16 = select16(five_sec_b <= v_zeros, @as(f32x16, @splat(WarlockConstants.ManaRegenPerSec * dt)), v_zeros);
+                mana_a = @min(@as(f32x16, self.state.max_mana_a[i..][0..VEC_LEN].*), mana_a + regen_a + @select(f32, is_vw_a, @as(f32x16, self.state.max_mana_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
+                mana_b = @min(@as(f32x16, self.state.max_mana_b[i..][0..VEC_LEN].*), mana_b + regen_b + @select(f32, is_vw_b, @as(f32x16, self.state.max_mana_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
+                self.state.five_sec_timer_a[i..][0..VEC_LEN].* = five_sec_a;
+                self.state.five_sec_timer_b[i..][0..VEC_LEN].* = five_sec_b;
                 hp_a = @min(@as(f32x16, self.state.max_health_a[i..][0..VEC_LEN].*), hp_a + @select(f32, is_fh_a, @as(f32x16, self.state.max_health_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
                 hp_b = @min(@as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*), hp_b + @select(f32, is_fh_b, @as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
 
@@ -660,6 +673,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     dmg_ago_a = tick_ago_a.damage * mit_a;
                     const tick_crp_a = @import("periodic.zig").advance(&self.state, false, i, &crp_a, dt, splat(WarlockConstants.CorruptionDuration), 2, (@as(f32x16, @splat(WarlockConstants.CorruptionDps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * @as(f32x16, @splat(0.05555555555555555))) * effects_b.corruption_damage, v_zeros, @as(bool16, @splat(spec_b == .warlock)), @import("periodic.zig").shadowProfile(effects_b));
                     dmg_crp_a = tick_crp_a.damage * mit_a;
+                    if (spec_b == .warlock) @import("conflagrate.zig").nightfallTick(&self.state, false, i, tick_crp_a.damage, effects_b.nightfall_proc_chance, @as(bool16, @splat(true)));
                     const tick_immolate_a = @import("periodic.zig").advance(&self.state, false, i, &immolate_a, dt, splat(WarlockConstants.ImmolateDuration), 3, (@as(f32x16, @splat(WarlockConstants.ImmolateDps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .fire) * @as(f32x16, @splat(0.043333333333333335))) * effects_b.periodic_damage * effects_b.fire_damage, v_zeros, @as(bool16, @splat(spec_b == .warlock)), .{ .school = .fire, .crit_multiplier = effects_b.destruction_crit_multiplier });
                     dmg_immolate_a = tick_immolate_a.damage * mit_a;
                     const tick_siph_a = @import("periodic.zig").advance(&self.state, false, i, &siph_a, dt, splat(WarlockConstants.SiphonLifeDuration), 3, (@as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_b.siphon_life_damage, (@as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_b.siphon_life_healing, @as(bool16, @splat(spec_b == .warlock)), @import("periodic.zig").shadowProfile(effects_b));
@@ -681,6 +695,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     dmg_ago_b = tick_ago_b.damage * mit_b;
                     const tick_crp_b = @import("periodic.zig").advance(&self.state, true, i, &crp_b, dt, splat(WarlockConstants.CorruptionDuration), 2, (@as(f32x16, @splat(WarlockConstants.CorruptionDps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * @as(f32x16, @splat(0.05555555555555555))) * effects_a.corruption_damage, v_zeros, @as(bool16, @splat(spec_a == .warlock)), @import("periodic.zig").shadowProfile(effects_a));
                     dmg_crp_b = tick_crp_b.damage * mit_b;
+                    if (spec_a == .warlock) @import("conflagrate.zig").nightfallTick(&self.state, true, i, tick_crp_b.damage, effects_a.nightfall_proc_chance, @as(bool16, @splat(true)));
                     const tick_immolate_b = @import("periodic.zig").advance(&self.state, true, i, &immolate_b, dt, splat(WarlockConstants.ImmolateDuration), 3, (@as(f32x16, @splat(WarlockConstants.ImmolateDps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .fire) * @as(f32x16, @splat(0.043333333333333335))) * effects_a.periodic_damage * effects_a.fire_damage, v_zeros, @as(bool16, @splat(spec_a == .warlock)), .{ .school = .fire, .crit_multiplier = effects_a.destruction_crit_multiplier });
                     dmg_immolate_b = tick_immolate_b.damage * mit_b;
                     const tick_siph_b = @import("periodic.zig").advance(&self.state, true, i, &siph_b, dt, splat(WarlockConstants.SiphonLifeDuration), 3, (@as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_a.siphon_life_damage, (@as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_a.siphon_life_healing, @as(bool16, @splat(spec_a == .warlock)), @import("periodic.zig").shadowProfile(effects_a));
@@ -707,6 +722,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     const a_drain_active = if (spec_a == .frost_mage) @as(bool16, @splat(false)) else vAnd16(a_casting, c_id_a == @as(u32x16, @splat(5)));
                     const drain_tick_a = @import("periodic.zig").channel(&self.state, true, i, drain_clock_a, @import("racials.zig").castStep(&self.state, true, i, dt), WarlockConstants.DrainLifeDuration, 1, (@as(f32x16, @splat(WarlockConstants.DrainLifeDps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_a.drain_life_damage, (@as(f32x16, @splat(WarlockConstants.DrainLifeHps)) + @import("spell_resolution.zig").spellPower(&self.state, true, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_a.drain_life_healing, a_drain_active, @import("periodic.zig").shadowProfile(effects_a));
                     a_drain_dmg = drain_tick_a.damage * mit_b;
+                    if (spec_a == .warlock) @import("conflagrate.zig").nightfallTick(&self.state, true, i, drain_tick_a.damage, effects_a.nightfall_proc_chance, a_drain_active);
                     hp_a = @min(@as(f32x16, self.state.max_health_a[i..][0..VEC_LEN].*), hp_a + drain_tick_a.healing);
 
                     const a_sb_cost = if (spec_a == .frost_mage) splat(Frost.BoltMana) else splat(WarlockConstants.ShadowBoltMana) * effects_a.shadow_bolt_mana;
@@ -774,6 +790,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                     const b_drain_active = if (spec_b == .frost_mage) @as(bool16, @splat(false)) else vAnd16(b_casting, c_id_b == @as(u32x16, @splat(5)));
                     const drain_tick_b = @import("periodic.zig").channel(&self.state, false, i, drain_clock_b, @import("racials.zig").castStep(&self.state, false, i, dt), WarlockConstants.DrainLifeDuration, 1, (@as(f32x16, @splat(WarlockConstants.DrainLifeDps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_b.drain_life_damage, (@as(f32x16, @splat(WarlockConstants.DrainLifeHps)) + @import("spell_resolution.zig").spellPower(&self.state, false, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_b.drain_life_healing, b_drain_active, @import("periodic.zig").shadowProfile(effects_b));
                     b_drain_dmg = drain_tick_b.damage * mit_a;
+                    if (spec_b == .warlock) @import("conflagrate.zig").nightfallTick(&self.state, false, i, drain_tick_b.damage, effects_b.nightfall_proc_chance, b_drain_active);
                     hp_b = @min(@as(f32x16, self.state.max_health_b[i..][0..VEC_LEN].*), hp_b + drain_tick_b.healing);
 
                     const b_sb_cost = if (spec_b == .frost_mage) splat(Frost.BoltMana) else splat(WarlockConstants.ShadowBoltMana) * effects_b.shadow_bolt_mana;
@@ -1019,6 +1036,8 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 self.state.distance[i..][0..VEC_LEN].* = dist;
                 self.state.hp_a[i..][0..VEC_LEN].* = hp_a;
                 self.state.hp_b[i..][0..VEC_LEN].* = hp_b;
+                self.state.five_sec_timer_a[i..][0..VEC_LEN].* = select16(mana_a < @as(f32x16, self.state.mana_a[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), self.state.five_sec_timer_a[i..][0..VEC_LEN].*);
+                self.state.five_sec_timer_b[i..][0..VEC_LEN].* = select16(mana_b < @as(f32x16, self.state.mana_b[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), self.state.five_sec_timer_b[i..][0..VEC_LEN].*);
                 self.state.mana_a[i..][0..VEC_LEN].* = mana_a;
                 self.state.mana_b[i..][0..VEC_LEN].* = mana_b;
                 self.state.gcd_a[i..][0..VEC_LEN].* = gcd_a;

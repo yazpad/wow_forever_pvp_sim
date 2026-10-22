@@ -70,10 +70,28 @@ pub fn buffEffects(state: anytype, comptime side: bool, i: usize, effects: *tale
 }
 pub fn tickEffects(state: anytype, comptime side: bool, i: usize, dt: f32, effects: *talents.Effects) void {
     buffEffects(state, side, i, effects);
-    inline for (.{ "conflagrate_cd", "shadow_flame_timer" }) |field| {
+    inline for (.{ "conflagrate_cd" }) |field| {
         const timer = col(state, field, side, i);
         if (@reduce(.Or, timer.* > v(0))) timer.* = @max(v(0), timer.* - v(dt));
     }
+    const shadow_flame = col(state, "shadow_flame_timer", side, i);
+    if (@reduce(.Or, shadow_flame.* > v(0))) shadow_flame.* = @max(v(0), shadow_flame.* - v(dt));
+    const nightfall = col(state, "nightfall_timer", side, i);
+    if (@reduce(.Or, nightfall.* > v(0))) nightfall.* = @max(v(0), nightfall.* - v(dt));
+}
+pub fn nightfallReady(state: anytype, comptime side: bool, i: usize) B {
+    return col(state, "nightfall_timer", side, i).* > v(0);
+}
+pub fn consumeNightfall(state: anytype, comptime side: bool, i: usize, mask: B) void {
+    const timer = col(state, "nightfall_timer", side, i);
+    timer.* = @select(f32, simd.vAnd16(mask, nightfallReady(state, side, i)), v(0), timer.*);
+}
+pub fn nightfallTick(state: anytype, comptime side: bool, i: usize, damage: V, chance: V, active: B) void {
+    const timer = col(state, "nightfall_timer", side, i);
+    const eligible = simd.vAnd16(active, simd.vAnd16(damage > v(0), simd.vNot16(nightfallReady(state, side, i))));
+    if (!@reduce(.Or, simd.vAnd16(eligible, chance > v(0)))) return;
+    const procs = simd.vAnd16(eligible, roll(state, side, i, eligible) < chance);
+    timer.* = @select(f32, procs, v(10), timer.*);
 }
 pub fn speed(state: anytype, comptime side: bool, i: usize) V {
     return @select(f32, col(state, "daze_timer", side, i).* > v(0), v(0.5), v(1));

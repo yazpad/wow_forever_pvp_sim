@@ -153,12 +153,18 @@ fn enemyDispellable(arena: anytype, comptime side: bool, i: usize, comptime oppo
     var present = arena.extra(.shield, !side, i).* > splat(0);
     if (opponent == .priest) {
         inline for (.{ "priest_pi_timer", "shadow_lockout" }) |name| present = vOr16(present, col(&arena.state, name, !side, i).* > splat(0));
+        present = vOr16(present, col(&arena.state, "inner_fire_timer", !side, i).* > splat(0));
         present = vOr16(present, ucol(&arena.state, "soul_link", !side, i).* != ids(0));
     }
     return present;
 }
 pub fn powerInfusionMultiplier(state: anytype, comptime side: bool, i: usize) f32x16 {
     return select16(col(state, "priest_pi_timer", side, i).* > splat(0), splat(1.2), splat(1));
+}
+pub fn tickInnerFire(state: anytype, comptime side: bool, i: usize, dt: f32) void {
+    const timer = col(state, "inner_fire_timer", side, i);
+    if (@reduce(.Or, timer.* > splat(0))) timer.* = @max(splat(0), timer.* - splat(dt));
+    timer.* = select16(col(state, "inner_fire_charges", side, i).* <= splat(0), splat(0), timer.*);
 }
 pub fn dynamicEffects(state: anytype, comptime side: bool, i: usize) priest_talents.Effects {
     var fx = priest_talents.decode(ucol(state, "talent_ranks", side, i).*, ucol(state, "talent_flags", side, i).*, ucol(state, "talent_extra", side, i).*);
@@ -236,6 +242,7 @@ pub fn masks(arena: anytype, comptime side_a: bool, i: usize) [combat_spec.Warlo
     result[22] = vAnd16(spell, vAnd16(mana >= splat(Priest.DispelMana) * holy_inst_mult, selfDispellable(state, side_a, i, opponent)));
     result[23] = vAnd16(spell, vAnd16(distance <= splat(30), vAnd16(mana >= splat(Priest.DispelMana) * holy_inst_mult, enemyDispellable(arena, side_a, i, opponent))));
     result[24] = vAnd16(spell, vAnd16(distance <= splat(30) * effects.shadow_range_mult, vAnd16(mana >= splat(270) * shadow_cast_mult, col(state, "mana", !side_a, i).* > splat(0))));
+    result[25] = vAnd16(spell, vAnd16(mana >= splat(Priest.InnerFireMana) * cost_mult, vOr16(col(state, "inner_fire_timer", side_a, i).* <= splat(0), col(state, "inner_fire_charges", side_a, i).* <= splat(0))));
     racials.fillMasks(state, side_a, i, &result);
     return result;
 }
@@ -275,6 +282,7 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     col(state, "react_timer", side_a, i).* = splat(WarlockConstants.ReactionInterval);
 
     const mana = col(state, "mana", side_a, i);
+    const mana_before = mana.*;
     const gcd = col(state, "gcd", side_a, i);
     const inner_focus_flag = ucol(state, "soul_link", side_a, i);
     const inner_focus_cd = col(state, "fire_lockout", side_a, i);
@@ -284,6 +292,8 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     inner_focus_flag.* = @select(u32, is_inner_focus, ids(1), inner_focus_flag.*);
     inner_focus_cd.* = select16(is_inner_focus, splat(Priest.InnerFocusCooldown), inner_focus_cd.*);
 
+    const is_inner_fire = actions == ids(25);
+
     const if_active = inner_focus_flag.* != ids(0);
     const cost_mult = select16(if_active, splat(0.0), splat(1.0));
     const shadow_inst_mult = cost_mult * effects.instant_mana_mult * effects.shadow_mana_mult;
@@ -292,6 +302,12 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     // Forever reference core/cast.go deliberately leaves spell GCDs unhasted.
     // Haste still accelerates cast progress through the shared physics path.
     const gcd_dur = splat(1.5);
+
+    // 25: Inner Fire. Rank 6 gives 1,395 armor for 10 minutes or 20 hits.
+    mana.* = select16(is_inner_fire, mana.* - splat(Priest.InnerFireMana) * cost_mult, mana.*);
+    gcd.* = select16(is_inner_fire, gcd_dur, gcd.*);
+    col(state, "inner_fire_timer", side_a, i).* = select16(is_inner_fire, splat(Priest.InnerFireDuration), col(state, "inner_fire_timer", side_a, i).*);
+    col(state, "inner_fire_charges", side_a, i).* = select16(is_inner_fire, splat(Priest.InnerFireCharges), col(state, "inner_fire_charges", side_a, i).*);
 
     // 1: Shadow Word: Pain
     const is_swp = actions == ids(1);
@@ -457,6 +473,9 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
         if (opponent == .priest) {
             removeAura(col(state, "priest_pi_timer", !side_a, i), &remaining);
             removeAura(col(state, "shadow_lockout", !side_a, i), &remaining);
+            const before_inner_fire = remaining;
+            removeAura(col(state, "inner_fire_timer", !side_a, i), &remaining);
+            col(state, "inner_fire_charges", !side_a, i).* = select16(remaining < before_inner_fire, splat(0), col(state, "inner_fire_charges", !side_a, i).*);
             const flag = ucol(state, "soul_link", !side_a, i);
             flag.* = @select(u32, remaining > splat(0), ids(0), flag.*);
         }
@@ -471,11 +490,12 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     col(state, "move_intent", side_a, i).* = select16(is_burn, splat(0), col(state, "move_intent", side_a, i).*);
 
     // Consume Inner Focus on instant/channeled spells (cast-time spells consume Inner Focus upon cast completion)
-    const old_instant_consumed_if = vOr16(vOr16(is_swp, is_dp), vOr16(vOr16(is_scream, is_mf), vOr16(is_pws, vOr16(is_ve, vOr16(is_swd, vOr16(is_renew, is_penance))))));
+    const old_instant_consumed_if = vOr16(vOr16(is_swp, is_dp), vOr16(vOr16(is_scream, is_mf), vOr16(is_pws, vOr16(is_ve, vOr16(is_swd, vOr16(is_renew, vOr16(is_penance, is_inner_fire)))))));
     const instant_consumed_if = vOr16(old_instant_consumed_if, vOr16(is_pi, is_dispel));
     inner_focus_flag.* = @select(u32, instant_consumed_if, ids(0), inner_focus_flag.*);
 
     racials.apply(state, side_a, i, actions, opponent);
+    col(state, "five_sec_timer", side_a, i).* = select16(mana.* < mana_before, splat(@import("combat_spec.zig").WarlockConstants.FiveSecondRule), col(state, "five_sec_timer", side_a, i).*);
 }
 
 pub fn tickCooldowns(state: anytype, comptime side_a: bool, i: usize, dt: f32) void {
@@ -614,6 +634,7 @@ pub fn tickCasts(
     const state = &arena.state;
     const v_zeros = splat(0.0);
     const casting = cast_id.* > ids(0);
+    const caster_mana_before = caster_mana.*;
     const cast_clock = cast_timer.*;
     const step = racials.castStep(state, caster_side_a, i, dt);
     cast_timer.* = select16(casting, periodic.remaining(cast_timer.*, step), v_zeros);
@@ -757,6 +778,7 @@ pub fn tickCasts(
     cast_timer.* = select16(cast_finished, v_zeros, cast_timer.*);
     cast_total.* = select16(cast_finished, v_zeros, cast_total.*);
     react_timer.* = select16(cast_finished, v_zeros, react_timer.*);
+    col(state, "five_sec_timer", caster_side_a, i).* = select16(caster_mana.* < caster_mana_before, splat(@import("combat_spec.zig").WarlockConstants.FiveSecondRule), col(state, "five_sec_timer", caster_side_a, i).*);
 
     return .{
         .shadow_dmg = mf_tick.damage * target_mit + burn_damage,

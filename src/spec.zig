@@ -187,6 +187,10 @@ pub const Priest = struct {
 
     pub const InnerFocusCooldown: f32 = 180.0;
     pub const InnerFocusCritBonus: f32 = 0.25;
+    pub const InnerFireMana: f32 = 315.0;
+    pub const InnerFireArmor: f32 = 1395.0;
+    pub const InnerFireDuration: f32 = 600.0;
+    pub const InnerFireCharges: f32 = 20.0;
 
     pub const ShadowWeavingDuration: f32 = 15.0;
     pub const ShadowWeavingMaxStacks: f32 = 5.0;
@@ -268,6 +272,7 @@ pub const WarlockTalentRanks = struct {
     master_demonologist: u8 = 0, // 105891 (0..5)
     demonic_embrace: u8 = 0, // 105907 (0..5)
     fel_vitality: u8 = 0, // 105903 (0..3)
+    nightfall: u8 = 0, // 105914 (0..2, bits 64..65)
 
     pub fn encode(self: WarlockTalentRanks) u128 {
         return @as(u128, (@as(u64, self.improved_corruption) & 0x7) |
@@ -300,6 +305,7 @@ pub const WarlockTalentRanks = struct {
             ((@as(u64, self.fel_concentration) & 0x3) << 60) |
             ((@as(u64, self.intensity) & 0x3) << 62)) |
             ((@as(u128, self.fel_vitality) & 0x3) << 72) |
+            ((@as(u128, self.nightfall) & 0x3) << 64) |
             ((@as(u128, self.improved_bane_of_agony) & 0x3) << 74) |
             ((@as(u128, self.demonic_embrace) & 0x7) << 76) |
             ((@as(u128, self.demonic_knowledge) & 0x3) << 79) |
@@ -700,6 +706,7 @@ fn warlockRanksFromTrees(trees: std.json.ObjectMap) WarlockTalentRanks {
         .master_demonologist = rankInTree(trees, "Demonology", "105891"),
         .demonic_embrace = rankInTree(trees, "Demonology", "105907"),
         .fel_vitality = rankInTree(trees, "Demonology", "105903"),
+        .nightfall = rankInTree(trees, "Affliction", "105914"),
     };
 }
 
@@ -772,7 +779,7 @@ fn validateWarlockRanks(ranks: WarlockTalentRanks) !void {
         ranks.improved_sayaad > 3 or ranks.improved_felhunter > 3 or
         ranks.unholy_power > 5 or ranks.soul_link > 1 or ranks.bane > 5 or ranks.improved_imp > 3 or
         ranks.molten_skin > 5 or ranks.cataclysm > 3 or ranks.shadowburn > 1 or ranks.shadow_and_flame > 5 or
-        ranks.agonizing_flames > 3 or ranks.conflagrate > 1 or ranks.aftermath > 5 or ranks.demonic_sacrifice > 1 or ranks.demonic_pact > 1 or ranks.demonic_sacrifice_pet > 4 or ranks.improved_shadow_bolt > 5 or ranks.fel_vitality > 3 or ranks.demonic_embrace > 5 or ranks.demonic_knowledge > 3 or ranks.master_demonologist > 5) return error.InvalidTalentRank;
+        ranks.agonizing_flames > 3 or ranks.conflagrate > 1 or ranks.aftermath > 5 or ranks.demonic_sacrifice > 1 or ranks.demonic_pact > 1 or ranks.demonic_sacrifice_pet > 4 or ranks.improved_shadow_bolt > 5 or ranks.fel_vitality > 3 or ranks.demonic_embrace > 5 or ranks.demonic_knowledge > 3 or ranks.master_demonologist > 5 or ranks.nightfall > 2) return error.InvalidTalentRank;
 }
 
 pub fn validatePriestRanks(ranks: PriestTalentRanks) !void {

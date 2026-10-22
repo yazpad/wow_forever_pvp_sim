@@ -31,7 +31,7 @@ fn actionWrite(comptime name: []const u8, comptime has_priest: bool) ActionWrite
     if (has_priest) {
         inline for (.{ "priest_pi_", "action6_", "soul_link_" }) |prefix| if (std.mem.startsWith(u8, name, prefix)) return .shared;
     }
-    inline for (.{ "race_", "racial_", "priest_pi_", "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "spell_rng_", "spell_outcome_", "shadow_flame_timer_", "cast_pushback_count_", "channel_elapsed_", "pushback_rng_" }) |prefix| {
+    inline for (.{ "five_sec_timer_", "race_", "racial_", "priest_pi_", "inner_fire_", "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "spell_rng_", "spell_outcome_", "shadow_flame_timer_", "nightfall_timer_", "cast_pushback_count_", "channel_elapsed_", "pushback_rng_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .owner;
     }
     if (has_priest) {
@@ -60,6 +60,8 @@ pub const Choices = struct {
 };
 pub fn Duel(comptime a: Spec, comptime b: Spec) type {
     return struct {
+        pub const SpecA = a;
+        pub const SpecB = b;
         const Self = @This();
         const has_priest = (a == .priest or b == .priest);
         const Arena = @import("multi_spec.zig").ArenaPool(a, b);

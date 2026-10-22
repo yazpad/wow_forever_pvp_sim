@@ -144,16 +144,16 @@ function frames.draw(meta,f,side,x,y,selected,extra)
     local edge=selected and ui.colors.accentGold or {0.42,0.39,0.30,1}
     g.push('all');ui.setFont('normal')
     -- Brass rim, inset nameplate and portrait make a single classic silhouette.
-    g.setColor(0.025,0.03,0.035,0.97);g.rectangle('fill',x,y,w,#d.buffs>0 and 168 or 142,8)
-    g.setLineWidth(selected and 2 or 1);g.setColor(edge);g.rectangle('line',x,y,w,#d.buffs>0 and 168 or 142,8);g.setLineWidth(1)
+    g.setColor(0.025,0.03,0.035,0.97);g.rectangle('fill',x,y,w,194,8)
+    g.setLineWidth(selected and 2 or 1);g.setColor(edge);g.rectangle('line',x,y,w,194,8);g.setLineWidth(1)
     local bx,bw=x+72,w-80
     g.setColor(0.12,0.13,0.12,1);g.rectangle('fill',bx,y+4,bw,20,2)
     g.setColor(edge);g.rectangle('line',bx,y+4,bw,20,2)
     text((side==0 and 'A · ' or 'B · ')..d.name,bx+6,y+7,bw-12,'left')
     local hpLabel=string.format('%d HP',math.floor(d.hp))
     if d.shield>0 then hpLabel=hpLabel..string.format(' (+%d)',math.floor(d.shield)) end
-    bar(bx,y+27,bw,18,vitals.fraction(meta,side,'health',d.hp),{0.16,0.60,0.23,1},hpLabel)
-    bar(bx,y+48,bw,14,vitals.fraction(meta,side,'mana',d.mana),{0.12,0.35,0.73,1},string.format('%d MP',math.floor(d.mana)))
+    bar(bx,y+53,bw,18,vitals.fraction(meta,side,'health',d.hp),{0.16,0.60,0.23,1},hpLabel)
+    bar(bx,y+74,bw,14,vitals.fraction(meta,side,'mana',d.mana),{0.12,0.35,0.73,1},string.format('%d MP',math.floor(d.mana)))
     local cx,cy=x+35,y+34
     g.setColor(0.01,0.015,0.02,1);g.circle('fill',cx,cy,31)
     g.stencil(function() g.circle('fill',cx,cy,28) end,'replace',1)
@@ -166,35 +166,35 @@ function frames.draw(meta,f,side,x,y,selected,extra)
     local flash=d.cast==0 and extra and extra.instant
     local castIcon=flash and classes.icon(meta,side,flash.id) or d.castIcon
     local alpha=flash and flash.alpha or 1
-    icons.drawRect(castIcon,bx,y+65,16,16,1,1,1,alpha)
+    icons.drawRect(castIcon,bx,y+91,16,16,1,1,1,alpha)
     ui.setFont('normal')
-    bar(bx+19,y+65,bw-19,16,flash and 1 or (d.cast>0 and d.castProgress or 0),{0.72,0.51,0.16,1},
+    bar(bx+19,y+91,bw-19,16,flash and 1 or (d.cast>0 and d.castProgress or 0),{0.72,0.51,0.16,1},
         flash and classes.name(meta,side,flash.id) or
         (d.cast>0 and string.format('%s · %.1fs',d.castName,d.castRemaining) or 'Ready'),alpha)
     if d.pet then
         ui.setFont('small')
-        text(d.pet.name,x+6,y+76,60)
-        icons.drawRect(d.pet.icon,x+6,y+94,16,16)
-        bar(x+26,y+95,40,9,d.pet.hp/d.pet.maxHp,{0.25,0.58,0.30,1})
-        text(tostring(math.floor(d.pet.hp))..' HP',x+6,y+112,60)
+        text(d.pet.name,x+6,y+102,60)
+        icons.drawRect(d.pet.icon,x+6,y+120,16,16)
+        bar(x+26,y+121,40,9,d.pet.hp/d.pet.maxHp,{0.25,0.58,0.30,1})
+        text(tostring(math.floor(d.pet.hp))..' HP',x+6,y+138,60)
         ui.setFont('normal')
     end
     ui.setFont('small')
     local cdX=bx
     for _,cd in ipairs(d.cooldowns) do
-        icons.drawRect(cd.icon,cdX,y+87,22,22)
-        if cd.remaining>0 then icons.drawRadialCooldownMask(cdX,y+87,22,22,clamp(cd.remaining/cd.total),0.7) end
+        icons.drawRect(cd.icon,cdX,y+113,22,22)
+        if cd.remaining>0 then icons.drawRadialCooldownMask(cdX,y+113,22,22,clamp(cd.remaining/cd.total),0.7) end
         g.setColor(cd.remaining>0 and ui.colors.accentRed or ui.colors.accentGreen)
-        g.rectangle('line',cdX,y+87,22,22,2);cdX=cdX+26
+        g.rectangle('line',cdX,y+113,22,22,2);cdX=cdX+26
     end
     for i,aura in ipairs(d.buffs) do
-        icons.drawAuraBadge(aura.icon,bx+(i-1)*24,y+141,20,aura.remaining,aura.total,{0.2,0.85,1,1},aura.count)
+        icons.drawAuraBadge(aura.icon,bx+(i-1)*24,y+167,20,aura.remaining,aura.total,{0.2,0.85,1,1},aura.count)
     end
     -- All eight simultaneous effects fit under the vitals, clear of the pet.
     for i,aura in ipairs(d.debuffs) do
         local dx=bx+(i-1)*24
-        if aura.school and extra and extra.drawLock then extra.drawLock(dx,y+115,aura.school,aura.remaining)
-        else icons.drawAuraBadge(aura.icon,dx,y+115,20,aura.remaining,aura.total,{0.95,0.45,0.35,1},aura.count) end
+        if aura.school and extra and extra.drawLock then extra.drawLock(dx,y+141,aura.school,aura.remaining)
+        else icons.drawAuraBadge(aura.icon,dx,y+141,20,aura.remaining,aura.total,{0.95,0.45,0.35,1},aura.count) end
     end
     g.pop()
     return d

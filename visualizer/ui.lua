@@ -1,5 +1,5 @@
 local ui = {
-    headerHeight = 64,
+    headerHeight = 0,
     inset = 0,
     fonts = {},
     colors = {
@@ -154,9 +154,21 @@ function ui.tab(x, y, w, h, label, selected, hovered)
     ui.resetFont()
 end
 
-function ui.button(x, y, w, h, label, hovered, isPrimary)
+function ui.button(x, y, w, h, label, hovered, isPrimary, disabled)
     local g = love.graphics
     local r = 5
+    if disabled then
+        g.setColor(0.06, 0.08, 0.12, 0.6)
+        g.rectangle('fill', x, y, w, h, r)
+        g.setColor(0.14, 0.18, 0.24, 0.5)
+        g.setLineWidth(1)
+        g.rectangle('line', x, y, w, h, r)
+        ui.setFont("normal")
+        g.setColor(0.35, 0.42, 0.50, 0.6)
+        g.printf(label, x, y + math.floor((h - g.getFont():getHeight()) / 2), w, 'center')
+        ui.resetFont()
+        return
+    end
     if isPrimary then
         if hovered then
             g.setColor(0.24, 0.58, 0.88, 1.0)
@@ -221,7 +233,12 @@ function ui.dropdown(id, x, y, w, h, value, choices, onSelect, format, displayVa
     local anchor = {x=x,y=y,w=w,h=h,menuWidth=options.menuWidth}
     if menu and menu.id == id then menu.anchor=anchor end
     local g=love.graphics
-    if options.icon or options.race then
+    if options.portrait then
+        local mx,my=ui.contentPoint(love.mouse.getPosition())
+        g.setColor(contains(anchor,mx,my) and ui.colors.accentGold or ui.colors.textMuted)
+        if contains(anchor,mx,my) then g.circle('line',x+w/2,y+h/2,math.min(w,h)/2-1) end
+        g.polygon('fill',x+w-12,y+h-8,x+w-4,y+h-8,x+w-8,y+h-4)
+    elseif options.icon or options.race then
         local mx,my=ui.contentPoint(love.mouse.getPosition())
         ui.drawCard(x,y,w,h,contains(anchor,mx,my),menu and menu.id==id,6)
         if options.race then require('races').draw(options.race,x+w/2,y+h/2,math.min(w,h)-6)

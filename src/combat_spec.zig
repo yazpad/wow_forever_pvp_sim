@@ -29,6 +29,7 @@ pub const WarlockConstants = struct {
     pub const MaxHp: f32 = 2000.0;
     pub const MaxMana: f32 = 1000.0;
     pub const ManaRegenPerSec: f32 = 15.0;
+    pub const FiveSecondRule: f32 = 5.0;
 
     pub const ForwardSpeed: f32 = 7.0; // m/s
     pub const MinDistance: f32 = 0.0; // m (no artificial minimum collision boundary)
@@ -211,12 +212,15 @@ pub const WarlockArenaPool = struct {
     race_a: []align(ALIGNMENT) u32,
     priest_pi_cd_a: []align(ALIGNMENT) f32,
     priest_pi_timer_a: []align(ALIGNMENT) f32,
+    inner_fire_timer_a: []align(ALIGNMENT) f32,
+    inner_fire_charges_a: []align(ALIGNMENT) f32,
     racial_cd_a: []align(ALIGNMENT) f32,
     racial_power_timer_a: []align(ALIGNMENT) f32,
     racial_haste_timer_a: []align(ALIGNMENT) f32,
     racial_escape_timer_a: []align(ALIGNMENT) f32,
     hp_a: []align(ALIGNMENT) f32,
     mana_a: []align(ALIGNMENT) f32,
+    five_sec_timer_a: []align(ALIGNMENT) f32,
     gcd_a: []align(ALIGNMENT) f32,
     react_timer_a: []align(ALIGNMENT) f32, // seconds until next cognitive decision
     move_intent_a: []align(ALIGNMENT) f32, // -1 (advance), 0 (stationary), +1 (kite)
@@ -249,6 +253,7 @@ pub const WarlockArenaPool = struct {
     conflagrate_pending_a: []align(ALIGNMENT) f32,
     daze_timer_a: []align(ALIGNMENT) f32,
     shadow_flame_timer_a: []align(ALIGNMENT) f32,
+    nightfall_timer_a: []align(ALIGNMENT) f32,
     isb_timer_a: []align(ALIGNMENT) f32,
     isb_charges_a: []align(ALIGNMENT) f32,
     isb_vuln_a: []align(ALIGNMENT) f32,
@@ -299,12 +304,15 @@ pub const WarlockArenaPool = struct {
     race_b: []align(ALIGNMENT) u32,
     priest_pi_cd_b: []align(ALIGNMENT) f32,
     priest_pi_timer_b: []align(ALIGNMENT) f32,
+    inner_fire_timer_b: []align(ALIGNMENT) f32,
+    inner_fire_charges_b: []align(ALIGNMENT) f32,
     racial_cd_b: []align(ALIGNMENT) f32,
     racial_power_timer_b: []align(ALIGNMENT) f32,
     racial_haste_timer_b: []align(ALIGNMENT) f32,
     racial_escape_timer_b: []align(ALIGNMENT) f32,
     hp_b: []align(ALIGNMENT) f32,
     mana_b: []align(ALIGNMENT) f32,
+    five_sec_timer_b: []align(ALIGNMENT) f32,
     gcd_b: []align(ALIGNMENT) f32,
     react_timer_b: []align(ALIGNMENT) f32,
     move_intent_b: []align(ALIGNMENT) f32,
@@ -337,6 +345,7 @@ pub const WarlockArenaPool = struct {
     conflagrate_pending_b: []align(ALIGNMENT) f32,
     daze_timer_b: []align(ALIGNMENT) f32,
     shadow_flame_timer_b: []align(ALIGNMENT) f32,
+    nightfall_timer_b: []align(ALIGNMENT) f32,
     isb_timer_b: []align(ALIGNMENT) f32,
     isb_charges_b: []align(ALIGNMENT) f32,
     isb_vuln_b: []align(ALIGNMENT) f32,
@@ -535,6 +544,10 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(priest_pi_cd_a);
         const priest_pi_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(priest_pi_timer_a);
+        const inner_fire_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(inner_fire_timer_a);
+        const inner_fire_charges_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(inner_fire_charges_a);
         const racial_cd_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(racial_cd_a);
         const racial_power_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -547,6 +560,8 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(hp_a);
         const mana_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(mana_a);
+        const five_sec_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(five_sec_timer_a);
         const gcd_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(gcd_a);
         const react_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -600,6 +615,8 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(daze_timer_a);
         const shadow_flame_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(shadow_flame_timer_a);
+        const nightfall_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(nightfall_timer_a);
         const isb_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(isb_timer_a);
         const isb_charges_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -698,6 +715,10 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(priest_pi_cd_b);
         const priest_pi_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(priest_pi_timer_b);
+        const inner_fire_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(inner_fire_timer_b);
+        const inner_fire_charges_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(inner_fire_charges_b);
         const racial_cd_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(racial_cd_b);
         const racial_power_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -710,6 +731,8 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(hp_b);
         const mana_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(mana_b);
+        const five_sec_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(five_sec_timer_b);
         const gcd_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(gcd_b);
         const react_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -763,6 +786,8 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(daze_timer_b);
         const shadow_flame_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(shadow_flame_timer_b);
+        const nightfall_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(nightfall_timer_b);
         const isb_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(isb_timer_b);
         const isb_charges_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -916,12 +941,15 @@ pub const WarlockArenaPool = struct {
             .race_a = race_a,
             .priest_pi_cd_a = priest_pi_cd_a,
             .priest_pi_timer_a = priest_pi_timer_a,
+            .inner_fire_timer_a = inner_fire_timer_a,
+            .inner_fire_charges_a = inner_fire_charges_a,
             .racial_cd_a = racial_cd_a,
             .racial_power_timer_a = racial_power_timer_a,
             .racial_haste_timer_a = racial_haste_timer_a,
             .racial_escape_timer_a = racial_escape_timer_a,
             .hp_a = hp_a,
             .mana_a = mana_a,
+            .five_sec_timer_a = five_sec_timer_a,
             .gcd_a = gcd_a,
             .react_timer_a = react_a,
             .move_intent_a = move_a,
@@ -949,6 +977,7 @@ pub const WarlockArenaPool = struct {
             .conflagrate_pending_a = conflagrate_pending_a,
             .daze_timer_a = daze_timer_a,
             .shadow_flame_timer_a = shadow_flame_timer_a,
+            .nightfall_timer_a = nightfall_timer_a,
             .isb_timer_a = isb_timer_a,
             .isb_charges_a = isb_charges_a,
             .isb_vuln_a = isb_vuln_a,
@@ -996,12 +1025,15 @@ pub const WarlockArenaPool = struct {
             .race_b = race_b,
             .priest_pi_cd_b = priest_pi_cd_b,
             .priest_pi_timer_b = priest_pi_timer_b,
+            .inner_fire_timer_b = inner_fire_timer_b,
+            .inner_fire_charges_b = inner_fire_charges_b,
             .racial_cd_b = racial_cd_b,
             .racial_power_timer_b = racial_power_timer_b,
             .racial_haste_timer_b = racial_haste_timer_b,
             .racial_escape_timer_b = racial_escape_timer_b,
             .hp_b = hp_b,
             .mana_b = mana_b,
+            .five_sec_timer_b = five_sec_timer_b,
             .gcd_b = gcd_b,
             .react_timer_b = react_b,
             .move_intent_b = move_b,
@@ -1029,6 +1061,7 @@ pub const WarlockArenaPool = struct {
             .conflagrate_pending_b = conflagrate_pending_b,
             .daze_timer_b = daze_timer_b,
             .shadow_flame_timer_b = shadow_flame_timer_b,
+            .nightfall_timer_b = nightfall_timer_b,
             .isb_timer_b = isb_timer_b,
             .isb_charges_b = isb_charges_b,
             .isb_vuln_b = isb_vuln_b,
@@ -1175,12 +1208,15 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.race_a);
         self.allocator.free(self.priest_pi_cd_a);
         self.allocator.free(self.priest_pi_timer_a);
+        self.allocator.free(self.inner_fire_timer_a);
+        self.allocator.free(self.inner_fire_charges_a);
         self.allocator.free(self.racial_cd_a);
         self.allocator.free(self.racial_power_timer_a);
         self.allocator.free(self.racial_haste_timer_a);
         self.allocator.free(self.racial_escape_timer_a);
         self.allocator.free(self.hp_a);
         self.allocator.free(self.mana_a);
+        self.allocator.free(self.five_sec_timer_a);
         self.allocator.free(self.gcd_a);
         self.allocator.free(self.react_timer_a);
         self.allocator.free(self.move_intent_a);
@@ -1208,6 +1244,7 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.conflagrate_pending_a);
         self.allocator.free(self.daze_timer_a);
         self.allocator.free(self.shadow_flame_timer_a);
+        self.allocator.free(self.nightfall_timer_a);
         self.allocator.free(self.isb_timer_a);
         self.allocator.free(self.isb_charges_a);
         self.allocator.free(self.isb_vuln_a);
@@ -1255,12 +1292,15 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.race_b);
         self.allocator.free(self.priest_pi_cd_b);
         self.allocator.free(self.priest_pi_timer_b);
+        self.allocator.free(self.inner_fire_timer_b);
+        self.allocator.free(self.inner_fire_charges_b);
         self.allocator.free(self.racial_cd_b);
         self.allocator.free(self.racial_power_timer_b);
         self.allocator.free(self.racial_haste_timer_b);
         self.allocator.free(self.racial_escape_timer_b);
         self.allocator.free(self.hp_b);
         self.allocator.free(self.mana_b);
+        self.allocator.free(self.five_sec_timer_b);
         self.allocator.free(self.gcd_b);
         self.allocator.free(self.react_timer_b);
         self.allocator.free(self.move_intent_b);
@@ -1288,6 +1328,7 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.conflagrate_pending_b);
         self.allocator.free(self.daze_timer_b);
         self.allocator.free(self.shadow_flame_timer_b);
+        self.allocator.free(self.nightfall_timer_b);
         self.allocator.free(self.isb_timer_b);
         self.allocator.free(self.isb_charges_b);
         self.allocator.free(self.isb_vuln_b);
@@ -1407,12 +1448,15 @@ pub const WarlockArenaPool = struct {
         @memset(self.race_a, 0);
         @memset(self.priest_pi_cd_a, 0);
         @memset(self.priest_pi_timer_a, 0);
+        @memset(self.inner_fire_timer_a, 0);
+        @memset(self.inner_fire_charges_a, 0);
         @memset(self.racial_cd_a, 0);
         @memset(self.racial_power_timer_a, 0);
         @memset(self.racial_haste_timer_a, 0);
         @memset(self.racial_escape_timer_a, 0);
         @memset(self.hp_a, WarlockConstants.MaxHp);
         @memset(self.mana_a, WarlockConstants.MaxMana);
+        @memset(self.five_sec_timer_a, 0.0);
         @memset(self.gcd_a, 0.0);
         @memset(self.react_timer_a, 0.0);
         @memset(self.move_intent_a, 0.0);
@@ -1440,6 +1484,7 @@ pub const WarlockArenaPool = struct {
         @memset(self.conflagrate_pending_a, 0.0);
         @memset(self.daze_timer_a, 0.0);
         @memset(self.shadow_flame_timer_a, 0.0);
+        @memset(self.nightfall_timer_a, 0.0);
         @memset(self.isb_timer_a, 0.0);
         @memset(self.isb_charges_a, 0.0);
         @memset(self.isb_vuln_a, 0.0);
@@ -1487,12 +1532,15 @@ pub const WarlockArenaPool = struct {
         @memset(self.race_b, 0);
         @memset(self.priest_pi_cd_b, 0);
         @memset(self.priest_pi_timer_b, 0);
+        @memset(self.inner_fire_timer_b, 0);
+        @memset(self.inner_fire_charges_b, 0);
         @memset(self.racial_cd_b, 0);
         @memset(self.racial_power_timer_b, 0);
         @memset(self.racial_haste_timer_b, 0);
         @memset(self.racial_escape_timer_b, 0);
         @memset(self.hp_b, WarlockConstants.MaxHp);
         @memset(self.mana_b, WarlockConstants.MaxMana);
+        @memset(self.five_sec_timer_b, 0.0);
         @memset(self.gcd_b, 0.0);
         @memset(self.react_timer_b, 0.0);
         @memset(self.move_intent_b, 0.0);
@@ -1520,6 +1568,7 @@ pub const WarlockArenaPool = struct {
         @memset(self.conflagrate_pending_b, 0.0);
         @memset(self.daze_timer_b, 0.0);
         @memset(self.shadow_flame_timer_b, 0.0);
+        @memset(self.nightfall_timer_b, 0.0);
         @memset(self.isb_timer_b, 0.0);
         @memset(self.isb_charges_b, 0.0);
         @memset(self.isb_vuln_b, 0.0);
@@ -1632,12 +1681,15 @@ pub const WarlockArenaPool = struct {
         self.race_a[i] = 0;
         self.priest_pi_cd_a[i] = 0;
         self.priest_pi_timer_a[i] = 0;
+        self.inner_fire_timer_a[i] = 0;
+        self.inner_fire_charges_a[i] = 0;
         self.racial_cd_a[i] = 0;
         self.racial_power_timer_a[i] = 0;
         self.racial_haste_timer_a[i] = 0;
         self.racial_escape_timer_a[i] = 0;
         self.hp_a[i] = WarlockConstants.MaxHp;
         self.mana_a[i] = WarlockConstants.MaxMana;
+        self.five_sec_timer_a[i] = 0.0;
         self.gcd_a[i] = 0.0;
         self.react_timer_a[i] = 0.0;
         self.move_intent_a[i] = 0.0;
@@ -1665,6 +1717,7 @@ pub const WarlockArenaPool = struct {
         self.conflagrate_pending_a[i] = 0.0;
         self.daze_timer_a[i] = 0.0;
         self.shadow_flame_timer_a[i] = 0.0;
+        self.nightfall_timer_a[i] = 0.0;
         self.isb_timer_a[i] = 0.0;
         self.isb_charges_a[i] = 0.0;
         self.isb_vuln_a[i] = 0.0;
@@ -1712,12 +1765,15 @@ pub const WarlockArenaPool = struct {
         self.race_b[i] = 0;
         self.priest_pi_cd_b[i] = 0;
         self.priest_pi_timer_b[i] = 0;
+        self.inner_fire_timer_b[i] = 0;
+        self.inner_fire_charges_b[i] = 0;
         self.racial_cd_b[i] = 0;
         self.racial_power_timer_b[i] = 0;
         self.racial_haste_timer_b[i] = 0;
         self.racial_escape_timer_b[i] = 0;
         self.hp_b[i] = WarlockConstants.MaxHp;
         self.mana_b[i] = WarlockConstants.MaxMana;
+        self.five_sec_timer_b[i] = 0.0;
         self.gcd_b[i] = 0.0;
         self.react_timer_b[i] = 0.0;
         self.move_intent_b[i] = 0.0;
@@ -1745,6 +1801,7 @@ pub const WarlockArenaPool = struct {
         self.conflagrate_pending_b[i] = 0.0;
         self.daze_timer_b[i] = 0.0;
         self.shadow_flame_timer_b[i] = 0.0;
+        self.nightfall_timer_b[i] = 0.0;
         self.isb_timer_b[i] = 0.0;
         self.isb_charges_b[i] = 0.0;
         self.isb_vuln_b[i] = 0.0;
@@ -2204,6 +2261,7 @@ pub const WarlockArenaPool = struct {
         var hp_a = self.hp_a[i..][0..VEC_LEN].*;
         const hp_b = self.hp_b[i..][0..VEC_LEN].*;
         var mana_a = self.mana_a[i..][0..VEC_LEN].*;
+        var five_sec_a = self.five_sec_timer_a[i..][0..VEC_LEN].*;
         var gcd_a = self.gcd_a[i..][0..VEC_LEN].*;
         var cast_id = self.cast_id_a[i..][0..VEC_LEN].*;
         var cast_tmr = self.cast_timer_a[i..][0..VEC_LEN].*;
@@ -2262,9 +2320,11 @@ pub const WarlockArenaPool = struct {
 
         // Action 4: Shadow Bolt (1.8s Hard cast, stationary; mana spent on completion)
         const is_act4: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.ShadowBolt)));
+        const nightfall_a = @import("conflagrate.zig").nightfallReady(self, true, i);
         cast_id = @select(u32, is_act4, @as(u32x16, @splat(4)), cast_id);
-        cast_tmr = select16(is_act4, effects_a.shadow_bolt_cast_time, cast_tmr);
-        cast_tot = select16(is_act4, effects_a.shadow_bolt_cast_time, cast_tot);
+        cast_tmr = select16(is_act4, select16(nightfall_a, v_zeros, effects_a.shadow_bolt_cast_time), cast_tmr);
+        cast_tot = select16(is_act4, select16(nightfall_a, v_zeros, effects_a.shadow_bolt_cast_time), cast_tot);
+        @import("conflagrate.zig").consumeNightfall(self, true, i, is_act4);
         gcd_a = select16(is_act4, v_gcd_std, gcd_a);
         move_a = select16(is_act4, v_zeros, move_a);
 
@@ -2330,6 +2390,8 @@ pub const WarlockArenaPool = struct {
 
         self.hp_a[i..][0..VEC_LEN].* = hp_a;
         self.hp_b[i..][0..VEC_LEN].* = hp_b;
+        five_sec_a = select16(mana_a < @as(f32x16, self.mana_a[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), five_sec_a);
+        self.five_sec_timer_a[i..][0..VEC_LEN].* = five_sec_a;
         self.mana_a[i..][0..VEC_LEN].* = mana_a;
         self.gcd_a[i..][0..VEC_LEN].* = gcd_a;
         self.cast_id_a[i..][0..VEC_LEN].* = cast_id;
@@ -2402,6 +2464,7 @@ pub const WarlockArenaPool = struct {
         const hp_a = self.hp_a[i..][0..VEC_LEN].*;
         var hp_b = self.hp_b[i..][0..VEC_LEN].*;
         var mana_b = self.mana_b[i..][0..VEC_LEN].*;
+        var five_sec_b = self.five_sec_timer_b[i..][0..VEC_LEN].*;
         var gcd_b = self.gcd_b[i..][0..VEC_LEN].*;
         var cast_id = self.cast_id_b[i..][0..VEC_LEN].*;
         var cast_tmr = self.cast_timer_b[i..][0..VEC_LEN].*;
@@ -2457,9 +2520,11 @@ pub const WarlockArenaPool = struct {
 
         // Shadow Bolt
         const is_act4: bool16 = actions == @as(u32x16, @splat(@intFromEnum(WarlockAction.ShadowBolt)));
+        const nightfall_b = @import("conflagrate.zig").nightfallReady(self, false, i);
         cast_id = @select(u32, is_act4, @as(u32x16, @splat(4)), cast_id);
-        cast_tmr = select16(is_act4, effects_b.shadow_bolt_cast_time, cast_tmr);
-        cast_tot = select16(is_act4, effects_b.shadow_bolt_cast_time, cast_tot);
+        cast_tmr = select16(is_act4, select16(nightfall_b, v_zeros, effects_b.shadow_bolt_cast_time), cast_tmr);
+        cast_tot = select16(is_act4, select16(nightfall_b, v_zeros, effects_b.shadow_bolt_cast_time), cast_tot);
+        @import("conflagrate.zig").consumeNightfall(self, false, i, is_act4);
         gcd_b = select16(is_act4, v_gcd_std, gcd_b);
         move_b = select16(is_act4, v_zeros, move_b);
 
@@ -2525,6 +2590,8 @@ pub const WarlockArenaPool = struct {
         gcd_b = select16(conflag, v_gcd_std, gcd_b);
 
         self.hp_b[i..][0..VEC_LEN].* = hp_b;
+        five_sec_b = select16(mana_b < @as(f32x16, self.mana_b[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), five_sec_b);
+        self.five_sec_timer_b[i..][0..VEC_LEN].* = five_sec_b;
         self.mana_b[i..][0..VEC_LEN].* = mana_b;
         self.gcd_b[i..][0..VEC_LEN].* = gcd_b;
         self.cast_id_b[i..][0..VEC_LEN].* = cast_id;
@@ -2631,6 +2698,8 @@ pub const WarlockArenaPool = struct {
             var hp_b = self.hp_b[i..][0..VEC_LEN].*;
             var mana_a = self.mana_a[i..][0..VEC_LEN].*;
             var mana_b = self.mana_b[i..][0..VEC_LEN].*;
+            var five_sec_a = self.five_sec_timer_a[i..][0..VEC_LEN].*;
+            var five_sec_b = self.five_sec_timer_b[i..][0..VEC_LEN].*;
             var gcd_a = self.gcd_a[i..][0..VEC_LEN].*;
             var gcd_b = self.gcd_b[i..][0..VEC_LEN].*;
             var r_tmr_a = self.react_timer_a[i..][0..VEC_LEN].*;
@@ -2757,10 +2826,13 @@ pub const WarlockArenaPool = struct {
             const horror_dr_reset_b = vAnd16(horror_dr_ticking_b, horror_dr_tmr_b <= v_zeros);
             horror_dr_t_b = select16(horror_dr_reset_b, v_zeros, horror_dr_t_b);
 
-            // Mana passive regen
-            const regen: f32x16 = @splat(WarlockConstants.ManaRegenPerSec * dt);
-            mana_a = @min(@as(f32x16, self.max_mana_a[i..][0..VEC_LEN].*), mana_a + regen + @select(f32, is_vw_a, @as(f32x16, self.max_mana_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
-            mana_b = @min(@as(f32x16, self.max_mana_b[i..][0..VEC_LEN].*), mana_b + regen + @select(f32, is_vw_b, @as(f32x16, self.max_mana_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
+            // Mana passive regen (Five-Second Rule: natural regen paused while five_sec_timer > 0)
+            five_sec_a = @max(v_zeros, five_sec_a - v_dt);
+            five_sec_b = @max(v_zeros, five_sec_b - v_dt);
+            const regen_a: f32x16 = select16(five_sec_a <= v_zeros, @as(f32x16, @splat(WarlockConstants.ManaRegenPerSec * dt)), v_zeros);
+            const regen_b: f32x16 = select16(five_sec_b <= v_zeros, @as(f32x16, @splat(WarlockConstants.ManaRegenPerSec * dt)), v_zeros);
+            mana_a = @min(@as(f32x16, self.max_mana_a[i..][0..VEC_LEN].*), mana_a + regen_a + @select(f32, is_vw_a, @as(f32x16, self.max_mana_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
+            mana_b = @min(@as(f32x16, self.max_mana_b[i..][0..VEC_LEN].*), mana_b + regen_b + @select(f32, is_vw_b, @as(f32x16, self.max_mana_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.02 * dt / 4.0)), v_zeros));
             hp_a = @min(@as(f32x16, self.max_health_a[i..][0..VEC_LEN].*), hp_a + @select(f32, is_fh_a, @as(f32x16, self.max_health_a[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
             hp_b = @min(@as(f32x16, self.max_health_b[i..][0..VEC_LEN].*), hp_b + @select(f32, is_fh_b, @as(f32x16, self.max_health_b[i..][0..VEC_LEN].*) * @as(f32x16, @splat(0.03 * dt / 4.0)), v_zeros));
 
@@ -2845,6 +2917,7 @@ pub const WarlockArenaPool = struct {
             const dmg_ago_a = tick_ago_a.damage * mit_a;
             const tick_crp_a = @import("periodic.zig").advance(self, false, i, &crp_a, dt, WarlockConstants.CorruptionDuration, 2, (@as(f32x16, @splat(WarlockConstants.CorruptionDps)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.05555555555555555))) * effects_b.corruption_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_b));
             const dmg_crp_a = tick_crp_a.damage * mit_a;
+            @import("conflagrate.zig").nightfallTick(self, false, i, tick_crp_a.damage, effects_b.nightfall_proc_chance, active_mask);
             const tick_immolate_a = @import("periodic.zig").advance(self, false, i, &immolate_a, dt, WarlockConstants.ImmolateDuration, 3, (@as(f32x16, @splat(WarlockConstants.ImmolateDps)) + @import("spell_resolution.zig").spellPower(self, false, i, .fire) * @as(f32x16, @splat(0.043333333333333335))) * effects_b.periodic_damage * effects_b.fire_damage, v_zeros, active_mask, .{ .school = .fire, .crit_multiplier = effects_b.destruction_crit_multiplier });
             const dmg_immolate_a = tick_immolate_a.damage * mit_a;
             const tick_siph_a = @import("periodic.zig").advance(self, false, i, &siph_a, dt, WarlockConstants.SiphonLifeDuration, 3, (@as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_b.siphon_life_damage, (@as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_b.siphon_life_healing, active_mask, @import("periodic.zig").shadowProfile(effects_b));
@@ -2854,6 +2927,7 @@ pub const WarlockArenaPool = struct {
             const dmg_ago_b = tick_ago_b.damage * mit_b;
             const tick_crp_b = @import("periodic.zig").advance(self, true, i, &crp_b, dt, WarlockConstants.CorruptionDuration, 2, (@as(f32x16, @splat(WarlockConstants.CorruptionDps)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.05555555555555555))) * effects_a.corruption_damage, v_zeros, active_mask, @import("periodic.zig").shadowProfile(effects_a));
             const dmg_crp_b = tick_crp_b.damage * mit_b;
+            @import("conflagrate.zig").nightfallTick(self, true, i, tick_crp_b.damage, effects_a.nightfall_proc_chance, active_mask);
             const tick_immolate_b = @import("periodic.zig").advance(self, true, i, &immolate_b, dt, WarlockConstants.ImmolateDuration, 3, (@as(f32x16, @splat(WarlockConstants.ImmolateDps)) + @import("spell_resolution.zig").spellPower(self, true, i, .fire) * @as(f32x16, @splat(0.043333333333333335))) * effects_a.periodic_damage * effects_a.fire_damage, v_zeros, active_mask, .{ .school = .fire, .crit_multiplier = effects_a.destruction_crit_multiplier });
             const dmg_immolate_b = tick_immolate_b.damage * mit_b;
             const tick_siph_b = @import("periodic.zig").advance(self, true, i, &siph_b, dt, WarlockConstants.SiphonLifeDuration, 3, (@as(f32x16, @splat(WarlockConstants.SiphonLifeDps)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_a.siphon_life_damage, (@as(f32x16, @splat(WarlockConstants.SiphonLifeHps)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.016666666666666666))) * effects_a.siphon_life_healing, active_mask, @import("periodic.zig").shadowProfile(effects_a));
@@ -2870,6 +2944,7 @@ pub const WarlockArenaPool = struct {
             const a_drain_active = vAnd16(a_casting, c_id_a == @as(u32x16, @splat(5)));
             const drain_tick_a = @import("periodic.zig").channel(self, true, i, drain_clock_a, @import("racials.zig").castStep(self, true, i, dt), WarlockConstants.DrainLifeDuration, 1, (@as(f32x16, @splat(WarlockConstants.DrainLifeDps)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_a.drain_life_damage, (@as(f32x16, @splat(WarlockConstants.DrainLifeHps)) + @import("spell_resolution.zig").spellPower(self, true, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_a.drain_life_healing, a_drain_active, @import("periodic.zig").shadowProfile(effects_a));
             const a_drain_dmg = drain_tick_a.damage * mit_b;
+            @import("conflagrate.zig").nightfallTick(self, true, i, drain_tick_a.damage, effects_a.nightfall_proc_chance, a_drain_active);
             hp_a = @min(@as(f32x16, self.max_health_a[i..][0..VEC_LEN].*), hp_a + drain_tick_a.healing);
 
             const a_sb_cost = @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_a.shadow_bolt_mana;
@@ -2921,6 +2996,7 @@ pub const WarlockArenaPool = struct {
             const b_drain_active = vAnd16(b_casting, c_id_b == @as(u32x16, @splat(5)));
             const drain_tick_b = @import("periodic.zig").channel(self, false, i, drain_clock_b, @import("racials.zig").castStep(self, false, i, dt), WarlockConstants.DrainLifeDuration, 1, (@as(f32x16, @splat(WarlockConstants.DrainLifeDps)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_b.drain_life_damage, (@as(f32x16, @splat(WarlockConstants.DrainLifeHps)) + @import("spell_resolution.zig").spellPower(self, false, i, .shadow) * @as(f32x16, @splat(0.1))) * effects_b.drain_life_healing, b_drain_active, @import("periodic.zig").shadowProfile(effects_b));
             const b_drain_dmg = drain_tick_b.damage * mit_a;
+            @import("conflagrate.zig").nightfallTick(self, false, i, drain_tick_b.damage, effects_b.nightfall_proc_chance, b_drain_active);
             hp_b = @min(@as(f32x16, self.max_health_b[i..][0..VEC_LEN].*), hp_b + drain_tick_b.healing);
 
             const b_sb_cost = @as(f32x16, @splat(WarlockConstants.ShadowBoltMana)) * effects_b.shadow_bolt_mana;
@@ -3063,6 +3139,10 @@ pub const WarlockArenaPool = struct {
             self.distance[i..][0..VEC_LEN].* = dist;
             self.hp_a[i..][0..VEC_LEN].* = hp_a;
             self.hp_b[i..][0..VEC_LEN].* = hp_b;
+            five_sec_a = select16(mana_a < @as(f32x16, self.mana_a[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), five_sec_a);
+            five_sec_b = select16(mana_b < @as(f32x16, self.mana_b[i..][0..VEC_LEN].*), @as(f32x16, @splat(WarlockConstants.FiveSecondRule)), five_sec_b);
+            self.five_sec_timer_a[i..][0..VEC_LEN].* = five_sec_a;
+            self.five_sec_timer_b[i..][0..VEC_LEN].* = five_sec_b;
             self.mana_a[i..][0..VEC_LEN].* = mana_a;
             self.mana_b[i..][0..VEC_LEN].* = mana_b;
             self.gcd_a[i..][0..VEC_LEN].* = gcd_a;
@@ -3236,4 +3316,29 @@ test "fixed projectile queue masks launches when full and frees slots on impact"
     try std.testing.expectEqual(@as(f32, 0), pool.projectile_count_a[0]);
     try std.testing.expect(pool.getActionMaskA(0)[4][0]);
     try std.testing.expectEqual(@as(u32, 1), pool.impact_mask_a[0]);
+}
+
+test "Five-Second Rule stops passive mana regen for exactly 5s after mana spend" {
+    var pool = try WarlockArenaPool.init(std.testing.allocator, 16);
+    defer pool.deinit();
+
+    // Start with 500 mana out of 1000
+    pool.mana_a[0] = 500.0;
+    try std.testing.expectEqual(@as(f32, 0.0), pool.five_sec_timer_a[0]);
+
+    // Cast instant Agony (costs 30 mana)
+    pool.applyActionA(0, @splat(@intFromEnum(WarlockAction.Agony)), @splat(0));
+    try std.testing.expectEqual(@as(f32, 470.0), pool.mana_a[0]);
+    try std.testing.expectEqual(WarlockConstants.FiveSecondRule, pool.five_sec_timer_a[0]);
+
+    // Tick for 4.9 seconds (490 ticks of 0.01s) - within 5s window, no natural regen should occur!
+    for (0..490) |_| _ = pool.tickPhysics16(0.01, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 470.0), pool.mana_a[0], 0.001);
+    try std.testing.expect(pool.five_sec_timer_a[0] > 0);
+
+    // Tick for another 0.2 seconds (20 ticks of 0.01s) -> 5.1s elapsed total.
+    // 5SR expires at 5.0s, so the last 0.1s (10 ticks) should regenerate 10 * 0.01 * 15.0 = 1.5 mana!
+    for (0..20) |_| _ = pool.tickPhysics16(0.01, 0);
+    try std.testing.expectEqual(@as(f32, 0.0), pool.five_sec_timer_a[0]);
+    try std.testing.expectApproxEqAbs(@as(f32, 471.65), pool.mana_a[0], 0.01);
 }

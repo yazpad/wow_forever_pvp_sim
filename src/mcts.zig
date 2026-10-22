@@ -8,8 +8,11 @@ pub const Algorithm = enum { exp3, uct, puct };
 pub const EvaluatorType = enum { rollout, heuristic, learned };
 const learned = @import("learned_value.zig");
 pub const BoundaryMode = enum { tick, event };
+const neuro_policy = @import("neuro_policy.zig");
 pub const Config = struct {
     model: ?*const learned.Bundle = null,
+    policy_a: ?*const neuro_policy.Policy = null,
+    policy_b: ?*const neuro_policy.Policy = null,
     learned_mix: f32 = 0.5,
     rollouts: usize = 1024,
     workers: usize = 1,
@@ -196,8 +199,8 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                             for (0..count) |i| {
                                 if (state.is_active[i] == 0 or (!ra[i] and !rb[i])) continue;
                                 if (leaf[i]) {
-                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
-                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
+                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout, config.policy_a);
+                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout, config.policy_b);
                                     continue;
                                 }
                                 if (lens[i] > 0) {
@@ -253,8 +256,8 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                                     pending[i] = @intCast(ia * MaxChoices + ib);
                                 } else {
                                     if (!leaf[i]) leaf[i] = true;
-                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout);
-                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout);
+                                    if (ra[i]) aa[i] = rolloutFast(a, true, &w.duel, i, masks_a, random, config.random_rollout, config.policy_a);
+                                    if (rb[i]) bb[i] = rolloutFast(b, false, &w.duel, i, masks_b, random, config.random_rollout, config.policy_b);
                                 }
                             }
                             w.duel.applyPreMasked(aa, bb, ra, rb, masks_a, masks_b);
@@ -415,9 +418,19 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
 }
 pub fn rollout(comptime spec: Spec, comptime side: bool, d: anytype, lane: usize, c: sim.Choices, random: std.Random, random_only: bool) sim.Action {
     _ = c;
-    return rolloutFast(spec, side, d, lane, if (side) d.getActionMaskA(0) else d.getActionMaskB(0), random, random_only);
+    return rolloutFast(spec, side, d, lane, if (side) d.getActionMaskA(0) else d.getActionMaskB(0), random, random_only, null);
 }
-pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: usize, masks: [WarlockActionCount]@Vector(16, bool), random: std.Random, random_only: bool) sim.Action {
+pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: usize, masks: [WarlockActionCount]@Vector(16, bool), random: std.Random, random_only: bool, policy: ?*const neuro_policy.Policy) sim.Action {
+    if (policy) |pol| {
+        // Evaluate the neuro-evolved policy on this lane.
+        // selectActions16 expects comptime spec_a, spec_b.
+        const a = @TypeOf(d.*).SpecA;
+        const b = @TypeOf(d.*).SpecB;
+        var ready_lane: @Vector(16, bool) = @splat(false);
+        ready_lane[lane] = true;
+        const actions = pol.selectActions16(a, b, d, side, ready_lane, masks, 0.0, random);
+        return actions[lane];
+    }
     const s = d.arena.combat();
     const own = if (side) "_a" else "_b";
     const enemy = if (side) "_b" else "_a";
@@ -432,7 +445,7 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     const priorities = switch (spec) {
         .warlock => &[_]u32{ 19, 17, 18, 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 },
         .frost_mage => &[_]u32{ 19, 17, 18, 6, 7, 2, 1, 4, 3, 5 },
-        .priest => &[_]u32{ 19, 20, 17, 18, 16, 22, 7, 6, 3, 21, 23, 9, 2, 8, 1, 12, 11, 24, 15, 4, 13, 5, 14 },
+        .priest => &[_]u32{ 25, 19, 20, 17, 18, 16, 22, 7, 6, 3, 21, 23, 9, 2, 8, 1, 12, 11, 24, 15, 4, 13, 5, 14 },
     };
     for (priorities) |candidate| {
         var allowed = true;

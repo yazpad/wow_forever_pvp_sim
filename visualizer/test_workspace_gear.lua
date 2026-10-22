@@ -13,13 +13,20 @@ local editor=require('spec_editor')
 local json=require('json')
 local controls,dropdowns,labels={},{},{}
 local button=ui.button
-ui.button=function(x,y,w,h,label,...) controls[label]={x=x,y=y,w=w,h=h};return button(x,y,w,h,label,...) end
+ui.button=function(x,y,w,h,label,...)
+    local frame=workspace.frameBounds and workspace.frameBounds[workspace.getSelected()]
+    if not frame or x>=workspace.settingsX or (x>=frame.x and x<frame.x+frame.w) then controls[label]={x=x,y=y,w=w,h=h} end
+    return button(x,y,w,h,label,...)
+end
 local dropdown=ui.dropdown
 ui.dropdown=function(id,x,y,w,h,value,choices,onSelect,...)
     dropdowns[id]={x=x,y=y,w=w,h=h,value=value,choices=choices,onSelect=onSelect}
     return dropdown(id,x,y,w,h,value,choices,onSelect,...)
 end
-love.graphics.print=function(label,x,y) labels[label]={x=x,y=y} end
+love.graphics.print=function(label,x,y)
+    local frame=workspace.frameBounds and workspace.frameBounds[workspace.getSelected()]
+    if frame and x>=frame.x and x<frame.x+frame.w then labels[label]={x=x,y=y} end
+end
 local function draw() controls={};dropdowns={};labels={};love.draw() end
 local function click(c) assert(c);workspace.mousepressed(c.x+c.w/2,c.y+c.h/2,1) end
 workspace.select(1);draw()
@@ -29,7 +36,7 @@ for i=1,2 do
         'Both starting fighters should have Pre-BiS gear')
 end
 editor.setClass('warlock');draw()
-local label=assert(labels.Gear);workspace.mousepressed(70,label.y+5,1);draw()
+local label=assert(labels.Gear);workspace.mousepressed(label.x+5,label.y+5,1);draw()
 click(controls['Pre-BiS']);draw()
 assert(workspace.preview().specs[1].gear.chest==14153)
 assert(workspace.preview().frame[5]>2000)
@@ -41,20 +48,22 @@ assert(workspace.preview().specs[1].gear.head==0)
 assert(not ui.dropdownOpen())
 local a=workspace.preview().specs[1]
 workspace.select(2);editor.setClass('frost_mage');draw()
-label=assert(labels.Gear);workspace.mousepressed(70,label.y+5,1);draw()
+label=assert(labels.Gear);workspace.mousepressed(label.x+5,label.y+5,1);draw()
 click(controls['Pre-BiS']);draw()
 assert(workspace.preview().specs[2].gear.chest==14152)
 assert(workspace.preview().specs[1].gear.head==a.gear.head)
 -- Race changes through the real header menu preserve the other player's draft.
+workspace.select(1);draw()
 local raceA=assert(dropdowns.race_1)
-assert(raceA.x==dropdowns.class_1.x+dropdowns.class_1.w+4)
+assert(raceA.y>dropdowns.preset_1.y+dropdowns.preset_1.h)
+assert(raceA.x>dropdowns.class_text_1.x+dropdowns.class_text_1.w)
 click(raceA)
 local raceBounds=assert(ui.dropdownBounds())
 ui.dropdownMousepressed(raceBounds.x+20,raceBounds.y+4+2.5*raceBounds.row,1)
 draw()
 assert(workspace.preview().specs[1].race=='orc')
 assert(workspace.preview().specs[2].race=='human')
-editor.setRace('troll');draw()
+workspace.select(2);editor.setRace('troll');draw()
 assert(workspace.preview().specs[2].race=='troll')
 local saved=editor.getCurrentSpecConfig()
 editor.setRace('human');editor.loadSpec(saved)
@@ -62,10 +71,13 @@ assert(editor.getCurrentSpecConfig().race=='troll')
 editor.setClass('warlock')
 assert(editor.getCurrentSpecConfig().race=='troll')
 editor.loadSpec(saved);draw()
+local nt=generator.getNeuroTelemetry()
+nt.policy_a,nt.policy_b='matches/neuro_champion_a.nepl','matches/neuro_champion_b.nepl'
+draw()
 local launched
 local old=generator.startFight
 generator.startFight=function(cfg) launched=cfg;return true end
-click(controls.Fight)
+click(controls['Quick Fight'])
 assert(launched and #launched.temporary_specs==2)
 for i,side in ipairs({'a','b'}) do
     local file=assert(io.open(launched.temporary_specs[i]));local spec=json.decode(file:read('*a'));file:close()
@@ -80,7 +92,7 @@ local profileFile=assert(io.open('specs/shadow_priest_equal_stats.json'))
 local profile=json.decode(profileFile:read('*a'));profileFile:close()
 editor.loadSpec(profile);draw()
 assert(workspace.preview().frame[5]==2670)
-click(controls.Fight)
+click(controls['Quick Fight'])
 assert(launched.hp_a==2670 and launched.spec_a_obj.combat_stats.shadow_power==354)
 assert(launched.spec_a_obj.gear==nil)
 for _,path in ipairs(launched.temporary_specs) do os.remove(path) end
@@ -93,7 +105,7 @@ local preview=workspace.preview()
 assert(math.abs(preview.meta.max_health_a-3300)<0.001)
 assert(math.abs(preview.frame[5]-3300)<0.001)
 assert(math.abs(preview.meta.max_mana_a-2300)<0.001)
-click(controls.Fight)
+click(controls['Quick Fight'])
 assert(math.abs(launched.hp_a-3300)<0.001)
 assert(launched.spec_a_obj.combat_stats.max_health==3000)
 assert(launched.spec_a_obj.combat_stats.stamina==200)

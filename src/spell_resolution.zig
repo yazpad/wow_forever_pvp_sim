@@ -181,7 +181,18 @@ pub fn petMelee(state: anytype, comptime side: bool, i: usize, damage: V, mask: 
     const avoid: V = @field(state, "melee_avoidance_chance" ++ target)[i..][0..16].*;
     const crit: V = @field(state, "pet_crit_chance" ++ own)[i..][0..16].*;
     const armor: V = @field(state, "armor_damage_reduction" ++ target)[i..][0..16].*;
-    return resolveRolls(damage, hit, avoid, crit, v(2), .{ rollFor(state, side, i, acting, true), rollFor(state, side, i, acting, true), rollFor(state, side, i, acting, true) }, acting).damage * (v(1) - armor);
+    const inner_timer = @field(state, "inner_fire_timer" ++ target)[i..][0..16];
+    const inner_charges = @field(state, "inner_fire_charges" ++ target)[i..][0..16];
+    const inner_active = simd.vAnd16(inner_timer.* > v(0), inner_charges.* > v(0));
+    const armor_value = armor * v(5500) / @max(v(0.001), v(1) - armor);
+    const inner_armor = (armor_value + v(@import("spec.zig").Priest.InnerFireArmor)) /
+        (armor_value + v(@import("spec.zig").Priest.InnerFireArmor) + v(5500));
+    const effective_armor = @select(f32, inner_active, inner_armor, armor);
+    const resolved = resolveRolls(damage, hit, avoid, crit, v(2), .{ rollFor(state, side, i, acting, true), rollFor(state, side, i, acting, true), rollFor(state, side, i, acting, true) }, acting);
+    const landed_on_priest = simd.vAnd16(inner_active, resolved.damage > v(0));
+    inner_charges.* = @select(f32, landed_on_priest, @max(v(0), inner_charges.* - v(1)), inner_charges.*);
+    inner_timer.* = @select(f32, landed_on_priest, @select(f32, inner_charges.* <= v(0), v(0), inner_timer.*), inner_timer.*);
+    return resolved.damage * (v(1) - effective_armor);
 }
 
 pub fn pushbackRoll(state: anytype, comptime side: bool, i: usize, mask: B) V {

@@ -24,7 +24,8 @@
     {"id": 21, "symbol": "Unused21", "name": "None", "icon": "border", "selectable": false},
     {"id": 22, "symbol": "Unused22", "name": "None", "icon": "border", "selectable": false},
     {"id": 23, "symbol": "Unused23", "name": "None", "icon": "border", "selectable": false},
-    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false}
+    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false},
+    {"id": 25, "symbol": "Unused25", "name": "None", "icon": "border", "selectable": false}
   ],
   "frost_mage": [
     {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
@@ -51,7 +52,8 @@
     {"id": 21, "symbol": "Unused21", "name": "None", "icon": "border", "selectable": false},
     {"id": 22, "symbol": "Unused22", "name": "None", "icon": "border", "selectable": false},
     {"id": 23, "symbol": "Unused23", "name": "None", "icon": "border", "selectable": false},
-    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false}
+    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false},
+    {"id": 25, "symbol": "Unused25", "name": "None", "icon": "border", "selectable": false}
   ],
   "priest": [
     {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
@@ -78,6 +80,7 @@
     {"id": 21, "symbol": "PowerInfusion", "name": "Power Infusion", "icon": "spell_holy_powerinfusion", "talent": {"tree": "Discipline", "id": 10060}},
     {"id": 22, "symbol": "DispelSelf", "name": "Dispel Magic (Self)", "icon": "spell_holy_purify"},
     {"id": 23, "symbol": "DispelEnemy", "name": "Dispel Magic (Enemy)", "icon": "spell_holy_purify"},
-    {"id": 24, "symbol": "ManaBurn", "name": "Mana Burn", "icon": "spell_shadow_manaburn", "starts_cast": true}
+    {"id": 24, "symbol": "ManaBurn", "name": "Mana Burn", "icon": "spell_shadow_manaburn", "starts_cast": true},
+    {"id": 25, "symbol": "InnerFire", "name": "Inner Fire", "icon": "spell_holy_innerfire"}
   ]
 }

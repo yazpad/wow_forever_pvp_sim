@@ -89,6 +89,9 @@ pub const Options = struct {
     /// driven by argmax policy actions instead of the search result.
     policy_a: ?[]const u8 = null,
     policy_b: ?[]const u8 = null,
+    /// Evolved neural policy weights used specifically to drive rollouts during MCTS.
+    rollout_policy_a: ?[]const u8 = null,
+    rollout_policy_b: ?[]const u8 = null,
 };
 pub fn main() !void {
     var args = std.process.args();
@@ -104,7 +107,7 @@ pub fn main() !void {
             continue;
         }
         if (std.mem.eql(u8, arg, "--help")) {
-            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH] [--policy-a WEIGHTS.nepl] [--policy-b WEIGHTS.nepl]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted. --policy-a/--policy-b drive that side with an evolved neuro_arena policy (argmax) instead of MCTS.\n");
+            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH] [--policy-a WEIGHTS.nepl] [--policy-b WEIGHTS.nepl] [--rollout-policy-a WEIGHTS.nepl] [--rollout-policy-b WEIGHTS.nepl]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted. --policy-a/--policy-b drive that side with an evolved neuro_arena policy (argmax) instead of MCTS. --rollout-policy-a/--rollout-policy-b use evolved policies for MCTS rollouts.\n");
             return;
         }
         const value = args.next() orelse return error.MissingValue;
@@ -142,6 +145,14 @@ pub fn applyOption(o: *Options, arg: []const u8, value: []const u8) !bool {
     }
     if (std.mem.eql(u8, arg, "--policy-b")) {
         o.policy_b = value;
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--rollout-policy-a")) {
+        o.rollout_policy_a = value;
+        return true;
+    }
+    if (std.mem.eql(u8, arg, "--rollout-policy-b")) {
+        o.rollout_policy_b = value;
         return true;
     }
     if (std.mem.eql(u8, arg, "--pet-a")) o.pet_a = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--pet-b")) o.pet_b = pets.Kind.parse(value) orelse return error.UnknownPet else if (std.mem.eql(u8, arg, "--spec-a")) o.a = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--spec-b")) o.b = Spec.parse(value) orelse return error.UnknownSpec else if (std.mem.eql(u8, arg, "--name-a")) o.name_a = value else if (std.mem.eql(u8, arg, "--name-b")) o.name_b = value else if (std.mem.eql(u8, arg, "--spec-id-a")) o.spec_id_a = value else if (std.mem.eql(u8, arg, "--spec-id-b")) o.spec_id_b = value else if (std.mem.eql(u8, arg, "--rollouts")) o.config.rollouts = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--workers")) o.config.workers = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, arg, "--memory-mb"))
@@ -214,7 +225,8 @@ pub fn finalize(o: *Options) !void {
     if (o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_b.?))) == o.warlock_talents_b.demonic_sacrifice_pet) o.warlock_talents_b.demonic_sacrifice = 0;
     o.config.stop_file = o.stop_file;
 }
-pub fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
+pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
+    var o = mut_options;
     const allocator = std.heap.page_allocator;
     var d = try sim.Duel(a, b).init(allocator);
     defer d.deinit();
@@ -265,6 +277,11 @@ pub fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
     const neuro_policy = @import("neuro_policy.zig");
     const loaded_policy_a: ?neuro_policy.Policy = if (o.policy_a) |p| try neuro_policy.Policy.loadFile(p) else null;
     const loaded_policy_b: ?neuro_policy.Policy = if (o.policy_b) |p| try neuro_policy.Policy.loadFile(p) else null;
+    const loaded_rollout_a: ?neuro_policy.Policy = if (o.rollout_policy_a) |p| try neuro_policy.Policy.loadFile(p) else null;
+    const loaded_rollout_b: ?neuro_policy.Policy = if (o.rollout_policy_b) |p| try neuro_policy.Policy.loadFile(p) else null;
+
+    if (loaded_rollout_a) |*rpa| o.config.policy_a = rpa;
+    if (loaded_rollout_b) |*rpb| o.config.policy_b = rpb;
 
     const search = try mcts.Search(a, b).init(allocator, o.config);
     defer search.deinit();
@@ -473,7 +490,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
 
         // 1. ActionUsed / Blink / Counterspell events
         if (act_a_triggered and action_a != 0) {
-            try traj.events.append(.{ .time_s = time_s, .source = 0, .target = if ((action_a >= 17 and action_a <= 20) or (a == .priest and (action_a == 6 or action_a == 11 or action_a == 12 or action_a == 16 or action_a == 21 or action_a == 22))) 0 else 1, .kind = .ActionUsed, .spell_id = action_a, .amount = 0 });
+            try traj.events.append(.{ .time_s = time_s, .source = 0, .target = if ((action_a >= 17 and action_a <= 20) or (a == .priest and (action_a == 6 or action_a == 11 or action_a == 12 or action_a == 16 or action_a == 21 or action_a == 22 or action_a == 25))) 0 else 1, .kind = .ActionUsed, .spell_id = action_a, .amount = 0 });
             if (a == .frost_mage and action_a == 5)
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 0, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if ((a == .frost_mage or a == .priest) and action_a == 7)
@@ -482,7 +499,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, o: Options) !void {
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .SpellLock, .spell_id = interruptedSchool(b, old_cast_b), .amount = Frost.LockoutDuration });
         }
         if (act_b_triggered and action_b != 0) {
-            try traj.events.append(.{ .time_s = time_s, .source = 1, .target = if ((action_b >= 17 and action_b <= 20) or (b == .priest and (action_b == 6 or action_b == 11 or action_b == 12 or action_b == 16 or action_b == 21 or action_b == 22))) 1 else 0, .kind = .ActionUsed, .spell_id = action_b, .amount = 0 });
+            try traj.events.append(.{ .time_s = time_s, .source = 1, .target = if ((action_b >= 17 and action_b <= 20) or (b == .priest and (action_b == 6 or action_b == 11 or action_b == 12 or action_b == 16 or action_b == 21 or action_b == 22 or action_b == 25))) 1 else 0, .kind = .ActionUsed, .spell_id = action_b, .amount = 0 });
             if (b == .frost_mage and action_b == 5)
                 try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if ((b == .frost_mage or b == .priest) and action_b == 7)

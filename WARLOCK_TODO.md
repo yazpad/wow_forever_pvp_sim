@@ -60,7 +60,7 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 - [ ] 105916 Amplify Curse: empower next eligible curse.
 - [x] 105917 Pandemic: rank-based 33%/67%/100% increase to the critical damage bonus applies to modeled Affliction periodic/channel ticks; extend to future eligible spells when added.
 - [x] 110876 Malevolence: +1% crit chance per rank applies to modeled eligible direct Shadow damage and Shadow periodic/channel ticks.
-- [x] 105914 Nightfall: 2% / 4% proc chance per tick from Corruption and Drain Life damage rolls causes caster to enter 10.0s Shadow Trance; consuming Shadow Trance reduces next Shadow Bolt cast time by 100% (instant cast on GCD).
+- [x] 105914 Nightfall: 2% / 4% proc chance per damaging Corruption or Drain Life tick grants a 10-second Shadow Trance; the next Shadow Bolt is instant and consumes it. Proc timing is snapshotted separately from the Shadow and Flame buff.
 - [ ] 105913 Curse of Exhaustion: unlock/modify the spell (spell implementation above).
 - [ ] 105911 Soul Siphon: scale drain output based on active Affliction effects.
 - [ ] 105909 Wrack: unlock/modify the spell (spell implementation above).
@@ -127,8 +127,8 @@ Life Tap, Improved Life Tap, and Curse of Weakness are excluded from completion 
 ## Recommended implementation order
 
 Current cross-project order is maintained in [TODO.md](TODO.md): active Soul
-Link/DS frame indicators first, then Nightfall, Improved Shadow Bolt, Agonizing
-Flames, and passive owner/pet stat talents. The spell and talent entries above
+Link/DS frame indicators first, then Improved Shadow Bolt, Agonizing Flames,
+and passive owner/pet stat talents. The spell and talent entries above
 remain the detailed acceptance scope.
 
 Completed foundations include discrete DoT/channel ticks, periodic crits,

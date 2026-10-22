@@ -34,6 +34,7 @@ pub const Effects = struct {
     seduction_duration_mult: V,
     spell_lock_cooldown: V,
     improved_shadow_bolt_mult: V,
+    nightfall_proc_chance: V,
     demonic_sacrifice: V,
     demonic_sacrifice_pet: V,
 };
@@ -123,6 +124,7 @@ pub fn decode(encoded: U, flags: U) Effects {
         .seduction_duration_mult = @as(V, @splat(1.0)) + @as(V, @splat(0.10)) * asFloat(rank(flags, 11, 2)),
         .spell_lock_cooldown = @as(V, @splat(24.0)) - @as(V, @splat(2.0)) * asFloat(rank(flags, 13, 2)),
         .improved_shadow_bolt_mult = improved_shadow_bolt_mult,
+        .nightfall_proc_chance = @as(V, @splat(0)),
         .demonic_sacrifice = demonic_sacrifice,
         .demonic_sacrifice_pet = demonic_sacrifice_pet,
     };
@@ -131,6 +133,7 @@ pub fn decode(encoded: U, flags: U) Effects {
 /// Full runtime decode, including ranks stored beyond the first two words.
 pub fn decodeExtended(encoded: U, flags: U, extra: U) Effects {
     var effects = decode(encoded, flags);
+    effects.nightfall_proc_chance = @as(V, @splat(0.02)) * asFloat(rank(extra, 0, 2));
     const agony_rank = rank(extra, 10, 2);
     const old_bonus = @as(V, @splat(1)) + @as(V, @splat(0.10)) * asFloat(rank(flags, 3, 1));
     effects.agony_damage = effects.agony_damage / old_bonus * (@as(V, @splat(1)) + @as(V, @splat(0.05)) * asFloat(agony_rank));

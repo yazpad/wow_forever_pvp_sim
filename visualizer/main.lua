@@ -4,6 +4,7 @@ local class_view = require("class_view")
 local spell_visuals = require("spell_visuals")
 local unit_frames = require("unit_frames")
 local cast_feedback = require("cast_feedback")
+local combat_log = require("combat_log")
 -- PVP_SIM: 2D COMBAT ARENA & MCTS VISUALIZER (Love2D Native Visualizer)
 local json = require("json")
 local match_browser = require("match_browser")
@@ -25,17 +26,12 @@ local speedIdx = 3
 
 -- The arena workspace owns spec setup and replay playback.
 local currentTab = "setup"
-local TABS = {
-    { id = "setup", label = "Arena [F1]" },
-}
-
 -- Camera state for smooth zoom and pan
 local camera = require("arena_camera")
 
 local fctList = {}
 local projectiles = {}
 local particles = {}
-local activeCombatLog = {}
 local drainLifeShader = nil
 local drainLifeMesh = nil
 local tokenFrameShader = nil
@@ -62,6 +58,7 @@ local function loadMatchFile(path)
         local fn, loadErr = loadfile(path)
         if fn then
             MATCH_DATA = fn()
+            combat_log.reset()
             currentTime = 0
             isPlaying = true
             if resetEventsToTime then resetEventsToTime(0) end
@@ -78,6 +75,7 @@ local function loadMatchFile(path)
         local content = f:read("*a")
         f:close()
         MATCH_DATA = json.decode(content)
+        combat_log.reset()
         currentTime = 0
         isPlaying = true
         if resetEventsToTime then resetEventsToTime(0) end
@@ -224,16 +222,8 @@ function love.load(arg)
     fctList = {}
     projectiles = {}
     particles = {}
-    activeCombatLog = {}
+    combat_log.reset()
 
-    if MATCH_DATA and MATCH_DATA.events then
-        for i = 1, math.min(#MATCH_DATA.events, 40) do
-            local ev = MATCH_DATA.events[i]
-            local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
-            local text = string.format("[%.2fs] %s used %s", ev.t, ev.s == 0 and "A" or "B", spName)
-            table.insert(activeCombatLog, text)
-        end
-    end
 end
 
 local function getFrameAtTime(t)
@@ -880,34 +870,9 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     end
 end
 
-local function tabBounds(screenW, index)
-    local startX, gap = 156, 4
-    local width = math.min(180, (screenW - startX - 20 - gap * (#TABS - 1)) / #TABS)
-    return startX + (index - 1) * (width + gap), 14, width, 36
-end
-
-local function drawTabBar(screenW)
-    local g = love.graphics
-    g.setColor(0.045, 0.065, 0.105, 0.98)
-    g.rectangle("fill", 0, 0, screenW, ui.headerHeight)
-    g.setColor(0.16, 0.22, 0.32, 0.9)
-    g.line(0, ui.headerHeight - 1, screenW, ui.headerHeight - 1)
-
-    icons.draw("pvp_banner", 30, ui.headerHeight * 0.5, 26)
-    ui.setFont("bold")
-    g.setColor(0.96, 0.98, 1.0, 1.0)
-    g.print("PVP_SIM", 50, 15)
-    ui.setFont("small")
-    g.setColor(0.40, 0.65, 0.90, 0.85)
-    g.print("Combat & MCTS", 50, 35)
-    ui.resetFont()
-
-    local mx, my = love.mouse.getPosition()
-    for idx, tab in ipairs(TABS) do
-        local x, y, w, h = tabBounds(screenW, idx)
-        ui.tab(x, y, w, h, tab.label, currentTab == tab.id,
-            mx >= x and mx <= x + w and my >= y and my <= y + h)
-    end
+local function playbackControlWidth(w,h)
+    local monitor=mcts_overlay.layout(w,h)
+    return monitor and monitor.x-368 or w-368
 end
 
 local function drawArena(setup)
@@ -1178,11 +1143,12 @@ local function drawArena(setup)
 
     -- 2.3 Bottom Controls & Scrubber Panel
     local ctrlY = screenH - 120
-    ui.drawCard(16, ctrlY, screenW - 32, 106, false, false, 8)
+    local controlW=playbackControlWidth(screenW,screenH)
+    ui.drawCard(352, ctrlY, controlW, 106, false, false, 8)
 
     -- Scrubber Track
-    local scrubX = 36
-    local scrubW = screenW - 72
+    local scrubX = 372
+    local scrubW = playbackControlWidth(screenW,screenH)-40
     local totalT = (MATCH_DATA and MATCH_DATA.meta.total_time) or 1.0
     local scrubPct = math.max(0, math.min(1.0, currentTime / totalT))
 
@@ -1201,20 +1167,22 @@ local function drawArena(setup)
     -- Play/Pause Button
     local mx, my = love.mouse.getPosition()
     mx, my = ui.contentPoint(mx, my)
-    local btnHover = (mx >= 36 and mx <= 36 + 140 and my >= ctrlY + 36 and my <= ctrlY + 36 + 28)
-    ui.button(36, ctrlY + 36, 140, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", btnHover, isPlaying)
+    local btnHover = (mx >= 372 and mx <= 372 + 140 and my >= ctrlY + 36 and my <= ctrlY + 36 + 28)
+    ui.button(372, ctrlY + 36, 140, 28, isPlaying and "Pause  [Space]" or "Play  [Space]", btnHover, isPlaying)
 
     -- Instructions & Shortcuts
     ui.setFont("small")
     love.graphics.setColor(0.65, 0.75, 0.88, 0.9)
-    love.graphics.print("Arrows  Step    +/-  Zoom    0  Reset    R  Reload    1–5  Speed: " .. tostring(playbackSpeed) .. "x", 190, ctrlY + 42)
+    if controlW>=480 then
+        love.graphics.print("Arrows: Step · R: Reload · Speed: " .. tostring(playbackSpeed) .. "x", 526, ctrlY + 42)
+    end
     ui.resetFont()
 
     ui.setFont('small')
     love.graphics.setColor(ui.colors.textMuted)
-    love.graphics.printf(string.format('%.2fs / %.2fs · Camera: %d%%', currentTime,
-        MATCH_DATA and MATCH_DATA.meta.total_time or 0, math.floor(camera.zoom*100+0.5)),
-        36, ctrlY+88, screenW-72, 'right')
+    love.graphics.printf(string.format('%.1fs / %.1fs · %gx', currentTime,
+        MATCH_DATA and MATCH_DATA.meta.total_time or 0, playbackSpeed),
+        372, ctrlY+88, controlW-40, 'right')
     ui.resetFont()
 
     if MATCH_DATA then
@@ -1223,65 +1191,13 @@ local function drawArena(setup)
             or meta.victor==1 and (meta.name_b..' victorious') or 'In progress'
         love.graphics.setColor(ui.colors.textMuted)
         ui.setFont('small')
-        love.graphics.printf(outcome,36,ctrlY+88,(screenW-72)*0.6,'left')
+        love.graphics.push('all');ui.scissor(372,ctrlY+70,controlW-40,16)
+        love.graphics.print(outcome,372,ctrlY+70)
+        love.graphics.pop()
         ui.resetFont()
     end
 
-    -- Combat Summary / Live Log
-    if MATCH_DATA and MATCH_DATA.events then
-        local latestEvText = "No events yet"
-        for i = #MATCH_DATA.events, 1, -1 do
-            local ev = MATCH_DATA.events[i]
-            if ev.t <= currentTime then
-                local spName = class_view.name(MATCH_DATA.meta, ev.s, ev.sp)
-                local srcName = ev.s == 0 and (MATCH_DATA.meta and MATCH_DATA.meta.name_a or "Unit A") or (MATCH_DATA.meta and MATCH_DATA.meta.name_b or "Unit B")
-                local desc = ""
-                if ev.k == 0 then
-                    desc = string.format("used %s", spName)
-                elseif ev.k == 1 then
-                    desc = string.format("began casting %s", spName)
-                elseif ev.k == 2 then
-                    desc = string.format("completed %s", spName)
-                elseif ev.k == 3 then
-                    desc = string.format("%s was interrupted!", spName)
-                elseif ev.k == 4 then
-                    desc = string.format("%s hit for -%.0f HP", spName, ev.a)
-                elseif ev.k == 5 then
-                    desc = string.format("%s tick (-%.0f HP)", ev.sp == 5 and "Siphon" or "DoT", ev.a)
-                elseif ev.k == 6 then
-                    local healName = ({[5]="Drain Life", [6]="Healthstone", [7]="Death Coil", [8]="Siphon Life"})[ev.sp] or "Heal"
-                    desc = string.format("%s heal (+%.0f HP)", healName, ev.a)
-                elseif ev.k == 7 then
-                    desc = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "applied Polymorph" or "applied Fear"
-                elseif ev.k == 8 then
-                    desc = "Fear broke"
-                elseif ev.k == 9 then
-                    desc = class_view.spec(MATCH_DATA.meta, ev.s) == "frost_mage" and "activated Ice Barrier" or "used Healthstone"
-                elseif ev.k == 10 then
-                    desc = string.format("Death Coil hit (-%.0f HP)", ev.a)
-                elseif ev.k == 11 then
-                    desc = "applied Death Coil Horror"
-                elseif ev.k == 12 then
-                    desc = "applied Frost Nova Root"
-                elseif ev.k == 13 then
-                    desc = "cast Blink"
-                elseif ev.k == 14 then
-                    desc = "cast Counterspell"
-                elseif ev.k == 18 then
-                    desc = string.format("Blackout stunned for %.2fs", ev.a)
-                elseif ev.k == 17 then
-                    desc = string.format("locked out %s magic", LOCKOUT_SCHOOLS[ev.sp] or "unknown")
-                elseif ev.k == 16 then
-                    desc = string.format("%s hit for -%.0f HP", petNames[ev.sp] or "Pet", ev.a)
-                else
-                    desc = string.format("%s (%.0f)", spName, ev.a)
-                end
-                latestEvText = string.format("Latest Event: [%.2fs] %s %s", ev.t, srcName, desc)
-                break
-            end
-        end
-        love.graphics.print(latestEvText, 36, ctrlY + 70)
-    end
+    combat_log.draw(MATCH_DATA,currentTime,16,screenH-200,320,186)
 
     -- 2.4 Interactive MCTS / PUCT Overlay (Visit distributions & win odds)
     if MATCH_DATA and MATCH_DATA.meta then
@@ -1302,13 +1218,10 @@ end
 
 function love.draw()
     love.graphics.push("all")
-    love.graphics.translate(0, ui.headerHeight)
     love.graphics.scale(ui.scale())
     drawContent()
     love.graphics.pop()
-    drawTabBar(love.graphics.getWidth())
     love.graphics.push('all')
-    love.graphics.translate(0, ui.headerHeight)
     love.graphics.scale(ui.scale())
     ui.drawDropdown()
     love.graphics.pop()
@@ -1319,7 +1232,12 @@ function love.wheelmoved(x, y)
     if currentTab == "analysis" then fight_analysis.wheelmoved(y); return end
     if currentTab ~= "setup" then return end
     local mx, my = ui.contentPoint(love.mouse.getPosition())
-    if not workspace.arenaPoint(mx, my) then workspace.wheelmoved(y); return end
+    if workspace.isPlayback() then
+        local lx,ly=workspace.arenaPoint(mx,my)
+        if lx and combat_log.wheel(lx,ly,y) then return end
+    end
+    if workspace.wheelmoved(y) then return end
+    if not workspace.arenaPoint(mx, my) then return end
     if y > 0 then camera.zoom = math.min(camera.maxZoom, camera.zoom * 1.15)
     elseif y < 0 then camera.zoom = math.max(camera.minZoom, camera.zoom / 1.15) end
 end
@@ -1427,18 +1345,6 @@ function love.mousepressed(x, y, button)
     end
     local screenW = ui.width()
 
-    if button == 1 then
-        for idx, tab in ipairs(TABS) do
-            local tx, ty, tw, th = tabBounds(love.graphics.getWidth(), idx)
-            if x >= tx and x <= tx + tw and y >= ty and y <= ty + th then
-                workspace.mousereleased(1)
-                camera.isDragging = false
-                currentTab = tab.id
-                return
-            end
-        end
-    end
-    if y < ui.headerHeight then return end
     x, y = ui.contentPoint(x, y)
 
     local replayView
@@ -1448,6 +1354,7 @@ function love.mousepressed(x, y, button)
         if not x then return end
         screenW = replayView.virtualW
     end
+    if workspace.isPlayback() and x and combat_log.contains(x,y) then return end
     if currentTab == "analysis" then
         local seek = fight_analysis.mousepressed(x, y, button)
         if seek then currentTime = seek; isPlaying = false; resetEventsToTime(seek); workspace.showReplay(); currentTab = "setup" end
@@ -1480,11 +1387,11 @@ function love.mousepressed(x, y, button)
 
     local screenH = replayView and replayView.virtualH or ui.height()
     local ctrlY = screenH - 120
-    local scrubX = 36
-    local scrubW = screenW - 72
+    local scrubX = 372
+    local scrubW = playbackControlWidth(screenW,screenH)-40
 
     if button == 1 and workspace.isPlayback() then
-        if x >= 36 and x <= 176 and y >= ctrlY + 36 and y <= ctrlY + 64 then
+        if x >= 372 and x <= 512 and y >= ctrlY + 36 and y <= ctrlY + 64 then
             isPlaying = not isPlaying
             return
         end

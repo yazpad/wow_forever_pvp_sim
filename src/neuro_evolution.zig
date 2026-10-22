@@ -37,20 +37,33 @@ pub const HallOfFame = struct {
         return .{ .champions = undefined, .len = 0 };
     }
 
-    pub fn add(self: *HallOfFame, champion: Policy, rng: std.Random) void {
+    pub fn add(self: *HallOfFame, champion: Policy) void {
+        // Do not let repeated selections of the same elite give it extra weight in
+        // the opponent mixture.
+        for (self.champions[0..self.len]) |*existing| {
+            var equal = true;
+            for (existing.params, champion.params) |x, y| {
+                if (x != y) {
+                    equal = false;
+                    break;
+                }
+            }
+            if (equal) return;
+        }
+
         if (self.len < MaxHallOfFame) {
             self.champions[self.len] = champion;
             self.len += 1;
         } else {
-            const idx = rng.uintLessThan(usize, MaxHallOfFame);
-            self.champions[idx] = champion;
+            // Keep a rolling set of recent, distinct strategies so the newest
+            // response remains represented while older counters stay in play.
+            std.mem.copyForwards(Policy, self.champions[0 .. MaxHallOfFame - 1], self.champions[1..MaxHallOfFame]);
+            self.champions[MaxHallOfFame - 1] = champion;
         }
     }
 
-    pub fn sampleOpponent(self: *const HallOfFame, current_champion: *const Policy, rng: std.Random) *const Policy {
-        if (self.len == 0 or rng.float(f32) < 0.70) {
-            return current_champion;
-        }
+    pub fn sampleOpponent(self: *const HallOfFame, rng: std.Random) *const Policy {
+        std.debug.assert(self.len > 0);
         const idx = rng.uintLessThan(usize, self.len);
         return &self.champions[idx];
     }

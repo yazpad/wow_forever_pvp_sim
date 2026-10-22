@@ -111,16 +111,17 @@ ui.chevron=function(x,y,expanded)
     return originalChevron(x,y,expanded)
 end
 love.graphics.print=function(text,x,y)
-    if type(text)=='string' and (chevrons[y+8]~=nil or chevrons[y+9]~=nil) then
+    local active=workspace.frameBounds[workspace.getSelected()]
+    if active and x>=active.x and x<active.x+active.w and type(text)=='string' and (chevrons[y+8]~=nil or chevrons[y+9]~=nil) then
         schoolHeaders[(chevrons[y+8] and 'v  ' or '>  ')..text]={x=x,y=y}
         if text=='Talents' or text=='Gear' or text=='Pets' or text=='Abilities' then
-            controls[#controls+1]={x=24,y=y-8,w=workspace.left-24,h=34,label=text}
+            controls[#controls+1]={x=x-30,y=y-8,w=100,h=34,label=text}
         end
     end
 end
 local originalHeader=ui.playerHeader
 ui.playerHeader=function(x,y,w,h,title,...)
-    controls[#controls+1]={x=126,y=y,w=x+w-126,h=h,label=title,header=true}
+    controls[#controls+1]={x=x+102,y=y,w=w-102,h=h,label=title,header=true}
     return originalHeader(x,y,w,h,title,...)
 end
 local originalButton=ui.button
@@ -138,22 +139,24 @@ local function click(x,y,b)
     love.mousepressed(sx,sy,b or 1);love.mousereleased(sx,sy,b or 1)
 end
 local function control(label)
+    if label=='Player A' or label=='Player B' then
+        local bounds=workspace.frameBounds[label=='Player A' and 1 or 2]
+        click(bounds.x+bounds.w/2,bounds.y+bounds.h+10)
+        return
+    end
     if label=='Warlock' or label=='Frost Mage' then
-        local player=workspace.getSelected()
-        for _,v in ipairs(controls) do
-            if v.header and v.label=='Player '..(player==1 and 'A' or 'B') then
-                click(53,v.y+29)
-                local r=assert(ui.dropdownBounds())
-                click(r.x+20,r.y+4+(label=='Warlock' and 0.5 or 1.5)*r.row)
-                return
-            end
-        end
+        local bounds=workspace.frameBounds[workspace.getSelected()]
+        local scale=bounds.w/320
+        click(bounds.x+35*scale,bounds.y+34*scale)
+        local r=assert(ui.dropdownBounds())
+        click(r.x+20,r.y+4+(label=='Warlock' and 0.5 or 1.5)*r.row)
+        return
     end
     for _,v in ipairs(controls) do
         if v.label==label then click(v.x+v.w/2,v.y+v.h/2);return end
     end
     -- Find controls after scrolling; the automatic grid has fewer rows than slots.
-    mx,my=physical(60,workspace.scrollTop+20)
+    mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20)
     workspace.wheelmoved(100);render()
     for attempt=1,60 do
         for _,v in ipairs(controls) do
@@ -165,7 +168,7 @@ local function control(label)
 end
 local function findSchool(label)
     if schoolHeaders[label] then return schoolHeaders[label] end
-    mx,my=physical(60,workspace.scrollTop+20)
+    mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20)
     workspace.wheelmoved(100);render()
     for attempt=1,60 do
         if schoolHeaders[label] then return schoolHeaders[label] end
@@ -181,7 +184,7 @@ end
 local function iconControl(name,last,b)
     local found
     for _,v in ipairs(iconCalls) do
-        if v.icon==name and v.x<workspace.left and (last or not found) then found=v end
+        if v.icon==name and v.x>=workspace.detailBounds.x and v.x<workspace.detailBounds.x+workspace.detailBounds.w and (last or not found) then found=v end
     end
     assert(found,'Missing icon '..tostring(name))
     click(found.x+found.w/2,found.y+found.h/2,b)
@@ -190,14 +193,14 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     width,height=size[1],size[2]
     workspace.editPositions();workspace.select(1);render()
     editor.setCombatStat('spell_crit_chance',0.23)
-    render();control('Player B');render()
+    render();workspace.select(2);render()
     assert(workspace.getSelected()==2)
     editor.setCombatStat('spell_crit_chance',0.37)
-    render();control('Player A');render()
+    render();workspace.select(1);render()
     near(workspace.preview().specs[1].combat_stats.spell_crit_chance,0.23)
     near(workspace.preview().specs[2].combat_stats.spell_crit_chance,0.37)
     control('Player A');render();assert(workspace.getSelected()==nil)
-    control('Player B');render();assert(workspace.getSelected()==2)
+    workspace.select(2);render();assert(workspace.getSelected()==2)
     local snapshot=workspace.preview()
     local frame={}
     for i=1,104 do frame[i]=snapshot.frame[i] end
@@ -212,7 +215,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
         render()
         local x,y=camera.worldPoint(view,frame[2+i],frame[48+i])
         click(view.x+x*view.scale,view.y+y*view.scale)
-        render();assert(workspace.getSelected()==i and workspace.isPlayback())
+        render();assert(workspace.getSelected()==(workspace.details[i] and i or nil) and workspace.isPlayback())
         near(workspace.preview().frame[3],snapshot.frame[3]);near(workspace.preview().frame[4],snapshot.frame[4])
     end
     -- A setup click with two pixels of jitter selects without moving either fighter.
@@ -223,15 +226,16 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     local x,y=camera.worldPoint(view,before[3],before[49])
     local sx,sy=physical(view.x+x*view.scale,view.y+y*view.scale)
     love.mousepressed(sx,sy,1);love.mousemoved(sx+2,sy+2,2,2);love.mousereleased(sx+2,sy+2,1)
-    assert(workspace.getSelected()==1)
+    assert(workspace.getSelected()==(workspace.details[1] and 1 or nil))
+    workspace.select(1);render()
     near(workspace.preview().frame[3],before[3]);near(workspace.preview().frame[49],before[49])
     -- Scroll the stacked trees, then navigate within the same player's section.
     render()
     if schoolHeaders['>  Affliction'] then school('Affliction',true);render() end
-    mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
+    mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
     -- Scrollable section headers remain reachable with the compact ability grid.
     control('Pets');render()
-    mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
+    mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
     control('Abilities');render()
 end
 -- Actual talent point allocation and removal through icon tiles.
@@ -249,21 +253,26 @@ local available=editor.getAvailableActions()
 local allowed={};for _,name in ipairs(available) do allowed[name]=true end
 assert(allowed.Seduction and not allowed['Spell Lock'] and not allowed.Shadowburn)
 -- Scroll the choices into view even in the shortest panel.
-mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
+mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20);workspace.wheelmoved(-100);render()
 -- Pet actions appear automatically without selecting a slot.
 render()
 assert(require('json').encode(workspace.preview().specs[1].action_loadout):find('Seduction'))
 editor.setPet('felhunter');render()
 assert(not require('json').encode(workspace.preview().specs[1].action_loadout):find('Seduction'))
 local generator=require('match_generator')
+local nt=generator.getNeuroTelemetry()
+local savedPolA,savedPolB=nt.policy_a,nt.policy_b
+nt.policy_a,nt.policy_b='matches/neuro_champion_a.nepl','matches/neuro_champion_b.nepl'
+render()
 local originalStart=generator.startFight
 local launch
 generator.startFight=function(cfg) launch=cfg;return true end
-control('Fight');assert(launch)
+control('Quick Fight');assert(launch)
 local expected=workspace.preview().specs[1]
 assert(require('json').encode(launch.spec_a_obj.action_loadout)==require('json').encode(expected.action_loadout))
 for _,path in ipairs(launch.temporary_specs) do os.remove(path) end
 generator.startFight=originalStart
+nt.policy_a,nt.policy_b=savedPolA,savedPolB
 print('Accordion, arena selection, click/drag separation, talents, loadout gates and launch checks passed.')
 
 -- Each school folds independently, retaining points and a separate state per player/class.
@@ -271,7 +280,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     width,height=size[1],size[2]
     workspace.select(1);render()
     if not findSchool('>  Affliction') and not findSchool('v  Affliction') then control('Talents');render() end
-    mx,my=physical(60,workspace.scrollTop+20);workspace.wheelmoved(100);render()
+    mx,my=physical(workspace.detailBounds.x+30,workspace.scrollTop+20);workspace.wheelmoved(100);render()
     if findSchool('v  Affliction') then school('Affliction',false);render() end
     assert(findSchool('>  Affliction') and findSchool('>  Demonology') and findSchool('>  Destruction'))
     local before=require('json').encode(workspace.preview().specs[1])
@@ -324,8 +333,18 @@ end
 for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     width,height=size[1],size[2]
     workspace.editPositions()
-    for _,id in ipairs({'rollouts','workers','algorithm','evaluator','distance'}) do
-        love.draw()
+    local sectionState=upvalue(workspace.toggleSettingsSection,'settingsOpen')
+    sectionState.settings=true
+    sectionState.mcts=true
+    for _,id in ipairs({'fight_seconds','rollouts','workers','algorithm','evaluator','distance'}) do
+        local maxScrollAttempts = 20
+        while not dropdownControls[id] and maxScrollAttempts > 0 do
+            mx,my=physical(workspace.settingsX+10,250)
+            workspace.wheelmoved(-1)
+            love.draw()
+            maxScrollAttempts = maxScrollAttempts - 1
+        end
+        assert(dropdownControls[id], "Missing dropdown: " .. id)
         for index,value in ipairs(dropdownControls[id].choices) do
             local r=openDropdown(id)
             assert(r.x>=0 and r.y>=0 and r.x+r.w<=ui.width() and r.y+r.h<=ui.height())
@@ -339,24 +358,29 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     local zoom=camera.zoom
     love.wheelmoved(0,1);near(camera.zoom,zoom)
     love.keypressed('escape');assert(not ui.dropdownOpen())
+    local nt=generator.getNeuroTelemetry()
+    local savedPolA,savedPolB=nt.policy_a,nt.policy_b
+    nt.policy_a,nt.policy_b='matches/neuro_champion_a.nepl','matches/neuro_champion_b.nepl'
+    render()
     openDropdown('workers')
-    control('Fight')
+    control('Quick Fight')
     assert(not ui.dropdownOpen() and not generator.isActive())
     openDropdown('workers')
     local selectedBefore=workspace.getSelected()
     clickLogical(workspace.left+50,300)
     assert(not ui.dropdownOpen() and workspace.getSelected()==selectedBefore)
     openDropdown('workers')
-    love.mousepressed(20,20,1) -- Header outside click dismisses without navigation.
+    love.mousepressed(20,20,1) -- An outside click dismisses without navigation.
     assert(not ui.dropdownOpen())
     love.draw();assert(dropdownControls.workers)
     local start=generator.startFight
     local submitted
     generator.startFight=function(cfg) submitted=cfg;return true end
-    control('Fight')
+    control('Quick Fight')
     generator.startFight=start
+    nt.policy_a,nt.policy_b=savedPolA,savedPolB
     assert(submitted)
-    for _,id in ipairs({'rollouts','workers','algorithm','evaluator','distance'}) do
+    for _,id in ipairs({'fight_seconds','rollouts','workers','algorithm','evaluator','distance'}) do
         assert(submitted[id]==generator.getConfig()[id])
     end
     for _,path in ipairs(submitted.temporary_specs) do os.remove(path) end
@@ -443,11 +467,11 @@ local iconManager=require('icons_manager')
 local oldAura,oldRect=iconManager.drawAuraBadge,iconManager.drawRect
 local seen={}
 iconManager.drawAuraBadge=function(icon,x,y,size)
-    assert(x>=16 and x+size<=336 and y>=74 and y+size<=242)
+    assert(x>=16 and x+size<=336 and y>=74 and y+size<=268)
     seen[icon]=(seen[icon] or 0)+1
 end
 iconManager.drawRect=function(icon,x,y,w,h)
-    assert(x>=16 and x+w<=336 and y>=74 and y+h<=242)
+    assert(x>=16 and x+w<=336 and y>=74 and y+h<=268)
     seen[icon]=(seen[icon] or 0)+1
 end
 for side=0,1 do
@@ -502,6 +526,7 @@ ui.dropdown=function(id,x,y,w,h,value,choices,onSelect,...)
     return dropdownBefore(id,x,y,w,h,value,choices,onSelect,...)
 end
 local function chooseClass(player,class)
+    workspace.select(player)
     render()
     local c=assert(classControls['class_'..player])
     assert(#c.choices==3 and c.choices[1]=='warlock' and c.choices[2]=='frost_mage' and c.choices[3]=='priest')
@@ -525,7 +550,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
         for _,class in ipairs({'frost_mage','warlock'}) do
             workspace.showReplay();render()
             chooseClass(target,class)
-            assert(workspace.getSelected()==other)
+            assert(workspace.getSelected()==target)
             local state=workspace.preview()
             assert(state.specs[target].class==class)
             assert(classControls['class_'..target].value==class)
@@ -538,18 +563,23 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
             -- Fight must capture the changed collapsed fighter's actual loadout and stats.
             local original=generator.startFight
             local launched
+            local nt=generator.getNeuroTelemetry()
+            local savedPolA,savedPolB=nt.policy_a,nt.policy_b
+            nt.policy_a,nt.policy_b='matches/neuro_champion_a.nepl','matches/neuro_champion_b.nepl'
+            render()
             generator.startFight=function(config) launched=config;return true end
-            control('Fight');generator.startFight=original
+            control('Quick Fight');generator.startFight=original
+            nt.policy_a,nt.policy_b=savedPolA,savedPolB
             local submitted=launched[target==1 and 'spec_a_obj' or 'spec_b_obj']
             assert(submitted.class==class)
             assert(json.encode(submitted.action_slots)==json.encode(state.specs[target].action_slots))
             for key,value in pairs(state.specs[target].combat_stats) do near(submitted.combat_stats[key],value) end
             for _,path in ipairs(launched.temporary_specs) do os.remove(path) end
         end
-        -- The icon also works when both sections are collapsed.
-        render();control(other==1 and 'Player A' or 'Player B');render()
+        -- Closing a frame hides its editor; reopening restores the class controls.
+        render();control(target==1 and 'Player A' or 'Player B');render()
         assert(workspace.getSelected()==nil)
-        chooseClass(target,'frost_mage');assert(workspace.getSelected()==nil)
+        chooseClass(target,'frost_mage');assert(workspace.getSelected()==target)
         -- Expanded class changes retain expansion and immediately replace talent schools.
         workspace.select(target);render()
         if not findSchool('>  Arcane') and not findSchool('v  Arcane') then control('Talents');render() end
@@ -599,7 +629,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     local found=false
     for _,v in ipairs(controls) do
         if v.label=='Review replay 1' then
-            assert(v.y>=56 and v.y+v.h<=ui.height()-124)
+            assert(v.y>=142 and v.y+v.h<=ui.height()-24)
             click(v.x+10,v.y+10);found=true;break
         end
     end
@@ -612,7 +642,7 @@ for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
     local count=0
     for _,v in ipairs(controls) do
         if v.x>=workspace.settingsX and v.label~='Fight' then
-            assert(v.y>=56 and v.y+v.h<=ui.height()-124);count=count+1
+            if v.y>=142 and v.y+v.h<=ui.height()-24 then count=count+1 end
         end
     end
     assert(count>0)
@@ -679,7 +709,7 @@ upvalue(matrix.drawPanel,'savedSpecs',matrixSpecs)
 upvalue(matrix.drawPanel,'selectedSpecs',matrixSelected)
 print('Matrix panel: filters, batch pair count, preset launch values and recorded-match replay passed.')
 
--- League Play (Neuroevolution) section: dropdowns, Evolve & Fight button, and Champion vs MCTS launch.
+-- League Play (Neuroevolution) section: dropdowns, Evolve/Train button, and Champion vs MCTS launch.
 width,height=1280,720
 upvalue(workspace.wheelmoved,'settingsScroll',0)
 render()
@@ -690,20 +720,14 @@ generator.startLeaguePlay=function(cfg) launchedLeague=cfg;return true end
 local function findControl(label)
     for _,v in ipairs(controls) do if v.label==label then return v end end
 end
--- Scroll step by step: the section height varies (e.g. when champion models exist on disk).
-upvalue(workspace.wheelmoved,'settingsScroll',0);render()
-for _=1,40 do
-    if findControl('Evolve & Fight') then break end
-    love.wheelmoved(0,-1);render()
-end
-local evolveBtn=findControl('Evolve & Fight')
+local evolveBtn=findControl('Evolve/Train')
 if evolveBtn then click(evolveBtn.x+evolveBtn.w/2,evolveBtn.y+evolveBtn.h/2) end
 generator.startLeaguePlay=startLeague
 assert(launchedLeague and launchedLeague.fights_per_epoch==50000 and launchedLeague.epochs==10)
 for _,path in ipairs(launchedLeague.temporary_specs) do os.remove(path) end
-print('League Play (Neuroevolution) UI and Evolve & Fight launch checks passed.')
+print('League Play (Neuroevolution) UI and Evolve/Train launch checks passed.')
 
--- Champion vs Champion: bulk simulation and single-fight replay buttons.
+-- Champion vs Champion: bulk simulation and quick fight replay buttons.
 do
     local nt=generator.getNeuroTelemetry()
     local savedA,savedB=nt.policy_a,nt.policy_b
@@ -713,23 +737,153 @@ do
     generator.startBulkEval=function(cfg) bulkCfg=cfg;return true end
     generator.startFight=function(cfg) fightCfg=cfg;return true end
     upvalue(workspace.wheelmoved,'settingsScroll',0);render()
-    local bulkLabel='Simulate 1000 Champ vs Champ'
-    local simLabel='Sim 1 Champ vs Champ + Replay'
-    for _=1,80 do
-        if findControl(bulkLabel) and findControl(simLabel) then break end
-        love.wheelmoved(0,-1);render()
-    end
+    local bulkLabel='Simulate batch (1000)'
+    local simLabel='Quick Fight'
     local b=findControl(bulkLabel);assert(b,'bulk simulate button missing')
     click(b.x+b.w/2,b.y+b.h/2)
-    local s=findControl(simLabel);assert(s,'sim 1 button missing')
+    local s=findControl(simLabel);assert(s,'quick fight button missing')
     click(s.x+s.w/2,s.y+s.h/2)
+    local polishedCfg
+    generator.startFight=function(cfg) polishedCfg=cfg;return true end
+    local p=findControl('Polished fight');assert(p,'polished fight button missing')
+    click(p.x+p.w/2,p.y+p.h/2)
     generator.startBulkEval,generator.startFight=startBulk,startFight
     nt.policy_a,nt.policy_b=savedA,savedB
     assert(bulkCfg and bulkCfg.bulk_fights==1000 and bulkCfg.jitter_start_lag==0 and bulkCfg.jitter_pos==0)
     assert(fightCfg and fightCfg.policy_a=='matches/test_champ_a.nepl' and fightCfg.policy_b=='matches/test_champ_b.nepl' and fightCfg.seed)
-    for _,cfg in ipairs({bulkCfg,fightCfg}) do
+    assert(polishedCfg and polishedCfg.rollout_policy_a=='matches/test_champ_a.nepl' and polishedCfg.rollout_policy_b=='matches/test_champ_b.nepl' and polishedCfg.policy_a==nil and polishedCfg.policy_b==nil and polishedCfg.seed)
+    for _,cfg in ipairs({bulkCfg,fightCfg,polishedCfg}) do
         for _,path in ipairs(cfg.temporary_specs) do os.remove(path) end
     end
-    print('Champion vs Champion bulk simulation and single replay launch checks passed.')
+    print('Champion vs Champion bulk simulation, quick fight, and polished fight replay launch checks passed.')
 end
 
+
+-- Unit frames own the build editor and consume its input above the arena.
+for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
+    width,height=size[1],size[2]
+    workspace.select(1);render()
+    assert(workspace.left==0,'The arena must no longer reserve a left column')
+    for player=1,2 do
+        workspace.select(player);render()
+        local frame=workspace.frameBounds[player]
+        local details=assert(workspace.detailBounds)
+        near(details.x,frame.x)
+        near(details.w,frame.w)
+        assert(details.y>frame.y+frame.h and details.y+details.h<=ui.height())
+        local zoom=camera.zoom
+        mx,my=physical(details.x+details.w/2,details.y+20)
+        love.wheelmoved(0,-1)
+        near(camera.zoom,zoom)
+        assert(not workspace.arenaPoint(details.x+20,details.y+20))
+        control(player==1 and 'Player A' or 'Player B');render()
+        assert(workspace.getSelected()==nil and workspace.detailBounds==nil)
+        control(player==1 and 'Player A' or 'Player B');render()
+        assert(workspace.getSelected()==player and workspace.detailBounds)
+    end
+end
+print('Expandable unit frames: attached editor bounds, collapse/reopen and scroll isolation passed at three sizes.')
+
+-- Both editors stay open; header menus and edits target their own unit.
+local frameDropdowns={}
+local beforeFrameDropdown=ui.dropdown
+ui.dropdown=function(id,x,y,w,h,value,choices,onSelect,...)
+    frameDropdowns[id]={x=x,y=y,w=w,h=h,value=value,choices=choices,onSelect=onSelect}
+    return beforeFrameDropdown(id,x,y,w,h,value,choices,onSelect,...)
+end
+for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
+    width,height=size[1],size[2]
+    workspace.select(1);editor.setClass('warlock');editor.setRace('human')
+    workspace.select(2);editor.setClass('frost_mage');editor.setRace('human');render()
+    assert(workspace.details[1] and workspace.details[2])
+    for i=1,2 do
+        local f=workspace.frameBounds[i]
+        local c,p,r=frameDropdowns['class_'..i],frameDropdowns['preset_'..i],frameDropdowns['race_'..i]
+        assert(c.x>=f.x and c.y>=f.y and c.y+c.h<f.y+f.h)
+        local classText=frameDropdowns['class_text_'..i]
+        assert(p.x>c.x+c.w and r.y>p.y+p.h)
+        assert(classText.y==r.y and classText.x+classText.w<r.x)
+        assert(r.x+r.w<=f.x+f.w and r.y+r.h<f.y+f.h)
+        near(workspace.details[i].scrollTop,workspace.details[i].y+8)
+    end
+    local other=json.encode(workspace.preview().specs[2])
+    local race=frameDropdowns.race_1
+    click(race.x+race.w/2,race.y+race.h/2)
+    local menu=assert(ui.dropdownBounds())
+    local index
+    for n,value in ipairs(race.choices) do if value=='orc' then index=n end end
+    assert(index)
+    click(menu.x+20,menu.y+4+(index-0.5)*menu.row);render()
+    assert(workspace.preview().specs[1].race=='orc')
+    assert(json.encode(workspace.preview().specs[2])==other)
+    assert(workspace.details[1] and workspace.details[2])
+    -- Exercise a talent callback in the unfocused frame with both editors visible.
+    workspace.select(1);render()
+    if not findSchool('>  Affliction') and not findSchool('v  Affliction') then control('Talents');render() end
+    if findSchool('>  Affliction') then school('Affliction',true);render() end
+    mx,my=physical(workspace.details[1].x+30,workspace.details[1].scrollTop+20)
+    workspace.wheelmoved(1000);render();render()
+    local unitOneIcon
+    local talent=require('talents_data').load('warlock').Affliction.talents[1]
+    for _,v in ipairs(iconCalls) do
+        if v.icon==talent.icon and v.x>=workspace.details[1].x and v.x<workspace.details[1].x+workspace.details[1].w then unitOneIcon=v;break end
+    end
+    assert(unitOneIcon)
+    local rank=require('talents_data').getRank(workspace.preview().specs[1].trees.Affliction,talent.id)
+    workspace.select(2);render()
+    other=json.encode(workspace.preview().specs[2])
+    click(unitOneIcon.x+unitOneIcon.w/2,unitOneIcon.y+unitOneIcon.h/2);render()
+    assert(require('talents_data').getRank(workspace.preview().specs[1].trees.Affliction,talent.id)==rank+1)
+    assert(json.encode(workspace.preview().specs[2])==other)
+    local scrolls=upvalue(workspace.wheelmoved,'scrolls')
+    local beforeOtherScroll=scrolls[2]
+    mx,my=physical(workspace.details[1].x+30,workspace.details[1].scrollTop+20)
+    love.wheelmoved(0,-2);render()
+    assert(scrolls[1]>0 and scrolls[2]==beforeOtherScroll)
+    control('Player A');render()
+    assert(not workspace.details[1] and workspace.details[2])
+    local header=frameDropdowns.class_1
+    click(header.x+header.w/2,header.y+header.h/2)
+    assert(ui.dropdownOpen(),'Collapsed frames retain their header menus')
+    love.keypressed('escape')
+end
+ui.dropdown=beforeFrameDropdown
+print('Simultaneous unit editors: header placement, collapsed menus, independent scrolling and cross-frame draft isolation passed at three sizes.')
+
+-- Combat log input stays separate from camera and playback controls.
+local combatLog=require('combat_log')
+for _,size in ipairs({{960,540},{1280,720},{2560,1080}}) do
+    width,height=size[1],size[2]
+    workspace.showReplay()
+    upvalue(drawContent,'MATCH_DATA',dofile('last_match.lua'))
+    upvalue(love.keypressed,'currentTime',15)
+    render()
+    assert(#combatLog.entries>1)
+    local _,_,view=workspace.arenaPoint(30,100,true)
+    local bounds=assert(combatLog.bounds)
+    if workspace.details[1] then
+        assert(workspace.details[1].y+workspace.details[1].h<view.y+bounds.y*view.scale)
+    end
+    local lx,ly=bounds.x+20,bounds.y+50
+    mx,my=physical(view.x+lx*view.scale,view.y+ly*view.scale)
+    local zoom=camera.zoom
+    love.wheelmoved(0,1)
+    near(camera.zoom,zoom)
+    assert(combatLog.offset>0)
+    love.mousepressed(mx,my,2)
+    assert(not camera.isDragging,'Combat log clicks must not pan the camera')
+    -- The relocated pause and scrubber controls use their drawn positions.
+    local before=upvalue(love.keypressed,'isPlaying')
+    click(view.x+400*view.scale,view.y+(view.virtualH-70)*view.scale)
+    assert(upvalue(love.keypressed,'isPlaying')~=before)
+    click(view.x+373*view.scale,view.y+(view.virtualH-98)*view.scale)
+    near(upvalue(love.keypressed,'currentTime'),dofile('last_match.lua').meta.total_time/(view.virtualW-408))
+    render()
+    assert(combatLog.offset==0)
+    upvalue(love.keypressed,'currentTime',15);render()
+    love.keypressed('r')
+    assert(#combatLog.entries==0 and combatLog.offset==0,'Reload must reset history before drawing')
+    render()
+    for _,entry in ipairs(combatLog.entries) do assert(entry:find('[0.00s]',1,true)) end
+end
+print('Combat log integration: layout, scroll/click isolation, relocated controls and replay reload reset passed at three sizes.')

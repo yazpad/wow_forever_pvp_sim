@@ -81,6 +81,14 @@ local function getDecisionAtTime(t)
     return best
 end
 
+function mcts_overlay.layout(screenW,screenH)
+    if not isVisible or not currentSearchData or #currentSearchData.decisions==0 then return nil end
+    -- Dock alongside the combat log; the tuning hint shares its bottom edge.
+    local scale=math.min(1,math.max(0.4,(screenH-246)/220))
+    local w,h=340*scale,220*scale
+    return {x=screenW-w-16,y=screenH-40-h,w=w,h=h,scale=scale}
+end
+
 function mcts_overlay.draw(currentTime, meta)
     if not isVisible or not currentSearchData then return end
 
@@ -90,16 +98,13 @@ function mcts_overlay.draw(currentTime, meta)
     local screenW = ui.width()
     local screenH = ui.height()
 
-    -- Bottom-left or bottom HUD placement just above scrubber controls
-    -- Controls are at screenH - 120, height 106.
-    -- We place the MCTS panel in the upper/mid area or docked on the right side.
-    -- Docked panel on the top-right / right side below top bar:
-    local panelW = 340
-    local panelH = 220
-    local panelX = screenW - panelW - 16
-    local panelY = 74
-
-    local g = love.graphics
+    local bounds=mcts_overlay.layout(screenW,screenH)
+    local panelW,panelH=340,220
+    local panelX,panelY=0,0
+    local g=love.graphics
+    g.push('all')
+    g.translate(bounds.x,bounds.y)
+    g.scale(bounds.scale)
     g.setColor(0.04, 0.06, 0.10, 0.94)
     g.rectangle("fill", panelX, panelY, panelW, panelH, 6)
     g.setColor(0.2, 0.7, 1.0, 0.8)
@@ -233,14 +238,16 @@ function mcts_overlay.draw(currentTime, meta)
         g.print(string.format("Committed: A [%s] | B [%s]", actAName, actBName), panelX + 12, footY)
     end
 
+    g.pop()
+
     -- Draw Tuning Panel Drawer if opened
     if isTuningOpen then
         mcts_overlay.drawTuningDrawer(screenW, screenH)
     else
         -- Draw small hint button to open tuning
         local tuneBtnW, tuneBtnH = 96, 20
-        local tuneBtnX = panelX
-        local tuneBtnY = panelY + panelH + 6
+        local tuneBtnX = bounds.x
+        local tuneBtnY = bounds.y + bounds.h + 6
         g.setColor(0.10, 0.16, 0.26, 0.92)
         g.rectangle("fill", tuneBtnX, tuneBtnY, tuneBtnW, tuneBtnH, 4)
         g.setColor(0.25, 0.50, 0.75, 0.8)
@@ -269,7 +276,8 @@ function mcts_overlay.drawTuningDrawer(screenW, screenH)
     local drawerW = 340
     local drawerH = 260
     local drawerX = screenW - drawerW - 16
-    local drawerY = 74 + 220 + 8
+    local bounds=mcts_overlay.layout(screenW,screenH)
+    local drawerY = math.max(8,bounds.y-drawerH-8)
 
     g.setColor(0.04, 0.06, 0.10, 0.96)
     g.rectangle("fill", drawerX, drawerY, drawerW, drawerH, 6)

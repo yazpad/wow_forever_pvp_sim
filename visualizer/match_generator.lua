@@ -46,6 +46,7 @@ local config = {
     c_puct = 1.414,
     evaluator = "rollout",
     distance = 25,
+    fight_seconds = 60,
     hp_a = 2000,
     hp_b = 2000,
     pet_a = nil,
@@ -74,8 +75,12 @@ local neuroTelemetry = {
     ticks_sec = 0,
     converged = false,
     seconds = 0,
+    archive_score_a = nil,
+    archive_score_b = nil,
+    pair_win_rate_a = nil,
     policy_a = nil,
     policy_b = nil,
+    history = {}, -- list of {gen = N, win_rate_a = WR, epoch = E, side = S}
 }
 
 -- Default on-disk location of league champions (neuro_arena overwrites these every run).
@@ -83,18 +88,28 @@ local CHAMPION_PREFIX = "matches/neuro_champion"
 local bulkEval = nil -- last NEURO_EVAL summary table
 
 local function fileExists(path)
-    local f = path and io.open(path, "rb")
+    if not path then return false end
+    local f = io.open(path, "rb") or io.open("../" .. path, "rb")
     if f then f:close(); return true end
     return false
 end
 
--- Pick up champions saved by a previous session so the buttons work after a restart.
-do
-    local pa, pb = CHAMPION_PREFIX .. "_a.nepl", CHAMPION_PREFIX .. "_b.nepl"
-    if fileExists(pa) and fileExists(pb) then
-        neuroTelemetry.policy_a = pa
-        neuroTelemetry.policy_b = pb
-    end
+-- Do not pre-load champions at startup so the user starts fresh.
+
+function match_generator.hasChampionModels()
+    local polA = neuroTelemetry.policy_a
+    local polB = neuroTelemetry.policy_b
+    return (polA and polB and #polA > 0 and #polB > 0) and true or false
+end
+
+function match_generator.invalidateChampions()
+    neuroTelemetry.policy_a = nil
+    neuroTelemetry.policy_b = nil
+    neuroTelemetry.pair_win_rate_a = nil
+    neuroTelemetry.archive_score_a = nil
+    neuroTelemetry.archive_score_b = nil
+    neuroTelemetry.history = {}
+    bulkEval = nil
 end
 
 function match_generator.getBulkEval()
@@ -134,9 +149,21 @@ function match_generator.update(dt)
                 neuroTelemetry.gens = msg.gens or neuroTelemetry.gens
                 neuroTelemetry.side = msg.side or neuroTelemetry.side
                 neuroTelemetry.win_rate_a = msg.win_rate_a or neuroTelemetry.win_rate_a
+                neuroTelemetry.pair_win_rate_a = msg.pair_win_rate_a or neuroTelemetry.pair_win_rate_a
                 neuroTelemetry.fitness = msg.fitness or neuroTelemetry.fitness
                 neuroTelemetry.fights_sec = msg.fights_sec or neuroTelemetry.fights_sec
                 neuroTelemetry.ticks_sec = msg.ticks_sec or neuroTelemetry.ticks_sec
+                local h = neuroTelemetry.history or {}
+                neuroTelemetry.history = h
+                if #h == 0 or h[#h].gen ~= neuroTelemetry.gens or h[#h].win_rate_a ~= neuroTelemetry.win_rate_a then
+                    h[#h + 1] = {
+                        gen = neuroTelemetry.gens or #h,
+                        epoch = neuroTelemetry.epoch or 0,
+                        win_rate_a = neuroTelemetry.win_rate_a,
+                        pair_win_rate_a = neuroTelemetry.pair_win_rate_a,
+                        side = neuroTelemetry.side,
+                    }
+                end
                 progress = neuroTelemetry.max_epochs > 0 and (neuroTelemetry.epoch / neuroTelemetry.max_epochs) or 0
                 status = string.format("Ep %d/%d (Gen %d) · %.0f%% A · %.0fk/s",
                     neuroTelemetry.epoch, neuroTelemetry.max_epochs, neuroTelemetry.gens,
@@ -146,9 +173,21 @@ function match_generator.update(dt)
                 neuroTelemetry.gens = msg.gens or neuroTelemetry.gens
                 neuroTelemetry.converged = msg.converged or false
                 neuroTelemetry.win_rate_a = msg.win_rate_a or neuroTelemetry.win_rate_a
+                neuroTelemetry.pair_win_rate_a = msg.pair_win_rate_a
+                neuroTelemetry.archive_score_a = msg.archive_score_a
+                neuroTelemetry.archive_score_b = msg.archive_score_b
                 neuroTelemetry.seconds = msg.seconds or 0
                 neuroTelemetry.policy_a = msg.policy_a
                 neuroTelemetry.policy_b = msg.policy_b
+                local h = neuroTelemetry.history or {}
+                neuroTelemetry.history = h
+                h[#h + 1] = {
+                    gen = (#h > 0 and h[#h].gen) or neuroTelemetry.gens or #h,
+                    epoch = neuroTelemetry.epoch or 0,
+                    win_rate_a = (#h > 0 and h[#h].win_rate_a) or neuroTelemetry.win_rate_a,
+                    pair_win_rate_a = neuroTelemetry.pair_win_rate_a,
+                    side = 'final selected pair',
+                }
                 bulkEval = nil -- models changed; old bulk stats are stale
                 progress = 1.0
             elseif msg.kind == "bulk_eval" then
@@ -218,6 +257,7 @@ local function appendCommonArgs(args, cfg)
     table.insert(args, "--spec-b"); table.insert(args, specB)
     table.insert(args, "--name-a"); table.insert(args, nameA)
     table.insert(args, "--name-b"); table.insert(args, nameB)
+    table.insert(args, "--seconds"); table.insert(args, tostring(cfg.fight_seconds or config.fight_seconds))
     table.insert(args, "--workers"); table.insert(args, tostring(cfg.workers))
     table.insert(args, "--distance"); table.insert(args, tostring(cfg.distance))
     table.insert(args, "--hp-a"); table.insert(args, tostring(cfg.hp_a))
@@ -275,6 +315,12 @@ function match_generator.startFight(overrideConfig)
     end
     if cfg.policy_b then
         table.insert(args, "--policy-b"); table.insert(args, cfg.policy_b)
+    end
+    if cfg.rollout_policy_a then
+        table.insert(args, "--rollout-policy-a"); table.insert(args, cfg.rollout_policy_a)
+    end
+    if cfg.rollout_policy_b then
+        table.insert(args, "--rollout-policy-b"); table.insert(args, cfg.rollout_policy_b)
     end
     if cfg.seed then
         table.insert(args, "--seed"); table.insert(args, tostring(cfg.seed))
@@ -343,6 +389,10 @@ function match_generator.startLeaguePlay(overrideConfig)
     neuroTelemetry.max_epochs = maxEpochs
     neuroTelemetry.gens = 0
     neuroTelemetry.converged = false
+    neuroTelemetry.pair_win_rate_a = nil
+    neuroTelemetry.archive_score_a = nil
+    neuroTelemetry.archive_score_b = nil
+    neuroTelemetry.history = {}
 
     channel = love.thread.newChannel()
     thread = love.thread.newThread([[
@@ -357,6 +407,7 @@ function match_generator.startLeaguePlay(overrideConfig)
                     local gens = line:match("gens=(%d+)")
                     local side = line:match("side=(%S+)")
                     local wrA = line:match("win_rate_a=([%d%.%-]+)")
+                    local pairWrA = line:match("pair_wr_a=([%d%.%-]+)")
                     local fit = line:match("fitness=([%d%.%-]+)")
                     local fps = line:match("fights_sec=([%d%.%-]+)")
                     local tps = line:match("ticks_sec=([%d%.%-]+)")
@@ -367,6 +418,7 @@ function match_generator.startLeaguePlay(overrideConfig)
                         gens = tonumber(gens),
                         side = side,
                         win_rate_a = tonumber(wrA),
+                        pair_win_rate_a = tonumber(pairWrA),
                         fitness = tonumber(fit),
                         fights_sec = tonumber(fps),
                         ticks_sec = tonumber(tps),
@@ -376,6 +428,9 @@ function match_generator.startLeaguePlay(overrideConfig)
                     local gens = line:match("gens=(%d+)")
                     local conv = line:match("converged=(%S+)")
                     local wrA = line:match("win_rate_a=([%d%.%-]+)")
+                    local pairWrA = line:match("pair_wr_a=([%d%.%-]+)")
+                    local scoreA = line:match("archive_score_a=([%d%.%-]+)")
+                    local scoreB = line:match("archive_score_b=([%d%.%-]+)")
                     local sec = line:match("seconds=([%d%.%-]+)")
                     local polA = line:match("policy_a=(%S+)")
                     local polB = line:match("policy_b=(%S+)")
@@ -385,6 +440,9 @@ function match_generator.startLeaguePlay(overrideConfig)
                         gens = tonumber(gens),
                         converged = (conv == "true"),
                         win_rate_a = tonumber(wrA),
+                        pair_win_rate_a = tonumber(pairWrA),
+                        archive_score_a = tonumber(scoreA),
+                        archive_score_b = tonumber(scoreB),
                         seconds = tonumber(sec),
                         policy_a = polA,
                         policy_b = polB,

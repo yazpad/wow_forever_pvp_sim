@@ -6,7 +6,7 @@ Replace or complement hand-coded heuristic MCTS rollouts with an optimal, learne
 Given the simulator's throughput (~40,000 fights/sec on 8 threads, ~4.1B ticks/sec), an epoch of 100,000 matches completes in ~2.5 seconds. The engine alternates between:
 1. Freezing **Spec B**, evolving a population of **Spec A** policies to counter it.
 2. Freezing **Spec A**, evolving a population of **Spec B** policies to counter it.
-3. Repeating until win-rate and fitness deltas converge toward a Nash equilibrium.
+3. Repeating while tracking response improvements against each side's archive mixture. This is a practical stability signal, not a formal Nash-equilibrium test.
 
 A **Hall of Fame** (mixture of past frozen champions) is maintained for both sides during evaluation to prevent cyclical rock-paper-scissors amnesia (e.g. nuke -> bait -> turtle -> nuke).
 
@@ -44,7 +44,8 @@ A **Hall of Fame** (mixture of past frozen champions) is maintained for both sid
   - Secondary margin-of-victory signal (normalized net HP, Mana, and speed-of-victory bonus) to break ties and reward decisive kills.
 - [x] **Hall of Fame & Anti-Cycling**:
   - Maintain an archive of frozen champions from previous epochs (`HallOfFame`).
-  - Fitness evaluation blends matches against the current active opponent (70%) with matches against random historic champions (30%).
+  - Fitness evaluation samples uniformly from a rolling archive of distinct frozen opponents for the other side.
+  - Final saved policies are selected by average fitness against the opposing archive, so the last side to evolve does not automatically supply the displayed champion.
 
 ---
 
@@ -57,7 +58,7 @@ A **Hall of Fame** (mixture of past frozen champions) is maintained for both sid
   - `--epochs <N>` (default: 10)
   - `--population-size <N>` (default: 128)
   - `--workers <N>` (default: auto-detected cores)
-  - `--convergence-threshold <float>` (stop early if win-rate changes by $< 2\%$ over consecutive rounds)
+  - `--convergence-threshold <float>` (stop early when a new champion's average archive score improves by less than the threshold on consecutive side updates)
   - `--output-replay <path>` (writes trajectory `.lua` and `.json` of converged champion vs champion fight)
   - `--output-weights <path>` (saves binary `.nepl` model weights and `.json` summary telemetry)
 - [x] Real-time stdout telemetry: `NEURO_EPOCH` and `NEURO_CONVERGED` lines with epoch number, total generations (`gens`), active evolving side, average fight duration, win rates, ticks/sec, and throughput.

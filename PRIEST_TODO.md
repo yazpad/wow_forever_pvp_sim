@@ -94,7 +94,7 @@ a fully simulated 51-point build.
 - [ ] **Abolish Disease:** Immediate disease removal plus periodic cleansing remains unimplemented.
 - [x] **Mana Burn:** 3s base cast (2.5s/2s with Improved Mana Burn), drains up to 767 mana and deals Shadow damage based on 50% of actual mana burned.
 - [x] **Healing spell mana costs:** Level-60 PW:S, Flash Heal, and Renew costs audited against the local Forever client table (section 12).
-- [ ] **Inner Fire:** Armor and spell power charges buff.
+- [x] **Inner Fire:** Self-cast rank-6 armor buff with a 10-minute duration and 20 charges. Landed modeled pet melee hits consume a charge; enemy Dispel Magic removes the aura. Forever's checked client tooltip lists armor and charges, with no spell-power bonus.
 - [ ] **Fear Ward:** Baseline for every Priest in Forever; implement separately from race spells (section 10).
 - [ ] **Priest racial spells:** Twelve spells across six races; sourced inventory and implementation checklist in section 10.
 - [ ] **Weakened Soul:** 15s (11s with Soul Warding) per-target debuff if multi-unit / team arenas are added (in 1v1, identical to PW:S cooldown).
@@ -188,7 +188,7 @@ rather than claiming a physical equipment set with those totals.
   and is absent from the checked-in Forever talent tree and local reference
   Priest implementation. The earlier TODO entry was unsupported; do not add
   it without explicit Forever source evidence.
-- Other remaining kit gaps include Abolish Disease, Inner Fire, Greater Heal,
+- Other remaining kit gaps include Abolish Disease, Greater Heal,
   Holy Nova, Priest racial spells, and the unchecked proc talents above.
 
 The editor previously exported only 13 configurable spells, truncating larger
@@ -390,7 +390,7 @@ Validation: `zig build test -Doptimize=ReleaseSafe --summary all` passed
   discounts, and Inner Focus consumption versus retention during Flash Heal.
 
 Silence and Mana Burn are already implemented; baseline work remains before
-racial parity. In particular, Abolish Disease, Inner Fire, Fear Ward, Greater
+racial parity. In particular, Abolish Disease, Fear Ward, Greater
 Heal, Holy Nova, unaudited healing/absorb amounts, and unchecked talents above
 remain open. This pass changes mana costs only; PW:S duration/absorb and
 Flash Heal/Renew healing values still need their own mechanics audit.
