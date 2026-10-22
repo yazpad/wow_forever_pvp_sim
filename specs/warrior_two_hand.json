@@ -1,0 +1,39 @@
+{
+  "class": "warrior",
+  "race": "human",
+  "level": 60,
+  "description": "Partial Forever Warrior kit: auto attacks, Heroic Strike, Hamstring and stances. Explicit weapon and character inputs; not a verified gear set. More abilities and talents are in development.",
+  "combat_stats": {
+    "max_health": 4000,
+    "max_mana": 1,
+    "stamina": 0,
+    "armor_damage_reduction": 0.4,
+    "melee_avoidance_chance": 0.05
+  },
+  "automatic_actions": true,
+  "trees": {
+    "Arms": {
+      "12282": 3
+    },
+    "Fury": {},
+    "Protection": {}
+  },
+  "talents_summary": "3/0/0",
+  "pet": "none",
+  "sacrifice_pet": "none",
+  "warrior": {
+    "main_hand": {
+      "min": 180,
+      "max": 270,
+      "speed": 3.6,
+      "two_handed": true
+    },
+    "attack_power": 700,
+    "white_hit": 0.95,
+    "special_hit": 0.95,
+    "crit": 0.05,
+    "starting_rage": 0,
+    "starting_stance": "battle"
+  },
+  "name": "Warrior — Two-Hand Starter"
+}

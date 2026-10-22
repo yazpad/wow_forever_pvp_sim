@@ -12,7 +12,7 @@ function view.icon(meta, side, id)
 end
 function view.classIcon(meta, side)
     local sp = view.spec(meta, side)
-    return sp == "frost_mage" and "mage" or (sp == "priest" and "priest" or "warlock")
+    return sp == "frost_mage" and "mage" or sp
 end
 function view.aura(meta, side, kind)
     local sourceSpec = view.spec(meta, kind == "icebarrier" and side or (1-side))

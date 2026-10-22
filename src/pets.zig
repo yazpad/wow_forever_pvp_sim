@@ -46,6 +46,11 @@ pub fn set(state: anytype, comptime side: bool, lane: usize, kind: Kind) void {
     @field(state, "impact_pet" ++ suffix)[lane] = 0;
 }
 pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt_damage: V) V {
+    var raw: V = v(0);
+    return tickWithRaw(state, side, i, dt, imp_firebolt_damage, &raw);
+}
+pub fn tickWithRaw(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt_damage: V, raw: *V) V {
+    raw.* = v(0);
     const kind: U = @field(state, if (side) "pet_kind_a" else "pet_kind_b")[i..][0..16].*;
     var live = simd.vAnd16(kind != @as(U, @splat(0)), col(state, "pet_hp", side, i).* > v(0));
     live = simd.vAnd16(live, state.is_active[i..][0..16].* != @as(U, @splat(0)));
@@ -76,7 +81,9 @@ pub fn tick(state: anytype, comptime side: bool, i: usize, dt: f32, imp_firebolt
     const damage = @select(f32, imp, v(60), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.succubus))), v(50), @select(f32, kind == @as(U, @splat(@intFromEnum(Kind.felhunter))), v(40), v(30))));
     const resolution = @import("spell_resolution.zig");
     const fire = resolution.resolve(state, side, i, (imp_firebolt_damage + @import("demon_passives.zig").knowledge(state, side, i) * v(2.0 / 3.5) * (imp_firebolt_damage / v(60))) * @import("demon_passives.zig").petFireMultiplier(state, side, i), simd.vAnd16(hit, imp), .{ .school = .fire, .pet = true });
-    const melee = resolution.petMelee(state, side, i, damage, simd.vAnd16(hit, simd.vNot16(imp)));
+    var raw_melee: V = v(0);
+    const melee = resolution.petMeleeWithRaw(state, side, i, damage, simd.vAnd16(hit, simd.vNot16(imp)), &raw_melee);
+    raw.* = fire.damage + raw_melee;
     return fire.damage + melee;
 }
 // Same proportional shield/overkill accounting used by player missiles.

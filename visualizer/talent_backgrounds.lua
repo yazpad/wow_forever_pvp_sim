@@ -2,6 +2,7 @@
 local backgrounds = {}
 local image, attempted = nil, false
 local schools = {
+    Arms={0,0,{0.42,0.24,0.12},true}, Fury={1,0,{0.48,0.16,0.10},true}, Protection={2,0,{0.18,0.28,0.40},true},
     Affliction={0,0,{0.34,0.14,0.45}}, Demonology={1,0,{0.12,0.38,0.24}},
     Destruction={2,0,{0.48,0.18,0.10}}, Arcane={0,1,{0.30,0.19,0.48}},
     Fire={1,1,{0.48,0.22,0.08}}, Frost={2,1,{0.12,0.32,0.48}},
@@ -23,7 +24,7 @@ function backgrounds.draw(school,x,y,w,h)
     if not info then return end
     g.setColor(info[3][1],info[3][2],info[3][3],1)
     g.rectangle('fill',x,y,w,h,5)
-    if image then
+    if image and not info[4] then
         local iw,ih=image:getDimensions()
         local cw,ch=iw/3,ih/2
         local scale=math.max(w/cw,h/ch)

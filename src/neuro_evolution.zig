@@ -260,14 +260,14 @@ pub fn evaluateBatch16(
     comptime a: Spec,
     comptime b: Spec,
     duel: *sim.Duel(a, b),
-    base_snapshot: sim.Snapshot,
+    base_snapshot: sim.SnapshotFor(a, b),
     policy_a: *const Policy,
     policy_b: *const Policy,
     perspective_a: bool,
     max_ticks: u32,
     seed: u64,
 ) BatchResult {
-    return evaluateBatch16Ex(a, b, duel, base_snapshot, policy_a, policy_b, perspective_a, max_ticks, seed, .{}, null);
+    return evaluateBatch16Ex(a, b, duel, base_snapshot, policy_a, policy_b, perspective_a, max_ticks, seed, .{}, 0.05, null);
 }
 
 /// Same as `evaluateBatch16`, with optional initial-condition jitter and per-lane outcome output.
@@ -275,13 +275,14 @@ pub fn evaluateBatch16Ex(
     comptime a: Spec,
     comptime b: Spec,
     duel: *sim.Duel(a, b),
-    base_snapshot: sim.Snapshot,
+    base_snapshot: sim.SnapshotFor(a, b),
     policy_a: *const Policy,
     policy_b: *const Policy,
     perspective_a: bool,
     max_ticks: u32,
     seed: u64,
     jitter: Jitter,
+    temperature: f32,
     lanes_out: ?*[16]LaneOutcome,
 ) BatchResult {
     duel.restoreAll(base_snapshot);
@@ -295,6 +296,8 @@ pub fn evaluateBatch16Ex(
     for (0..16) |lane| {
         const s1 = rng.int(u32) | 1;
         const s2 = rng.int(u32) | 1;
+        if (a == .warrior) duel.arena.warrior.integers(true, .rng, 0).*[lane] = s1;
+        if (b == .warrior) duel.arena.warrior.integers(false, .rng, 0).*[lane] = s2;
         state.spell_rng_a[lane] = s1;
         state.spell_rng_b[lane] = s2;
         state.pushback_rng_a[lane] = s1 ^ 0xc2b2ae35;
@@ -319,13 +322,13 @@ pub fn evaluateBatch16Ex(
         if (@reduce(.Or, ra) or @reduce(.Or, rb)) {
             const masks_a = duel.getActionMaskA(0);
             const masks_b = duel.getActionMaskB(0);
-            // Low exploration noise during evaluation so policies execute crisp sequences
+            // Training explores; champion evaluation uses strict argmax.
             const aa = if (@reduce(.Or, ra))
-                policy_a.selectActions16(a, b, duel, true, ra, masks_a, 0.05, rng)
+                policy_a.selectActions16(a, b, duel, true, ra, masks_a, temperature, rng)
             else
                 @as([16]sim.Action, @splat(.{}));
             const bb = if (@reduce(.Or, rb))
-                policy_b.selectActions16(a, b, duel, false, rb, masks_b, 0.05, rng)
+                policy_b.selectActions16(a, b, duel, false, rb, masks_b, temperature, rng)
             else
                 @as([16]sim.Action, @splat(.{}));
             duel.applyPreMasked(aa, bb, ra, rb, masks_a, masks_b);

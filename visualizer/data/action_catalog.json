@@ -1,86 +1,764 @@
 {
   "warlock": [
-    {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
-    {"id": 1, "symbol": "Agony", "name": "Agony", "icon": "agony"},
-    {"id": 2, "symbol": "Corruption", "name": "Corruption", "icon": "corruption"},
-    {"id": 3, "symbol": "Fear", "name": "Fear", "icon": "possession", "starts_cast": true},
-    {"id": 4, "symbol": "ShadowBolt", "name": "Shadow Bolt", "icon": "shadowbolt", "starts_cast": true},
-    {"id": 5, "symbol": "DrainLife", "name": "Drain Life", "icon": "drainlife", "starts_cast": true},
-    {"id": 6, "symbol": "Healthstone", "name": "Healthstone", "icon": "healthstone"},
-    {"id": 7, "symbol": "DeathCoil", "name": "Death Coil", "icon": "deathcoil"},
-    {"id": 8, "symbol": "SiphonLife", "name": "Siphon Life", "icon": "siphonlife", "talent": {"tree": "Affliction", "id": 105912}},
-    {"id": 9, "symbol": "Shadowburn", "name": "Shadowburn", "icon": "spell_shadow_scourgebuild", "talent": {"tree": "Destruction", "id": 105884}},
-    {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
-    {"id": 11, "symbol": "SearingPain", "name": "Searing Pain", "icon": "spell_fire_soulburn", "starts_cast": true},
-    {"id": 12, "symbol": "Incinerate", "name": "Incinerate", "icon": "spell_fire_incinerate", "starts_cast": true, "talent": {"tree": "Destruction", "id": 105874}},
-    {"id": 13, "symbol": "Immolate", "name": "Immolate", "icon": "spell_fire_immolation", "starts_cast": true},
-    {"id": 14, "symbol": "Seduction", "name": "Seduction", "icon": "seduction", "pet": "succubus"},
-    {"id": 15, "symbol": "SpellLock", "name": "Spell Lock", "icon": "spell_lock", "pet": "felhunter"},
-    {"id": 16, "symbol": "Conflagrate", "name": "Conflagrate", "icon": "spell_fire_fireball", "talent": {"tree": "Destruction", "id": 105880}},
-    {"id": 17, "symbol": "BloodFury", "name": "Blood Fury", "icon": "race_orc", "race": "orc"},
-    {"id": 18, "symbol": "Berserking", "name": "Berserking", "icon": "race_troll", "race": "troll"},
-    {"id": 19, "symbol": "EscapeArtist", "name": "Escape Artist", "icon": "race_gnome", "race": "gnome"},
-    {"id": 20, "symbol": "WillOfTheForsaken", "name": "Will of the Forsaken", "icon": "race_undead", "race": "undead"},
-    {"id": 21, "symbol": "Unused21", "name": "None", "icon": "border", "selectable": false},
-    {"id": 22, "symbol": "Unused22", "name": "None", "icon": "border", "selectable": false},
-    {"id": 23, "symbol": "Unused23", "name": "None", "icon": "border", "selectable": false},
-    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false},
-    {"id": 25, "symbol": "Unused25", "name": "None", "icon": "border", "selectable": false}
+    {
+      "id": 0,
+      "symbol": "IdleOrManeuver",
+      "name": "Idle/Maneuver",
+      "selectable": false,
+      "icon": "sword"
+    },
+    {
+      "id": 1,
+      "symbol": "Agony",
+      "name": "Agony",
+      "icon": "agony"
+    },
+    {
+      "id": 2,
+      "symbol": "Corruption",
+      "name": "Corruption",
+      "icon": "corruption"
+    },
+    {
+      "id": 3,
+      "symbol": "Fear",
+      "name": "Fear",
+      "icon": "possession",
+      "starts_cast": true
+    },
+    {
+      "id": 4,
+      "symbol": "ShadowBolt",
+      "name": "Shadow Bolt",
+      "icon": "shadowbolt",
+      "starts_cast": true
+    },
+    {
+      "id": 5,
+      "symbol": "DrainLife",
+      "name": "Drain Life",
+      "icon": "drainlife",
+      "starts_cast": true
+    },
+    {
+      "id": 6,
+      "symbol": "Healthstone",
+      "name": "Healthstone",
+      "icon": "healthstone"
+    },
+    {
+      "id": 7,
+      "symbol": "DeathCoil",
+      "name": "Death Coil",
+      "icon": "deathcoil"
+    },
+    {
+      "id": 8,
+      "symbol": "SiphonLife",
+      "name": "Siphon Life",
+      "icon": "siphonlife",
+      "talent": {
+        "tree": "Affliction",
+        "id": 105912
+      }
+    },
+    {
+      "id": 9,
+      "symbol": "Shadowburn",
+      "name": "Shadowburn",
+      "icon": "spell_shadow_scourgebuild",
+      "talent": {
+        "tree": "Destruction",
+        "id": 105884
+      }
+    },
+    {
+      "id": 10,
+      "symbol": "CancelCast",
+      "name": "Cancel Cast",
+      "selectable": false,
+      "icon": "clock"
+    },
+    {
+      "id": 11,
+      "symbol": "SearingPain",
+      "name": "Searing Pain",
+      "icon": "spell_fire_soulburn",
+      "starts_cast": true
+    },
+    {
+      "id": 12,
+      "symbol": "Incinerate",
+      "name": "Incinerate",
+      "icon": "spell_fire_incinerate",
+      "starts_cast": true,
+      "talent": {
+        "tree": "Destruction",
+        "id": 105874
+      }
+    },
+    {
+      "id": 13,
+      "symbol": "Immolate",
+      "name": "Immolate",
+      "icon": "spell_fire_immolation",
+      "starts_cast": true
+    },
+    {
+      "id": 14,
+      "symbol": "Seduction",
+      "name": "Seduction",
+      "icon": "seduction",
+      "pet": "succubus"
+    },
+    {
+      "id": 15,
+      "symbol": "SpellLock",
+      "name": "Spell Lock",
+      "icon": "spell_lock",
+      "pet": "felhunter"
+    },
+    {
+      "id": 16,
+      "symbol": "Conflagrate",
+      "name": "Conflagrate",
+      "icon": "spell_fire_fireball",
+      "talent": {
+        "tree": "Destruction",
+        "id": 105880
+      }
+    },
+    {
+      "id": 17,
+      "symbol": "BloodFury",
+      "name": "Blood Fury",
+      "icon": "race_orc",
+      "race": "orc"
+    },
+    {
+      "id": 18,
+      "symbol": "Berserking",
+      "name": "Berserking",
+      "icon": "race_troll",
+      "race": "troll"
+    },
+    {
+      "id": 19,
+      "symbol": "EscapeArtist",
+      "name": "Escape Artist",
+      "icon": "race_gnome",
+      "race": "gnome"
+    },
+    {
+      "id": 20,
+      "symbol": "WillOfTheForsaken",
+      "name": "Will of the Forsaken",
+      "icon": "race_undead",
+      "race": "undead"
+    },
+    {
+      "id": 21,
+      "symbol": "Unused21",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 22,
+      "symbol": "Unused22",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 23,
+      "symbol": "Unused23",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 24,
+      "symbol": "Unused24",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 25,
+      "symbol": "Unused25",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    }
   ],
   "frost_mage": [
-    {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
-    {"id": 1, "symbol": "IceLance", "name": "Ice Lance", "icon": "frostbolt"},
-    {"id": 2, "symbol": "FrostNova", "name": "Frost Nova", "icon": "frostbolt"},
-    {"id": 3, "symbol": "Polymorph", "name": "Polymorph", "icon": "frostbolt", "starts_cast": true},
-    {"id": 4, "symbol": "Frostbolt", "name": "Frostbolt", "icon": "frostbolt", "starts_cast": true},
-    {"id": 5, "symbol": "Blink", "name": "Blink", "icon": "sword"},
-    {"id": 6, "symbol": "IceBarrier", "name": "Ice Barrier", "icon": "shield"},
-    {"id": 7, "symbol": "Counterspell", "name": "Counterspell", "icon": "clock"},
-    {"id": 8, "symbol": "None", "name": "None", "icon": "border"},
-    {"id": 9, "symbol": "Unused", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
-    {"id": 11, "symbol": "Unused11", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 12, "symbol": "Unused12", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 13, "symbol": "Unused13", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 14, "symbol": "Unused14", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 15, "symbol": "Unused15", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 16, "symbol": "Unused16", "name": "None", "selectable": false, "icon": "border"},
-    {"id": 17, "symbol": "BloodFury", "name": "Blood Fury", "icon": "race_orc", "race": "orc"},
-    {"id": 18, "symbol": "Berserking", "name": "Berserking", "icon": "race_troll", "race": "troll"},
-    {"id": 19, "symbol": "EscapeArtist", "name": "Escape Artist", "icon": "race_gnome", "race": "gnome"},
-    {"id": 20, "symbol": "WillOfTheForsaken", "name": "Will of the Forsaken", "icon": "race_undead", "race": "undead"},
-    {"id": 21, "symbol": "Unused21", "name": "None", "icon": "border", "selectable": false},
-    {"id": 22, "symbol": "Unused22", "name": "None", "icon": "border", "selectable": false},
-    {"id": 23, "symbol": "Unused23", "name": "None", "icon": "border", "selectable": false},
-    {"id": 24, "symbol": "Unused24", "name": "None", "icon": "border", "selectable": false},
-    {"id": 25, "symbol": "Unused25", "name": "None", "icon": "border", "selectable": false}
+    {
+      "id": 0,
+      "symbol": "IdleOrManeuver",
+      "name": "Idle/Maneuver",
+      "selectable": false,
+      "icon": "sword"
+    },
+    {
+      "id": 1,
+      "symbol": "IceLance",
+      "name": "Ice Lance",
+      "icon": "frostbolt"
+    },
+    {
+      "id": 2,
+      "symbol": "FrostNova",
+      "name": "Frost Nova",
+      "icon": "frostbolt"
+    },
+    {
+      "id": 3,
+      "symbol": "Polymorph",
+      "name": "Polymorph",
+      "icon": "frostbolt",
+      "starts_cast": true
+    },
+    {
+      "id": 4,
+      "symbol": "Frostbolt",
+      "name": "Frostbolt",
+      "icon": "frostbolt",
+      "starts_cast": true
+    },
+    {
+      "id": 5,
+      "symbol": "Blink",
+      "name": "Blink",
+      "icon": "sword"
+    },
+    {
+      "id": 6,
+      "symbol": "IceBarrier",
+      "name": "Ice Barrier",
+      "icon": "shield"
+    },
+    {
+      "id": 7,
+      "symbol": "Counterspell",
+      "name": "Counterspell",
+      "icon": "clock"
+    },
+    {
+      "id": 8,
+      "symbol": "None",
+      "name": "None",
+      "icon": "border"
+    },
+    {
+      "id": 9,
+      "symbol": "Unused",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 10,
+      "symbol": "CancelCast",
+      "name": "Cancel Cast",
+      "selectable": false,
+      "icon": "clock"
+    },
+    {
+      "id": 11,
+      "symbol": "Unused11",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 12,
+      "symbol": "Unused12",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 13,
+      "symbol": "Unused13",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 14,
+      "symbol": "Unused14",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 15,
+      "symbol": "Unused15",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 16,
+      "symbol": "Unused16",
+      "name": "None",
+      "selectable": false,
+      "icon": "border"
+    },
+    {
+      "id": 17,
+      "symbol": "BloodFury",
+      "name": "Blood Fury",
+      "icon": "race_orc",
+      "race": "orc"
+    },
+    {
+      "id": 18,
+      "symbol": "Berserking",
+      "name": "Berserking",
+      "icon": "race_troll",
+      "race": "troll"
+    },
+    {
+      "id": 19,
+      "symbol": "EscapeArtist",
+      "name": "Escape Artist",
+      "icon": "race_gnome",
+      "race": "gnome"
+    },
+    {
+      "id": 20,
+      "symbol": "WillOfTheForsaken",
+      "name": "Will of the Forsaken",
+      "icon": "race_undead",
+      "race": "undead"
+    },
+    {
+      "id": 21,
+      "symbol": "Unused21",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 22,
+      "symbol": "Unused22",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 23,
+      "symbol": "Unused23",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 24,
+      "symbol": "Unused24",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    },
+    {
+      "id": 25,
+      "symbol": "Unused25",
+      "name": "None",
+      "icon": "border",
+      "selectable": false
+    }
   ],
   "priest": [
-    {"id": 0, "symbol": "IdleOrManeuver", "name": "Idle/Maneuver", "selectable": false, "icon": "sword"},
-    {"id": 1, "symbol": "ShadowWordPain", "name": "Shadow Word: Pain", "icon": "spell_shadow_shadowwordpain"},
-    {"id": 2, "symbol": "DevouringPlague", "name": "Devouring Plague", "icon": "spell_shadow_blackplague"},
-    {"id": 3, "symbol": "PsychicScream", "name": "Psychic Scream", "icon": "spell_shadow_psychicscream"},
-    {"id": 4, "symbol": "MindBlast", "name": "Mind Blast", "icon": "spell_shadow_unholyfrenzy", "starts_cast": true},
-    {"id": 5, "symbol": "MindFlay", "name": "Mind Flay", "icon": "spell_shadow_siphonmana", "starts_cast": true, "talent": {"tree": "Shadow Magic", "id": 15407}},
-    {"id": 6, "symbol": "PowerWordShield", "name": "Power Word: Shield", "icon": "spell_holy_powerwordshield"},
-    {"id": 7, "symbol": "Silence", "name": "Silence", "icon": "spell_shadow_impphaseshift", "talent": {"tree": "Shadow Magic", "id": 15487}},
-    {"id": 8, "symbol": "VampiricEmbrace", "name": "Vampiric Embrace", "icon": "spell_shadow_unsummonbuilding", "talent": {"tree": "Shadow Magic", "id": 15286}},
-    {"id": 9, "symbol": "ShadowWordDeath", "name": "Shadow Word: Death", "icon": "spell_shadow_demonicfortitude"},
-    {"id": 10, "symbol": "CancelCast", "name": "Cancel Cast", "selectable": false, "icon": "clock"},
-    {"id": 11, "symbol": "FlashHeal", "name": "Flash Heal", "icon": "spell_holy_flashheal", "starts_cast": true},
-    {"id": 12, "symbol": "Renew", "name": "Renew", "icon": "spell_holy_renew"},
-    {"id": 13, "symbol": "HolyFire", "name": "Holy Fire", "icon": "spell_holy_searinglight", "starts_cast": true},
-    {"id": 14, "symbol": "Smite", "name": "Smite", "icon": "spell_holy_holysmite", "starts_cast": true},
-    {"id": 15, "symbol": "Penance", "name": "Penance", "icon": "spell_holy_penance", "starts_cast": true, "talent": {"tree": "Discipline", "id": 402174}},
-    {"id": 16, "symbol": "InnerFocus", "name": "Inner Focus", "icon": "spell_frost_windwalkon", "talent": {"tree": "Discipline", "id": 14751}},
-    {"id": 17, "symbol": "BloodFury", "name": "Blood Fury", "icon": "race_orc", "race": "orc"},
-    {"id": 18, "symbol": "Berserking", "name": "Berserking", "icon": "race_troll", "race": "troll"},
-    {"id": 19, "symbol": "EscapeArtist", "name": "Escape Artist", "icon": "race_gnome", "race": "gnome"},
-    {"id": 20, "symbol": "WillOfTheForsaken", "name": "Will of the Forsaken", "icon": "race_undead", "race": "undead"},
-    {"id": 21, "symbol": "PowerInfusion", "name": "Power Infusion", "icon": "spell_holy_powerinfusion", "talent": {"tree": "Discipline", "id": 10060}},
-    {"id": 22, "symbol": "DispelSelf", "name": "Dispel Magic (Self)", "icon": "spell_holy_purify"},
-    {"id": 23, "symbol": "DispelEnemy", "name": "Dispel Magic (Enemy)", "icon": "spell_holy_purify"},
-    {"id": 24, "symbol": "ManaBurn", "name": "Mana Burn", "icon": "spell_shadow_manaburn", "starts_cast": true},
-    {"id": 25, "symbol": "InnerFire", "name": "Inner Fire", "icon": "spell_holy_innerfire"}
+    {
+      "id": 0,
+      "symbol": "IdleOrManeuver",
+      "name": "Idle/Maneuver",
+      "selectable": false,
+      "icon": "sword"
+    },
+    {
+      "id": 1,
+      "symbol": "ShadowWordPain",
+      "name": "Shadow Word: Pain",
+      "icon": "spell_shadow_shadowwordpain"
+    },
+    {
+      "id": 2,
+      "symbol": "DevouringPlague",
+      "name": "Devouring Plague",
+      "icon": "spell_shadow_blackplague"
+    },
+    {
+      "id": 3,
+      "symbol": "PsychicScream",
+      "name": "Psychic Scream",
+      "icon": "spell_shadow_psychicscream"
+    },
+    {
+      "id": 4,
+      "symbol": "MindBlast",
+      "name": "Mind Blast",
+      "icon": "spell_shadow_unholyfrenzy",
+      "starts_cast": true
+    },
+    {
+      "id": 5,
+      "symbol": "MindFlay",
+      "name": "Mind Flay",
+      "icon": "spell_shadow_siphonmana",
+      "starts_cast": true,
+      "talent": {
+        "tree": "Shadow Magic",
+        "id": 15407
+      }
+    },
+    {
+      "id": 6,
+      "symbol": "PowerWordShield",
+      "name": "Power Word: Shield",
+      "icon": "spell_holy_powerwordshield"
+    },
+    {
+      "id": 7,
+      "symbol": "Silence",
+      "name": "Silence",
+      "icon": "spell_shadow_impphaseshift",
+      "talent": {
+        "tree": "Shadow Magic",
+        "id": 15487
+      }
+    },
+    {
+      "id": 8,
+      "symbol": "VampiricEmbrace",
+      "name": "Vampiric Embrace",
+      "icon": "spell_shadow_unsummonbuilding",
+      "talent": {
+        "tree": "Shadow Magic",
+        "id": 15286
+      }
+    },
+    {
+      "id": 9,
+      "symbol": "ShadowWordDeath",
+      "name": "Shadow Word: Death",
+      "icon": "spell_shadow_demonicfortitude"
+    },
+    {
+      "id": 10,
+      "symbol": "CancelCast",
+      "name": "Cancel Cast",
+      "selectable": false,
+      "icon": "clock"
+    },
+    {
+      "id": 11,
+      "symbol": "FlashHeal",
+      "name": "Flash Heal",
+      "icon": "spell_holy_flashheal",
+      "starts_cast": true
+    },
+    {
+      "id": 12,
+      "symbol": "Renew",
+      "name": "Renew",
+      "icon": "spell_holy_renew"
+    },
+    {
+      "id": 13,
+      "symbol": "HolyFire",
+      "name": "Holy Fire",
+      "icon": "spell_holy_searinglight",
+      "starts_cast": true
+    },
+    {
+      "id": 14,
+      "symbol": "Smite",
+      "name": "Smite",
+      "icon": "spell_holy_holysmite",
+      "starts_cast": true
+    },
+    {
+      "id": 15,
+      "symbol": "Penance",
+      "name": "Penance",
+      "icon": "spell_holy_penance",
+      "starts_cast": true,
+      "talent": {
+        "tree": "Discipline",
+        "id": 402174
+      }
+    },
+    {
+      "id": 16,
+      "symbol": "InnerFocus",
+      "name": "Inner Focus",
+      "icon": "spell_frost_windwalkon",
+      "talent": {
+        "tree": "Discipline",
+        "id": 14751
+      }
+    },
+    {
+      "id": 17,
+      "symbol": "BloodFury",
+      "name": "Blood Fury",
+      "icon": "race_orc",
+      "race": "orc"
+    },
+    {
+      "id": 18,
+      "symbol": "Berserking",
+      "name": "Berserking",
+      "icon": "race_troll",
+      "race": "troll"
+    },
+    {
+      "id": 19,
+      "symbol": "EscapeArtist",
+      "name": "Escape Artist",
+      "icon": "race_gnome",
+      "race": "gnome"
+    },
+    {
+      "id": 20,
+      "symbol": "WillOfTheForsaken",
+      "name": "Will of the Forsaken",
+      "icon": "race_undead",
+      "race": "undead"
+    },
+    {
+      "id": 21,
+      "symbol": "PowerInfusion",
+      "name": "Power Infusion",
+      "icon": "spell_holy_powerinfusion",
+      "talent": {
+        "tree": "Discipline",
+        "id": 10060
+      }
+    },
+    {
+      "id": 22,
+      "symbol": "DispelSelf",
+      "name": "Dispel Magic (Self)",
+      "icon": "spell_holy_purify"
+    },
+    {
+      "id": 23,
+      "symbol": "DispelEnemy",
+      "name": "Dispel Magic (Enemy)",
+      "icon": "spell_holy_purify"
+    },
+    {
+      "id": 24,
+      "symbol": "ManaBurn",
+      "name": "Mana Burn",
+      "icon": "spell_shadow_manaburn",
+      "starts_cast": true
+    },
+    {
+      "id": 25,
+      "symbol": "InnerFire",
+      "name": "Inner Fire",
+      "icon": "spell_holy_innerfire"
+    }
+  ],
+  "warrior": [
+    {
+      "id": 0,
+      "symbol": "IdleOrManeuver",
+      "name": "Idle/Maneuver",
+      "icon": "sword",
+      "selectable": false
+    },
+    {
+      "id": 1,
+      "symbol": "HeroicStrike",
+      "name": "Heroic Strike",
+      "icon": "ability_rogue_ambush",
+      "selectable": true
+    },
+    {
+      "id": 2,
+      "symbol": "Hamstring",
+      "name": "Hamstring",
+      "icon": "ability_shockwave",
+      "selectable": true
+    },
+    {
+      "id": 3,
+      "symbol": "Charge",
+      "name": "Charge",
+      "icon": "ability_warrior_charge",
+      "selectable": true
+    },
+    {
+      "id": 4,
+      "symbol": "Intercept",
+      "name": "Intercept",
+      "icon": "ability_rogue_sprint",
+      "selectable": true
+    },
+    {
+      "id": 5,
+      "symbol": "MortalStrike",
+      "name": "Mortal Strike",
+      "icon": "ability_warrior_decisivestrike",
+      "selectable": true,
+      "talent": {
+        "id": 12294,
+        "tree": "Arms"
+      }
+    },
+    {
+      "id": 6,
+      "symbol": "Rend",
+      "name": "Rend",
+      "icon": "ability_gouge",
+      "selectable": true
+    },
+    {
+      "id": 7,
+      "symbol": "Overpower",
+      "name": "Overpower",
+      "icon": "ability_meleedamage",
+      "selectable": true
+    },
+    {
+      "id": 8,
+      "symbol": "Execute",
+      "name": "Execute",
+      "icon": "ability_warrior_decisivestrike",
+      "selectable": true
+    },
+    {
+      "id": 9,
+      "symbol": "Pummel",
+      "name": "Pummel",
+      "icon": "ability_warrior_punishingblow",
+      "selectable": true
+    },
+    {
+      "id": 10,
+      "symbol": "CancelCast",
+      "name": "Cancel Cast",
+      "icon": "clock",
+      "selectable": false
+    },
+    {
+      "id": 11,
+      "symbol": "BerserkerRage",
+      "name": "Berserker Rage",
+      "icon": "ability_warrior_innerrage",
+      "selectable": true
+    },
+    {
+      "id": 12,
+      "symbol": "Bloodrage",
+      "name": "Bloodrage",
+      "icon": "ability_racial_bloodrage",
+      "selectable": true
+    },
+    {
+      "id": 13,
+      "symbol": "BattleStance",
+      "name": "Battle Stance",
+      "icon": "ability_warrior_offensivestance",
+      "selectable": true
+    },
+    {
+      "id": 14,
+      "symbol": "DefensiveStance",
+      "name": "Defensive Stance",
+      "icon": "ability_warrior_defensivestance",
+      "selectable": true
+    },
+    {
+      "id": 15,
+      "symbol": "BerserkerStance",
+      "name": "Berserker Stance",
+      "icon": "ability_racial_avatar",
+      "selectable": true
+    },
+    {
+      "id": 16,
+      "symbol": "Bloodthirst",
+      "name": "Bloodthirst",
+      "icon": "spell_nature_bloodlust",
+      "selectable": true,
+      "talent": {
+        "id": 23881,
+        "tree": "Fury"
+      }
+    },
+    {
+      "id": 17,
+      "symbol": "Unused17",
+      "name": "None",
+      "icon": "sword",
+      "selectable": false
+    },
+    {
+      "id": 18,
+      "symbol": "Unused18",
+      "name": "None",
+      "icon": "sword",
+      "selectable": false
+    },
+    {
+      "id": 19,
+      "symbol": "Unused19",
+      "name": "None",
+      "icon": "sword",
+      "selectable": false
+    },
+    {
+      "id": 20,
+      "symbol": "Unused20",
+      "name": "None",
+      "icon": "sword",
+      "selectable": false
+    },
+    {
+      "id": 21,
+      "symbol": "AutoAttack",
+      "name": "Auto Attack",
+      "icon": "ability_meleedamage",
+      "selectable": false
+    },
+    {
+      "id": 22,
+      "symbol": "OffHandAttack",
+      "name": "Off-Hand Attack",
+      "icon": "ability_dualwield",
+      "selectable": false
+    },
+    {
+      "id": 23,
+      "symbol": "Whirlwind",
+      "name": "Whirlwind",
+      "icon": "ability_whirlwind",
+      "selectable": true
+    },
+    {
+      "id": 24,
+      "symbol": "DeathWish",
+      "name": "Death Wish",
+      "icon": "spell_shadow_deathpact",
+      "selectable": true,
+      "talent": {
+        "id": 12328,
+        "tree": "Fury"
+      }
+    },
+    {
+      "id": 25,
+      "symbol": "Unused25",
+      "name": "None",
+      "icon": "sword",
+      "selectable": false
+    }
   ]
 }

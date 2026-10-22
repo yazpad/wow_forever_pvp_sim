@@ -331,7 +331,7 @@ pub fn apply(arena: anytype, comptime side_a: bool, i: usize, requested: u32x16,
     mana.* = select16(is_scream, mana.* - splat(Priest.PsychicScreamMana) * shadow_inst_mult, mana.*);
     gcd.* = select16(is_scream, gcd_dur, gcd.*);
     arena.extra(.nova, side_a, i).* = select16(is_scream, effects.psychic_scream_cooldown, arena.extra(.nova, side_a, i).*);
-    const scream_hit = periodic.control(state, side_a, i, vAnd16(is_scream, racials.canImpair(state, !side_a, i)), effects.shadow_hit_bonus, .shadow, false);
+    const scream_hit = periodic.control(state, side_a, i, vAnd16(vAnd16(is_scream, racials.canImpair(state, !side_a, i)), vNot16(@import("warrior_arena.zig").fearImmune(arena, !side_a, i))), effects.shadow_hit_bonus, .shadow, false);
     const fear_dr = col(state, "fear_dr_tier", !side_a, i);
     const scream_dur = splat(Priest.PsychicScreamDuration) * getDrMultiplier(fear_dr.*) * target_cc_mult;
     const scream_applied = vAnd16(scream_hit, scream_dur > splat(0));
@@ -519,6 +519,7 @@ pub fn tickPeriodics(
     dt: f32,
     effects: priest_talents.Effects,
     target_mit: f32x16,
+    healing_taken_mult: f32x16,
     swp_timer: anytype,
     dp_timer: anytype,
     hf_timer: anytype,
@@ -595,12 +596,12 @@ pub fn tickPeriodics(
 
     const max_hp = col(state, "max_health", caster_side_a, i).*;
     const before_dp = caster_hp.*;
-    caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + tick_dp.healing);
+    caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + tick_dp.healing * healing_taken_mult);
     if (i == 0) if (arena.priest_recording) |record| {
         record[if (caster_side_a) 0 else 1].healing[2] += caster_hp.*[0] - before_dp[0];
     };
     const before_renew = caster_hp.*;
-    caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + tick_renew.healing);
+    caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + tick_renew.healing * healing_taken_mult);
     if (i == 0) if (arena.priest_recording) |record| {
         record[if (caster_side_a) 0 else 1].healing[12] += caster_hp.*[0] - before_renew[0];
     };
@@ -630,6 +631,7 @@ pub fn tickCasts(
     caster_mana: *f32x16,
     target_hf_timer: f32x16,
     target_mana: *f32x16,
+    healing_taken_mult: f32x16,
 ) struct { shadow_dmg: f32x16, holy_dmg: f32x16, burn_dmg: f32x16 } {
     const state = &arena.state;
     const v_zeros = splat(0.0);
@@ -721,7 +723,7 @@ pub fn tickCasts(
         });
         const max_hp = col(state, "max_health", caster_side_a, i).*;
         const before_heal = caster_hp.*;
-        caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + select16(fh_done, resolved.damage, v_zeros));
+        caster_hp.* = @min(max_hp, @as(f32x16, caster_hp.*) + select16(fh_done, resolved.damage * healing_taken_mult, v_zeros));
         if (i == 0) if (arena.priest_recording) |record| {
             record[if (caster_side_a) 0 else 1].healing[11] += caster_hp.*[0] - before_heal[0];
         };

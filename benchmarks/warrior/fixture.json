@@ -1,0 +1,13 @@
+{
+  "fixture": "staged_warrior_vs_priest",
+  "seed": 947,
+  "seconds": 22.53,
+  "warrior_hp": 0.0,
+  "priest_hp": 1118.81,
+  "rage": 0.0,
+  "melee_before_shields": 1311.19,
+  "heroic_queues": 15,
+  "hamstrings": 3,
+  "caster_snapshot_bytes": 956,
+  "warrior_snapshot_bytes": 1000
+}

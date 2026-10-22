@@ -1,0 +1,892 @@
+{
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+  "binary_sha256": {
+    "before": "762f417fa3974e60a1afea67772c9be8cf4e717872f231c4a270614baafd7791",
+    "after": "a90552b28faa3f0f84a587b806c0b7b36a469ab30ac74e8a3a29e549da6a8c3a"
+  },
+  "rounds": 3,
+  "summary": [
+    {
+      "a": "frost_mage",
+      "b": "priest",
+      "samples_per_binary": 15,
+      "snapshot_bytes": 956,
+      "choices": 63,
+      "tick_ns": {
+        "before": 647.7,
+        "after": 650.32,
+        "change_percent": 0.4045082599969163
+      },
+      "copy_ns": {
+        "before": 15163.43,
+        "after": 15241.75,
+        "change_percent": 0.5165058301452863
+      }
+    },
+    {
+      "a": "priest",
+      "b": "warlock",
+      "samples_per_binary": 15,
+      "snapshot_bytes": 956,
+      "choices": 63,
+      "tick_ns": {
+        "before": 700.84,
+        "after": 703.96,
+        "change_percent": 0.445180069630724
+      },
+      "copy_ns": {
+        "before": 15150.76,
+        "after": 15228.17,
+        "change_percent": 0.5109314648242158
+      }
+    },
+    {
+      "a": "warlock",
+      "b": "warlock",
+      "samples_per_binary": 15,
+      "snapshot_bytes": 956,
+      "choices": 63,
+      "tick_ns": {
+        "before": 685.07,
+        "after": 680.43,
+        "change_percent": -0.6773030493234411
+      },
+      "copy_ns": {
+        "before": 15028.78,
+        "after": 15264.65,
+        "change_percent": 1.5694554048964582
+      }
+    }
+  ],
+  "raw": {
+    "before": [
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 880.8,
+        "copy_ns": 15834.06,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 716.74,
+        "copy_ns": 14978.29,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 644.12,
+        "copy_ns": 14950.05,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 685.07,
+        "copy_ns": 14809.61,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 709.5,
+        "copy_ns": 14810.68,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 649.92,
+        "copy_ns": 14877.65,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 694.01,
+        "copy_ns": 14783.24,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 714.11,
+        "copy_ns": 14901.85,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 646.72,
+        "copy_ns": 14834.22,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 688.81,
+        "copy_ns": 14866.51,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 709.68,
+        "copy_ns": 14832.06,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 648.82,
+        "copy_ns": 15004.2,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 701.71,
+        "copy_ns": 15245.92,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 720.71,
+        "copy_ns": 15339.97,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 656.24,
+        "copy_ns": 15049.59,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 680.96,
+        "copy_ns": 15098.2,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 700.84,
+        "copy_ns": 15033.56,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 647.7,
+        "copy_ns": 15170.31,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 678.59,
+        "copy_ns": 15080.04,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 700.58,
+        "copy_ns": 15159.98,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 651.37,
+        "copy_ns": 15107.95,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 684.65,
+        "copy_ns": 15158.32,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 700.29,
+        "copy_ns": 15099.36,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 649.55,
+        "copy_ns": 15180.68,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 677.64,
+        "copy_ns": 15053.61,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 700.39,
+        "copy_ns": 15150.76,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 647.26,
+        "copy_ns": 15044.6,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 678.54,
+        "copy_ns": 15141.74,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 700.72,
+        "copy_ns": 15068.14,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 653.24,
+        "copy_ns": 15163.43,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 687.83,
+        "copy_ns": 14751.56,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 698.76,
+        "copy_ns": 15220.64,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 647.13,
+        "copy_ns": 15263.72,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 689.85,
+        "copy_ns": 14829.9,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 707.86,
+        "copy_ns": 15426.34,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 648.47,
+        "copy_ns": 15608.17,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 675.09,
+        "copy_ns": 14795.43,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 691.09,
+        "copy_ns": 15196.98,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 644.58,
+        "copy_ns": 15277.42,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 687.95,
+        "copy_ns": 15028.78,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 701.62,
+        "copy_ns": 15359.63,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 646.86,
+        "copy_ns": 15792.53,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 683.1,
+        "copy_ns": 14814.07,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 698.14,
+        "copy_ns": 15205.57,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 646.77,
+        "copy_ns": 15298.9,
+        "checksum": 60000000
+      }
+    ],
+    "after": [
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 680.43,
+        "copy_ns": 15288.97,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 688.44,
+        "copy_ns": 15075.46,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 644.74,
+        "copy_ns": 15291.87,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 671.71,
+        "copy_ns": 15144.67,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 695.45,
+        "copy_ns": 15266.57,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 642.95,
+        "copy_ns": 15037.64,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 671.73,
+        "copy_ns": 15296.78,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 691.99,
+        "copy_ns": 15054.61,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 644.61,
+        "copy_ns": 15307.07,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 672.31,
+        "copy_ns": 15256.54,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 703.96,
+        "copy_ns": 15511.65,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 655.23,
+        "copy_ns": 15169.66,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 671.23,
+        "copy_ns": 15269.47,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 693.29,
+        "copy_ns": 15054.92,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 643.4,
+        "copy_ns": 15255.86,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 679.71,
+        "copy_ns": 15264.65,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 696.73,
+        "copy_ns": 15274.17,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 650.32,
+        "copy_ns": 15213.47,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 677.49,
+        "copy_ns": 15279.93,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 701.31,
+        "copy_ns": 15228.17,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 647.18,
+        "copy_ns": 15219.54,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 672.91,
+        "copy_ns": 15388.09,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 714.92,
+        "copy_ns": 15399.8,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 661.35,
+        "copy_ns": 15496.68,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 685.07,
+        "copy_ns": 15293.55,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 702.26,
+        "copy_ns": 15553.21,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 666.5,
+        "copy_ns": 15241.75,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 680.59,
+        "copy_ns": 15458.79,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 706.76,
+        "copy_ns": 15225.51,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 650.91,
+        "copy_ns": 15276.33,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 720.12,
+        "copy_ns": 15151.29,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 712.27,
+        "copy_ns": 15050.12,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 648.44,
+        "copy_ns": 15087.86,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 694.9,
+        "copy_ns": 14893.81,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 732.34,
+        "copy_ns": 15091.54,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 648.89,
+        "copy_ns": 15044.8,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 696.46,
+        "copy_ns": 15017.96,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 724.32,
+        "copy_ns": 15011.86,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 650.84,
+        "copy_ns": 15328.58,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 698.09,
+        "copy_ns": 15166.61,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 723.61,
+        "copy_ns": 15336.38,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 650.7,
+        "copy_ns": 15239.53,
+        "checksum": 60000000
+      },
+      {
+        "a": "warlock",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 701.18,
+        "copy_ns": 15239.4,
+        "checksum": 60000000
+      },
+      {
+        "a": "priest",
+        "b": "warlock",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 725.48,
+        "copy_ns": 15284.01,
+        "checksum": 60000000
+      },
+      {
+        "a": "frost_mage",
+        "b": "priest",
+        "snapshot_bytes": 956,
+        "choices": 63,
+        "tick_ns": 651.67,
+        "copy_ns": 15344.12,
+        "checksum": 60000000
+      }
+    ]
+  },
+  "measurement": {
+    "date": "2026-10-21",
+    "compiler": "Zig 0.14.0",
+    "optimize": "ReleaseFast",
+    "cpu_affinity": 7,
+    "background_compilation": "finished before measurement",
+    "workload": "16-lane steady casting; reset before cast completion; snapshot/restoreAll benchmark separately"
+  },
+  "machine_code": {
+    "section": ".text",
+    "before_sha256": "42ab720a8a49adff478e9cc070bb56cb484a8668a640ec4bdef1fd7a762ea45d",
+    "after_sha256": "42ab720a8a49adff478e9cc070bb56cb484a8668a640ec4bdef1fd7a762ea45d",
+    "identical": true,
+    "extraction_tool": "objcopy --dump-section .text=OUTPUT INPUT"
+  }
+}

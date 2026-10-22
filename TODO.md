@@ -28,10 +28,21 @@ making existing builds faithful before expanding the spell catalog.
 | --- | --- |
 | [TODO.md](TODO.md) | Current priorities and entry point for all TODOs. |
 | [PRIEST_TODO.md](PRIEST_TODO.md) | Forever Priest class implementation status, SIMD column mapping, and remaining talents/spells. |
+| [WARRIOR_TODO.md](WARRIOR_TODO.md) | Forever Warrior roadmap: source audit, melee/rage/stances, full talent inventory, integration and validation. |
 | [WARLOCK_TODO.md](WARLOCK_TODO.md) | Warlock spells, talents, pets, combat accuracy and mechanic validation. |
 | [VISUALIZER_TODO.md](VISUALIZER_TODO.md) | Arena/editor UI, replay presentation and visual validation. |
 | [MCTS_TODO.md](MCTS_TODO.md) | Search, performance and historical implementation roadmap. Older UI/combat entries may be superseded by the focused checklists. |
 | [NEUROEVOLUTION_TODO.md](NEUROEVOLUTION_TODO.md) | Alternating neuroevolution self-play, SIMD policy network, and UI integration. |
+
+## Forever Warrior
+
+Warrior development is tracked in [WARRIOR_TODO.md](WARRIOR_TODO.md). The staged
+headless arena supports swings, Heroic Strike, Hamstring and stance changes;
+two starter presets, editor controls and recorded playback are now available.
+The complete Arms kit, item gear and Warrior neuroevolution through the existing
+Evolve/Train workflow remain pending; see section 7 of the Warrior checklist. Warrior state
+is allocated only for its matchups so caster snapshot size and action/choice
+capacity remain unchanged. Performance evidence belongs in `benchmarks/warrior/`.
 
 ## Warlock status and later work
 

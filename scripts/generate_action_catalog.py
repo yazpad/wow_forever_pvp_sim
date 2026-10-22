@@ -12,8 +12,8 @@ LUA_OUT = ROOT / "visualizer/action_catalog.lua"
 
 def validate(catalog):
     specs = catalog.keys()
-    if set(specs) != {"warlock", "frost_mage", "priest"}:
-        raise ValueError("catalog must define warlock, frost_mage, and priest")
+    if set(specs) != {"warlock", "frost_mage", "priest", "warrior"}:
+        raise ValueError("catalog must define warlock, frost_mage, priest, and warrior")
     lengths = set()
     for spec, actions in catalog.items():
         lengths.add(len(actions))
@@ -38,11 +38,12 @@ def zig_string(value):
     return json.dumps(value, ensure_ascii=True)
 
 
-SPEC_ORDER = ("warlock", "frost_mage", "priest")
+SPEC_ORDER = ("warlock", "frost_mage", "priest", "warrior")
 SPEC_ENUMS = (
     ("warlock", "WarlockAction"),
     ("frost_mage", "FrostAction"),
     ("priest", "PriestAction"),
+    ("warrior", "WarriorAction"),
 )
 
 

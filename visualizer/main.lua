@@ -4,6 +4,7 @@ local class_view = require("class_view")
 local spell_visuals = require("spell_visuals")
 local unit_frames = require("unit_frames")
 local cast_feedback = require("cast_feedback")
+local warrior_motion = require("warrior_motion")
 local combat_log = require("combat_log")
 -- PVP_SIM: 2D COMBAT ARENA & MCTS VISUALIZER (Love2D Native Visualizer)
 local json = require("json")
@@ -291,6 +292,7 @@ end
 local nextEventIdx = 1
 
 resetEventsToTime = function(t)
+    camera.resetTokenMotion()
     fctList = {}
     projectiles = {}
     particles = {}
@@ -394,7 +396,12 @@ local function checkEvents(currT, frame)
             local label = isDc and string.format("DEATH COIL -%d", math.floor(ev.a + 0.5)) or ((spName ~= "Idle" and (spName .. " -") or "-") .. string.format("%d", math.floor(ev.a + 0.5)))
             addFCT(targetX, targetY + -60, label, col, isDc and 1.6 or 1.4)
 
-            if not isDc and not frame[51] then
+            if class_view.spec(MATCH_DATA.meta,ev.s)=='warrior' then
+                for _=1,8 do
+                    local angle=math.random()*math.pi*2
+                    table.insert(particles,{x=targetX,y=targetY-20,vx=math.cos(angle)*90,vy=math.sin(angle)*90,alpha=1,color=col,size=3})
+                end
+            elseif not isDc and not frame[51] then
                 table.insert(projectiles, {
                     kind = "shadowbolt",
                     sx = srcX, sy = srcY - 20,
@@ -720,6 +727,7 @@ end
 local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fear, horror, seduction, unDur, siphon, immolate, color, isLeft, meta, isbDur, isbCharges)
     local side = isLeft and 0 or 1
     if class_view.spec(meta, side) == "priest" then color = spell_visuals.priestToken end
+    if class_view.spec(meta, side) == "warrior" then color = spell_visuals.warriorToken end
     -- 1. Ice Barrier Shield Dome
     if unDur > 0.0 and class_view.spec(meta, side) == "frost_mage" then
         love.graphics.setColor(0.2, 0.75, 1.0, 0.20)
@@ -782,7 +790,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     local hpY = y - 56
 
     local hpPct = vitals.fraction(meta, side, "health", hp)
-    local manaPct = vitals.fraction(meta, side, "mana", mana)
+    local manaPct = vitals.fraction(meta, side, class_view.spec(meta,side)=="warrior" and "rage" or "mana", mana)
     love.graphics.setColor(0.04, 0.06, 0.09, 0.95)
     love.graphics.rectangle("fill", x - halfW - 1, hpY - 1, barW + 2, 13, 2)
     love.graphics.setColor(0.12, 0.18, 0.16, 1)
@@ -791,7 +799,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     love.graphics.rectangle("fill", x - halfW, hpY, barW * hpPct, 6, 1)
     love.graphics.setColor(0.07, 0.12, 0.23, 1)
     love.graphics.rectangle("fill", x - halfW, hpY + 8, barW, 3, 1)
-    love.graphics.setColor(0.18, 0.52, 0.95, 1)
+    if class_view.spec(meta,side)=="warrior" then love.graphics.setColor(0.85,0.18,0.12,1) else love.graphics.setColor(0.18, 0.52, 0.95, 1) end
     love.graphics.rectangle("fill", x - halfW, hpY + 8, barW * manaPct, 3, 1)
 
     -- Buffs & Debuffs with Rotating Masks (Above health bar - clean, no numbers)
@@ -819,7 +827,7 @@ local function drawCombatant(x, y, hp, mana, cid, ctmr, ctot, agony, corrup, fea
     end
 
     -- Instant abilities share the cast bar, full immediately and fading in replay time.
-    local flash = cast_feedback.instant(MATCH_DATA and MATCH_DATA.events, currentTime, side, meta)
+    local flash = workspace.isPlayback() and cast_feedback.instant(MATCH_DATA and MATCH_DATA.events, currentTime, side, meta) or nil
     local castAlpha = 1
     if not (cid > 0 and ctot > 0) and flash then
         cid, ctmr, ctot, castAlpha = flash.id, 0, 1, flash.alpha
@@ -1062,11 +1070,51 @@ local function drawArena(setup)
             love.graphics.circle("fill", pt.x, pt.y, pt.size or 3)
         end
 
-        -- Draw combatants with full 40-column telemetry
+        -- Separate portraits only; distances, missiles and combat use real positions.
+        local visualAX,visualAY,visualBX,visualBY=ax,ay,bx,by
+        local chargingA,chargingB=false,false
+        if not setup then
+            local x,y,charging=warrior_motion.position(MATCH_DATA,currentTime,0,frame[3],frame[49] or 0)
+            visualAX,visualAY=worldToArenaX(x),worldToArenaY(y)
+            chargingA=charging
+            x,y,charging=warrior_motion.position(MATCH_DATA,currentTime,1,frame[4],frame[50] or 0)
+            visualBX,visualBY=worldToArenaX(x),worldToArenaY(y)
+            chargingB=charging
+        end
+        local tokenAX,tokenAY,tokenBX,tokenBY=camera.tokenPositions(visualAX,visualAY,visualBX,visualBY)
+        if not setup then
+            local dx,dy=visualBX-visualAX,visualBY-visualAY
+            tokenAX,tokenAY,tokenBX,tokenBY=camera.smoothTokenPositions(
+                tokenAX,tokenAY,tokenBX,tokenBY,dx*dx+dy*dy<120*120,
+                MATCH_DATA,currentTime,love.timer.getDelta(),chargingA or chargingB)
+        else
+            camera.resetTokenMotion()
+        end
+        workspace.setTokenFrame(frame,{tokenAX,tokenAY,tokenBX,tokenBY})
+        local function drawPositionArrow(x,y,realX,realY,color)
+            local dx,dy=realX-x,realY-y
+            local length=math.sqrt(dx*dx+dy*dy)
+            if length<2 then return end
+            local nx,ny=dx/length,dy/length
+            -- Draw above the portraits below so even small offsets remain visible.
+            local startX,startY=x+nx*34,y+ny*34
+            love.graphics.setColor(0.025,0.035,0.055,0.95)
+            love.graphics.setLineWidth(5)
+            love.graphics.line(startX,startY,realX,realY)
+            love.graphics.setColor(color[1],color[2],color[3],1)
+            love.graphics.setLineWidth(2)
+            love.graphics.line(startX,startY,realX,realY)
+            love.graphics.polygon("fill",realX,realY,
+                realX-nx*8-ny*4,realY-ny*8+nx*4,
+                realX-nx*8+ny*4,realY-ny*8-nx*4)
+            love.graphics.circle("line",realX,realY,3)
+        end
+
+        -- Draw combatants with full telemetry at their presentation positions.
         local meta = MATCH_DATA.meta
         drawCombatant(
-            ax, ay,
-            frame[5], frame[7],                                    -- hp_a, mana_a
+            tokenAX, tokenAY,
+            frame[5], class_view.spec(meta,0)=="warrior" and (frame[125] or 0) or frame[7],                                    -- hp_a, mana_a
             frame[11], frame[13], frame[15],                       -- cast_id_a, cast_timer_a, cast_total_a
             frame[17], frame[19], frame[21], frame[23],            -- agony_a, corruption_a, fear_a, horror_a
             seductionOnA, frame[25],                               -- Seduction, action6_dur_a
@@ -1077,8 +1125,8 @@ local function drawArena(setup)
         )
 
         drawCombatant(
-            bx, by,
-            frame[6], frame[8],                                    -- hp_b, mana_b
+            tokenBX, tokenBY,
+            frame[6], class_view.spec(meta,1)=="warrior" and (frame[126] or 0) or frame[8],                                    -- hp_b, mana_b
             frame[12], frame[14], frame[16],                       -- cast_id_b, cast_timer_b, cast_total_b
             frame[18], frame[20], frame[22], frame[24],            -- agony_b, corruption_b, fear_b, horror_b
             seductionOnB, frame[26],                               -- Seduction, action6_dur_b
@@ -1087,6 +1135,10 @@ local function drawArena(setup)
             { 0.10, 0.82, 0.55 }, false, meta,
             isbOnB, isbChargesB
         )
+
+        drawPositionArrow(tokenAX,tokenAY,ax,ay,{0.68,0.35,0.98})
+        drawPositionArrow(tokenBX,tokenBY,bx,by,{0.10,0.82,0.55})
+        love.graphics.setLineWidth(1)
 
         -- Floating Combat Text
         local previousFont = love.graphics.getFont()
@@ -1440,4 +1492,12 @@ end
 
 function love.quit()
     return false
+end
+
+-- Run automation inside the normal game source so real fonts/art are loaded.
+for _,option in ipairs(arg or {}) do
+    if option=='--test-warrior' then
+        dofile(love.filesystem.getSource()..'/tests/warrior/main.lua')
+        break
+    end
 end

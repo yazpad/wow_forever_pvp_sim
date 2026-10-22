@@ -1,0 +1,56 @@
+{
+  "class": "warrior",
+  "race": "human",
+  "level": 60,
+  "description": "Partial Forever Fury kit with Bloodthirst, Whirlwind, Raging Blows and Death Wish. 31-point talent allocation; filler talents still include effects marked Planned in the editor. Explicit starter weapon/stats, not a verified gear set.",
+  "combat_stats": {
+    "max_health": 4000,
+    "max_mana": 1,
+    "stamina": 0,
+    "armor_damage_reduction": 0.4,
+    "melee_avoidance_chance": 0.05
+  },
+  "automatic_actions": true,
+  "trees": {
+    "Arms": {},
+    "Fury": {
+      "12321": 5,
+      "12320": 5,
+      "12322": 5,
+      "12329": 2,
+      "1310236": 3,
+      "23584": 1,
+      "1310315": 1,
+      "1225295": 3,
+      "12328": 1,
+      "20504": 2,
+      "20500": 2,
+      "23881": 1
+    },
+    "Protection": {}
+  },
+  "talents_summary": "0/31/0",
+  "pet": "none",
+  "sacrifice_pet": "none",
+  "warrior": {
+    "main_hand": {
+      "min": 90,
+      "max": 135,
+      "speed": 2.6,
+      "two_handed": false
+    },
+    "attack_power": 700,
+    "white_hit": 0.76,
+    "special_hit": 0.95,
+    "crit": 0.05,
+    "starting_rage": 0,
+    "starting_stance": "battle",
+    "off_hand": {
+      "min": 55,
+      "max": 85,
+      "speed": 1.8,
+      "two_handed": false
+    }
+  },
+  "name": "Warrior \u2014 Fury Kit Starter"
+}

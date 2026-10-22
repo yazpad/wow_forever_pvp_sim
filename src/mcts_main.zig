@@ -69,6 +69,8 @@ pub const Options = struct {
     warlock_talents_b: WarlockTalentRanks = .{},
     priest_talents_a: PriestTalentRanks = default_shadow_priest_talents,
     priest_talents_b: PriestTalentRanks = default_shadow_priest_talents,
+    warrior_a: @import("warrior_arena.zig").Config = .{},
+    warrior_b: @import("warrior_arena.zig").Config = .{},
     action_mask_a: u32 = std.math.maxInt(u32),
     action_mask_b: u32 = std.math.maxInt(u32),
     output: []const u8 = "matches/mcts.lua",
@@ -107,7 +109,7 @@ pub fn main() !void {
             continue;
         }
         if (std.mem.eql(u8, arg, "--help")) {
-            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH] [--policy-a WEIGHTS.nepl] [--policy-b WEIGHTS.nepl] [--rollout-policy-a WEIGHTS.nepl] [--rollout-policy-b WEIGHTS.nepl]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted. --policy-a/--policy-b drive that side with an evolved neuro_arena policy (argmax) instead of MCTS. --rollout-policy-a/--rollout-policy-b use evolved policies for MCTS rollouts.\n");
+            try std.io.getStdOut().writeAll("mcts_fight [--spec-a warlock|frost_mage|priest|warrior] [--spec-b ...] [--pet-a none|imp|succubus|felhunter|voidwalker] [--pet-b ...] [--rollouts 1024] [--workers 1] [--nodes 4096] [--depth 128] [--memory-mb 512] [--seed 1] [--seconds 60] [--ms 0] [--algorithm exp3|uct|puct] [--evaluator heuristic|rollout] [--boundary event|tick] [--c-puct 1.414] [--truncation-ticks 30] [--random-rollout] [--output matches/mcts.lua] [--benchmark --rounds 1 --start-ticks 0] [--distance 25] [--x-a X --y-a Y --x-b X --y-b Y] [--hp-a 2000] [--hp-b 2000] [--stop-file PATH] [--policy-a WEIGHTS.nepl] [--policy-b WEIGHTS.nepl] [--rollout-policy-a WEIGHTS.nepl] [--rollout-policy-b WEIGHTS.nepl]\nAdversarial simultaneous MCTS search on both ends. Default evaluator: rollout (terminal win/loss/draw). Fixed rollout budget is combined across workers and both players. --ms adds a per-decision deadline. Creates Lua replay, JSON replay, and search metadata. Warlocks default to an autonomous Imp; Mages and Priests have no pet. MVP pets use basic attacks only and cannot be targeted. --policy-a/--policy-b drive that side with an evolved neuro_arena policy (argmax) instead of MCTS. --rollout-policy-a/--rollout-policy-b use evolved policies for MCTS rollouts.\n");
             return;
         }
         const value = args.next() orelse return error.MissingValue;
@@ -196,6 +198,7 @@ pub fn finalize(o: *Options) !void {
             o.race_a = cfg_a.race;
             o.warlock_talents_a = cfg_a.warlock_talents;
             o.priest_talents_a = cfg_a.priest_talents;
+            o.warrior_a = cfg_a.warrior;
             o.action_mask_a = cfg_a.action_mask;
             if (o.pet_a == null) o.pet_a = cfg_a.pet;
             if (o.name_a == null) o.name_a = cfg_a.name;
@@ -208,6 +211,7 @@ pub fn finalize(o: *Options) !void {
             o.race_b = cfg_b.race;
             o.warlock_talents_b = cfg_b.warlock_talents;
             o.priest_talents_b = cfg_b.priest_talents;
+            o.warrior_b = cfg_b.warrior;
             o.action_mask_b = cfg_b.action_mask;
             if (o.pet_b == null) o.pet_b = cfg_b.pet;
             if (o.name_b == null) o.name_b = cfg_b.name;
@@ -223,6 +227,17 @@ pub fn finalize(o: *Options) !void {
     // Resummoning the sacrificed demon cancels the effect even with Demonic Pact.
     if (o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_a.?))) == o.warlock_talents_a.demonic_sacrifice_pet) o.warlock_talents_a.demonic_sacrifice = 0;
     if (o.warlock_talents_b.demonic_sacrifice > 0 and o.warlock_talents_b.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_b.?))) == o.warlock_talents_b.demonic_sacrifice_pet) o.warlock_talents_b.demonic_sacrifice = 0;
+    const warrior_mod = @import("warrior_arena.zig");
+    if (o.a == .warrior) {
+        const table = warrior_mod.MeleeTable.fromStats(o.combat_stats_b);
+        if (table.configured) o.warrior_a.target_melee = table;
+    }
+    if (o.b == .warrior) {
+        const table = warrior_mod.MeleeTable.fromStats(o.combat_stats_a);
+        if (table.configured) o.warrior_b.target_melee = table;
+    }
+    if (o.a == .warrior) try o.warrior_a.validate();
+    if (o.b == .warrior) try o.warrior_b.validate();
     o.config.stop_file = o.stop_file;
 }
 pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
@@ -230,6 +245,9 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     const allocator = std.heap.page_allocator;
     var d = try sim.Duel(a, b).init(allocator);
     defer d.deinit();
+    if (a == .warrior) try d.setWarriorConfig(true, o.warrior_a);
+    if (b == .warrior) try d.setWarriorConfig(false, o.warrior_b);
+    if (a == .warrior or b == .warrior) d.arena.warrior.reset(0);
     d.staggerOpening();
     const state = d.arena.combat();
     state.distance[0] = o.distance;
@@ -243,6 +261,8 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     state.pushback_rng_b[0] = state.spell_rng_b[0] ^ 0x27d4eb2f;
     state.pet_rng_a[0] = state.spell_rng_a[0] ^ 0x9e3779b9;
     state.pet_rng_b[0] = state.spell_rng_b[0] ^ 0x85ebca6b;
+    if (a == .warrior) d.arena.warrior.integers(true, .rng, 0).*[0] = state.pet_rng_a[0];
+    if (b == .warrior) d.arena.warrior.integers(false, .rng, 0).*[0] = state.pet_rng_b[0];
     state.hp_a[0] = o.hp_a;
     state.hp_b[0] = o.hp_b;
     const active_pet_a = if (a == .warlock and o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_sacrifice_pet != 0 and o.warlock_talents_a.demonic_pact == 0) pets.Kind.none else o.pet_a.?;
@@ -250,12 +270,12 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     const encoded_a = switch (a) {
         .warlock => o.warlock_talents_a.encode(),
         .priest => o.priest_talents_a.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     };
     const encoded_b = switch (b) {
         .warlock => o.warlock_talents_b.encode(),
         .priest => o.priest_talents_b.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     };
     d.setWarlockTalentRanksA(encoded_a);
     d.setWarlockTalentRanksB(encoded_b);
@@ -265,8 +285,8 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     d.setRace(false, o.race_b);
     try d.setCombatStats(true, o.combat_stats_a);
     try d.setCombatStats(false, o.combat_stats_b);
-    state.mana_a[0] = state.max_mana_a[0];
-    state.mana_b[0] = state.max_mana_b[0];
+    state.mana_a[0] = if (a == .warrior) 0 else state.max_mana_a[0];
+    state.mana_b[0] = if (b == .warrior) 0 else state.max_mana_b[0];
     state.hp_a[0] = if (o.hp_a_set) @min(o.hp_a, state.max_health_a[0]) else state.max_health_a[0];
     state.hp_b[0] = if (o.hp_b_set) @min(o.hp_b, state.max_health_b[0]) else state.max_health_b[0];
     d.setActionMaskA(o.action_mask_a);
@@ -285,6 +305,8 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
 
     const search = try mcts.Search(a, b).init(allocator, o.config);
     defer search.deinit();
+    if (a == .warrior) try search.setWarriorConfig(true, o.warrior_a);
+    if (b == .warrior) try search.setWarriorConfig(false, o.warrior_b);
     search.setWarlockTalentRanksA(encoded_a);
     search.setWarlockTalentRanksB(encoded_b);
     search.setActionMaskA(o.action_mask_a);
@@ -326,14 +348,17 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
         .warlock => "Warlock",
         .frost_mage => "Frost Mage",
         .priest => "Priest",
+        .warrior => "Warrior",
     };
     const display_b = o.name_b orelse switch (b) {
         .warlock => "Warlock",
         .frost_mage => "Frost Mage",
         .priest => "Priest",
+        .warrior => "Warrior",
     };
-    var traj = try recorder.MatchTrajectory.init(allocator, display_a, display_b, 0, 0);
+    var traj = try recorder.MatchTrajectoryFor(a == .warrior or b == .warrior).init(allocator, display_a, display_b, 0, 0);
     defer traj.deinit();
+    traj.initial_positions = .{ state.pos_x_a[0], state.pos_y_a[0], state.pos_x_b[0], state.pos_y_b[0] };
     traj.max_health_a = state.max_health_a[0];
     traj.max_health_b = state.max_health_b[0];
     traj.max_mana_a = state.max_mana_a[0];
@@ -346,6 +371,10 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     traj.race_b = o.race_b;
     traj.warlock_talents_a = o.warlock_talents_a;
     traj.warlock_talents_b = o.warlock_talents_b;
+    if (a == .warrior) traj.max_rage_a = 100 + 10 * @as(f32, @floatFromInt(o.warrior_a.build.ranks[@intFromEnum(@import("warrior_talents.zig").Talent.boundlessRage)]));
+    if (b == .warrior) traj.max_rage_b = 100 + 10 * @as(f32, @floatFromInt(o.warrior_b.build.ranks[@intFromEnum(@import("warrior_talents.zig").Talent.boundlessRage)]));
+    var warrior_ticks: [2]@import("warrior_recording.zig").Tick = .{ .{}, .{} };
+    if (a == .warrior or b == .warrior) d.arena.warrior.recording = &warrior_ticks;
     var priest_ticks: [2]@import("priest_recording.zig").Tick = .{ .{}, .{} };
     if (a == .priest or b == .priest) d.arena.priest_recording = &priest_ticks;
     var totals: mcts.Stats = .{};
@@ -376,6 +405,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     var last_siphon_time_b: f32 = 0.0;
 
     while (state.is_active[0] != 0) {
+        warrior_ticks = .{ .{}, .{} };
         const old_a = state.hp_a[0];
         const old_b = state.hp_b[0];
         const old_cast_a = state.cast_id_a[0];
@@ -490,7 +520,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
 
         // 1. ActionUsed / Blink / Counterspell events
         if (act_a_triggered and action_a != 0) {
-            try traj.events.append(.{ .time_s = time_s, .source = 0, .target = if ((action_a >= 17 and action_a <= 20) or (a == .priest and (action_a == 6 or action_a == 11 or action_a == 12 or action_a == 16 or action_a == 21 or action_a == 22 or action_a == 25))) 0 else 1, .kind = .ActionUsed, .spell_id = action_a, .amount = 0 });
+            try traj.events.append(.{ .time_s = time_s, .source = 0, .target = if ((action_a >= 17 and action_a <= 20) or (a == .warrior and (action_a == 1 or action_a == 10 or action_a == 11 or action_a == 12 or (action_a >= 13 and action_a <= 15) or action_a == 24)) or (a == .priest and (action_a == 6 or action_a == 11 or action_a == 12 or action_a == 16 or action_a == 21 or action_a == 22 or action_a == 25))) 0 else 1, .kind = .ActionUsed, .spell_id = action_a, .amount = 0 });
             if (a == .frost_mage and action_a == 5)
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 0, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if ((a == .frost_mage or a == .priest) and action_a == 7)
@@ -499,7 +529,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
                 try traj.events.append(.{ .time_s = time_s, .source = 0, .target = 1, .kind = .SpellLock, .spell_id = interruptedSchool(b, old_cast_b), .amount = Frost.LockoutDuration });
         }
         if (act_b_triggered and action_b != 0) {
-            try traj.events.append(.{ .time_s = time_s, .source = 1, .target = if ((action_b >= 17 and action_b <= 20) or (b == .priest and (action_b == 6 or action_b == 11 or action_b == 12 or action_b == 16 or action_b == 21 or action_b == 22 or action_b == 25))) 1 else 0, .kind = .ActionUsed, .spell_id = action_b, .amount = 0 });
+            try traj.events.append(.{ .time_s = time_s, .source = 1, .target = if ((action_b >= 17 and action_b <= 20) or (b == .warrior and (action_b == 1 or action_b == 10 or action_b == 11 or action_b == 12 or (action_b >= 13 and action_b <= 15) or action_b == 24)) or (b == .priest and (action_b == 6 or action_b == 11 or action_b == 12 or action_b == 16 or action_b == 21 or action_b == 22 or action_b == 25))) 1 else 0, .kind = .ActionUsed, .spell_id = action_b, .amount = 0 });
             if (b == .frost_mage and action_b == 5)
                 try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .Blink, .spell_id = 5, .amount = 0 });
             if ((b == .frost_mage or b == .priest) and action_b == 7)
@@ -580,7 +610,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
 
         // 6. Damage dealt by A to B
         const dmg_to_b = @max(0, old_b - post_hp_b - impact_a + @reduce(.Add, @as(@Vector(@import("action_catalog_generated.zig").ActionCount, f32), priest_ticks[1].healing)) - priest_ticks[1].backlash);
-        if (a != .priest and dmg_to_b > 0) {
+        if (a != .priest and a != .warrior and dmg_to_b > 0) {
             traj.total_dmg_a += dmg_to_b;
             if (pre_cast_a == 5) {
                 accum_drain_dmg_to_b += dmg_to_b;
@@ -605,7 +635,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
 
         // 7. Damage dealt by B to A
         const dmg_to_a = @max(0, old_a - post_hp_a - impact_b + @reduce(.Add, @as(@Vector(@import("action_catalog_generated.zig").ActionCount, f32), priest_ticks[0].healing)) - priest_ticks[0].backlash);
-        if (b != .priest and dmg_to_a > 0) {
+        if (b != .priest and b != .warrior and dmg_to_a > 0) {
             traj.total_dmg_b += dmg_to_a;
             if (pre_cast_b == 5) {
                 accum_drain_dmg_to_a += dmg_to_a;
@@ -683,11 +713,22 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
             try traj.events.append(.{ .time_s = time_s, .source = 1, .target = 1, .kind = .Heal, .spell_id = 5, .amount = accum_drain_heal_b });
             accum_drain_heal_b = 0;
         }
+        inline for (.{ a, b }, 0..) |actor, side| {
+            if (actor == .warrior) for (warrior_ticks[side].damage, 0..) |amount, id| {
+                if (amount > 0) {
+                    try traj.events.append(.{ .time_s = time_s, .source = side, .target = 1 - side, .kind = .DamageHit, .spell_id = @intCast(id), .amount = amount });
+                    if (side == 0) traj.total_dmg_a += amount else traj.total_dmg_b += amount;
+                }
+            };
+        }
         const fa = if (a == .warlock and b == .warlock) [_]f32{0} ** 5 else d.arena.frostTelemetry(true, 0);
         const fb = if (a == .warlock and b == .warlock) [_]f32{0} ** 5 else d.arena.frostTelemetry(false, 0);
+        const wa = recorder.warriorTelemetry(&d.arena, a, true);
+        const wb = recorder.warriorTelemetry(&d.arena, b, false);
         const pa = recorder.priestAuraTelemetry(state, a, true);
         const pb = recorder.priestAuraTelemetry(state, b, false);
         try traj.frames.append(.{
+            .warrior = if (a == .warrior or b == .warrior) .{ wa[0], wb[0], wa[1], wb[1], wa[2], wb[2], wa[3], wb[3], wa[4], wb[4], wa[5], wb[5], wa[6], wb[6], wa[7], wb[7], wa[8], wb[8], wa[9], wb[9], wa[10], wb[10], wa[11], wb[11], wa[12], wb[12], wa[13], wb[13], wa[14], wb[14], wa[15], wb[15], wa[16], wb[16], wa[17], wb[17], wa[18], wb[18] } else {},
             .priest_auras = .{ pa[0], pb[0], pa[1], pb[1], pa[2], pb[2], pa[3], pb[3], pa[4], pb[4] },
             .projectiles = flight_after,
             .pets = pets.telemetry(state, 0),

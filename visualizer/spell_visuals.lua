@@ -3,8 +3,10 @@ local M = {}
 local holy = {1.0, 0.80, 0.30}
 local shadow = {0.70, 0.32, 1.0}
 M.priestToken = {0.96, 0.90, 0.72}
+M.warriorToken = {0.78, 0.54, 0.32}
 
 function M.color(spec, spell)
+    if spec == 'warrior' then return {1.0,0.72,0.38} end
     if spec == 'priest' then
         if spell == 13 or spell == 14 or spell == 15 then return holy end
         return shadow

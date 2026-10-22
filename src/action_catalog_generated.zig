@@ -90,6 +90,35 @@ pub const PriestAction = enum(u32) {
     InnerFire = 25,
 };
 
+pub const WarriorAction = enum(u32) {
+    IdleOrManeuver = 0,
+    HeroicStrike = 1,
+    Hamstring = 2,
+    Charge = 3,
+    Intercept = 4,
+    MortalStrike = 5,
+    Rend = 6,
+    Overpower = 7,
+    Execute = 8,
+    Pummel = 9,
+    CancelCast = 10,
+    BerserkerRage = 11,
+    Bloodrage = 12,
+    BattleStance = 13,
+    DefensiveStance = 14,
+    BerserkerStance = 15,
+    Bloodthirst = 16,
+    Unused17 = 17,
+    Unused18 = 18,
+    Unused19 = 19,
+    Unused20 = 20,
+    AutoAttack = 21,
+    OffHandAttack = 22,
+    Whirlwind = 23,
+    DeathWish = 24,
+    Unused25 = 25,
+};
+
 pub const warlock_names = [_][]const u8{ "Idle/Maneuver", "Agony", "Corruption", "Fear", "Shadow Bolt", "Drain Life", "Healthstone", "Death Coil", "Siphon Life", "Shadowburn", "Cancel Cast", "Searing Pain", "Incinerate", "Immolate", "Seduction", "Spell Lock", "Conflagrate", "Blood Fury", "Berserking", "Escape Artist", "Will of the Forsaken", "None", "None", "None", "None", "None" };
 pub const warlock_starts_cast = [_]bool{ false, false, false, true, true, true, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false };
 pub const warlock_talent_gate_ids = [_]u32{ 0, 0, 0, 0, 0, 0, 0, 0, 105912, 105884, 0, 0, 105874, 0, 0, 0, 105880, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -105,3 +134,8 @@ pub const priest_starts_cast = [_]bool{ false, false, false, false, true, true, 
 pub const priest_talent_gate_ids = [_]u32{ 0, 0, 0, 0, 0, 15407, 0, 15487, 15286, 0, 0, 0, 0, 0, 0, 402174, 14751, 0, 0, 0, 0, 10060, 0, 0, 0, 0 };
 pub const priest_talent_gate_trees = [_][]const u8{ "", "", "", "", "", "Shadow Magic", "", "Shadow Magic", "Shadow Magic", "", "", "", "", "", "", "Discipline", "Discipline", "", "", "", "", "Discipline", "", "", "", "" };
 pub const priest_pet_gates = [_][]const u8{ "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "" };
+pub const warrior_names = [_][]const u8{ "Idle/Maneuver", "Heroic Strike", "Hamstring", "Charge", "Intercept", "Mortal Strike", "Rend", "Overpower", "Execute", "Pummel", "Cancel Cast", "Berserker Rage", "Bloodrage", "Battle Stance", "Defensive Stance", "Berserker Stance", "Bloodthirst", "None", "None", "None", "None", "Auto Attack", "Off-Hand Attack", "Whirlwind", "Death Wish", "None" };
+pub const warrior_starts_cast = [_]bool{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
+pub const warrior_talent_gate_ids = [_]u32{ 0, 0, 0, 0, 0, 12294, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23881, 0, 0, 0, 0, 0, 0, 0, 12328, 0 };
+pub const warrior_talent_gate_trees = [_][]const u8{ "", "", "", "", "", "Arms", "", "", "", "", "", "", "", "", "", "", "Fury", "", "", "", "", "", "", "", "Fury", "" };
+pub const warrior_pet_gates = [_][]const u8{ "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "" };

@@ -8,6 +8,7 @@ pub const Spec = enum(u8) {
     warlock = 0,
     frost_mage = 1,
     priest = 2,
+    warrior = 3,
 
     pub fn parse(name: []const u8) ?Spec {
         inline for (std.meta.fields(Spec)) |field| {
@@ -22,6 +23,7 @@ pub const Spec = enum(u8) {
             .warlock => action_catalog.warlock_names,
             .frost_mage => action_catalog.frost_mage_names,
             .priest => action_catalog.priest_names,
+            .warrior => action_catalog.warrior_names,
         };
     }
 };
@@ -64,6 +66,7 @@ pub const Race = enum(u32) {
 
 pub const FrostAction = action_catalog.FrostAction;
 pub const PriestAction = action_catalog.PriestAction;
+pub const WarriorAction = action_catalog.WarriorAction;
 
 // Deliberately a compact simulator kit, not a particular retail game patch.
 pub const Frost = struct {
@@ -523,6 +526,7 @@ pub const SpecConfig = struct {
     action_mask: u32 = AllActionBits,
     warlock_talents: WarlockTalentRanks = .{},
     priest_talents: PriestTalentRanks = .{},
+    warrior: @import("warrior_arena.zig").Config = .{},
     pet: pets.Kind = .imp,
     sacrifice_pet: pets.Kind = .imp,
     modifiers: CombatModifiers,
@@ -547,12 +551,14 @@ pub const SpecConfig = struct {
             .warlock => self.warlock_talents.encode(),
             .priest => self.priest_talents.encode(),
             .frost_mage => 0,
+            .warrior => 0, // Staged arena configuration is explicit; no saved preset yet.
         };
     }
 };
 
 fn rankInTree(trees: std.json.ObjectMap, tree_name: []const u8, talent_id: []const u8) u8 {
     const tree_value = trees.get(tree_name) orelse return 0;
+    if (tree_value != .object) return 0;
     const rank_value = tree_value.object.get(talent_id) orelse return 0;
     return switch (rank_value) {
         .integer => |rank| if (rank > 0 and rank <= 255) @intCast(rank) else 0,
@@ -568,8 +574,9 @@ pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTa
             .warlock => action_catalog.warlock_names[id],
             .priest => action_catalog.priest_names[id],
             .frost_mage => action_catalog.frost_mage_names[id],
+            .warrior => action_catalog.warrior_names[id],
         };
-        if (std.mem.eql(u8, name, "None")) mask &= ~(@as(u32, 1) << id);
+        if (std.mem.eql(u8, name, "None") or std.mem.eql(u8, name, "Auto Attack") or std.mem.eql(u8, name, "Off-Hand Attack")) mask &= ~(@as(u32, 1) << id);
         const rank: u8 = switch (class) {
             .warlock => switch (action_catalog.warlock_talent_gate_ids[id]) {
                 105912 => warlock.siphon_life,
@@ -586,7 +593,7 @@ pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTa
                 10060 => priest.power_infusion,
                 else => 1,
             },
-            .frost_mage => 1,
+            .frost_mage, .warrior => 1,
         };
         if (rank == 0) mask &= ~(@as(u32, 1) << id);
     }
@@ -619,16 +626,32 @@ fn actionMaskFromRoot(root: std.json.ObjectMap, class: Spec) !u32 {
             .warlock => @intFromEnum(action_catalog.WarlockAction.IdleOrManeuver),
             .frost_mage => @intFromEnum(action_catalog.FrostAction.IdleOrManeuver),
             .priest => @intFromEnum(action_catalog.PriestAction.IdleOrManeuver),
+            .warrior => @intFromEnum(action_catalog.WarriorAction.IdleOrManeuver),
         };
         const cancel_id: usize = switch (class) {
             .warlock => @intFromEnum(action_catalog.WarlockAction.CancelCast),
             .frost_mage => @intFromEnum(action_catalog.FrostAction.CancelCast),
             .priest => @intFromEnum(action_catalog.PriestAction.CancelCast),
+            .warrior => @intFromEnum(action_catalog.WarriorAction.CancelCast),
         };
         mask |= @as(u32, 1) << @intCast(idle_id);
         mask |= @as(u32, 1) << @intCast(cancel_id);
     }
 
+    if (class == .warrior) {
+        inline for (0..ActionCount) |id| {
+            const talent_id = action_catalog.warrior_talent_gate_ids[id];
+            if (talent_id != 0) {
+                var buf: [16]u8 = undefined;
+                const key = try std.fmt.bufPrint(&buf, "{d}", .{talent_id});
+                const rank = if (root.get("trees")) |trees|
+                    if (trees == .object) rankInTree(trees.object, action_catalog.warrior_talent_gate_trees[id], key) else 0
+                else
+                    0;
+                if (rank == 0) mask &= ~(@as(u32, 1) << id);
+            }
+        }
+    }
     if (class == .warlock) {
         if (root.get("trees")) |tree_value| {
             if (tree_value == .object) {
@@ -755,8 +778,41 @@ fn priestRanksFromTrees(trees: std.json.ObjectMap) PriestTalentRanks {
     };
 }
 
+fn warriorRanksFromTrees(trees: std.json.ObjectMap) !@import("warrior_talents.zig").Build {
+    const wt = @import("warrior_talents.zig");
+    var result: wt.Build = .{};
+    var tree_iterator = trees.iterator();
+    while (tree_iterator.next()) |tree| {
+        var tree_id: ?usize = null;
+        for ([_][]const u8{ "Arms", "Fury", "Protection" }, 0..) |name, i| {
+            if (std.mem.eql(u8, tree.key_ptr.*, name)) tree_id = i;
+        }
+        const index = tree_id orelse return error.UnknownTalentTree;
+        if (tree.value_ptr.* == .array and tree.value_ptr.array.items.len == 0) continue;
+        if (tree.value_ptr.* != .object) return error.InvalidTalentTree;
+        var ranks = tree.value_ptr.object.iterator();
+        while (ranks.next()) |entry| {
+            const id = std.fmt.parseInt(u32, entry.key_ptr.*, 10) catch return error.UnknownTalent;
+            if (entry.value_ptr.* != .integer or entry.value_ptr.integer < 0 or entry.value_ptr.integer > 5) return error.InvalidTalentRank;
+            var found = false;
+            for (wt.data.definitions, 0..) |definition, i| {
+                if (definition.id == id and definition.tree == index) {
+                    try result.set(@enumFromInt(i), @intCast(entry.value_ptr.integer));
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return error.UnknownTalent;
+        }
+    }
+    try result.validate();
+    return result;
+}
+
 fn sumTreeRanks(trees: std.json.ObjectMap, tree_name: []const u8) !u8 {
     const tree_value = trees.get(tree_name) orelse return error.MissingTalentTree;
+    if (tree_value == .array and tree_value.array.items.len == 0) return 0;
+    if (tree_value != .object) return error.InvalidTalentTree;
     var total: u16 = 0;
     var iter = tree_value.object.iterator();
     while (iter.next()) |entry| {
@@ -912,6 +968,16 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
     var talents = TalentBuild{};
     var warlock_talents = WarlockTalentRanks{};
     var priest_talents = PriestTalentRanks{};
+    var warrior_config = @import("warrior_arena.zig").Config{};
+    if (class == .warrior) {
+        if (root.get("gear")) |_| return error.WarriorUsesExplicitWeaponStats;
+        if (root.get("warrior")) |value| {
+            if (value != .object or value.object.contains("build")) return error.InvalidWarriorConfig;
+            const config = try std.json.parseFromValue(@import("warrior_arena.zig").Config, allocator, value, .{});
+            defer config.deinit();
+            warrior_config = config.value;
+        }
+    }
     var modifiers = CombatModifiers.default();
     if (root.get("trees")) |tree_value| {
         if (tree_value != .object) return error.InvalidTalentTrees;
@@ -932,6 +998,11 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
                 .tree2 = try sumTreeRanks(trees, "Holy"),
                 .tree3 = try sumTreeRanks(trees, "Shadow Magic"),
             },
+            .warrior => .{
+                .tree1 = try sumTreeRanks(trees, "Arms"),
+                .tree2 = try sumTreeRanks(trees, "Fury"),
+                .tree3 = try sumTreeRanks(trees, "Protection"),
+            },
         };
         if (talents.total() > 51) return error.InvalidTalentBuild;
         if (root.get("talents_summary")) |summary| {
@@ -947,6 +1018,8 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
             priest_talents = priestRanksFromTrees(trees);
             try validatePriestRanks(priest_talents);
             modifiers = CombatModifiers.fromPriestRanks(priest_talents);
+        } else if (class == .warrior) {
+            warrior_config.build = try warriorRanksFromTrees(trees);
         }
     } else if (root.get("talents_summary")) |ts| {
         // Legacy summary-only specs retain their point totals but do not gain
@@ -963,6 +1036,11 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         if (race != required_race) action_mask &= ~(@as(u32, 1) << id);
     }
 
+    if (class == .warrior) {
+        try warrior_config.validate();
+        if (pet != .none or sacrifice_pet != .none) return error.PetRequiresWarlock;
+        action_mask = filterActionCapabilities(class, action_mask, warlock_talents, priest_talents, race, pet);
+    }
     const name = if (root.get("name")) |n| try allocator.dupe(u8, n.string) else try allocator.dupe(u8, path);
     const id = try allocator.dupe(u8, std.fs.path.stem(path));
 
@@ -974,6 +1052,7 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         .action_mask = action_mask,
         .warlock_talents = warlock_talents,
         .priest_talents = priest_talents,
+        .warrior = warrior_config,
         .pet = pet,
         .sacrifice_pet = sacrifice_pet,
         .modifiers = modifiers,

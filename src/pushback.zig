@@ -53,6 +53,13 @@ fn hit(state: anytype, comptime side: bool, i: usize, amount: V, shield: *V, cas
     remaining.* = result.remaining;
     count[i..][0..16].* = result.count;
 }
+/// Warrior direct hits follow the existing projectile/pet hits in the physics
+/// step. The caller supplies remaining virtual absorption and Physical damage
+/// after mitigation, preserving the original caster-only path.
+pub fn melee(state: anytype, comptime side: bool, i: usize, damage: V, absorb: V, cast: U, remaining: anytype, total: V, channel: B, resistance: V) void {
+    var shield = absorb;
+    hit(state, side, i, damage, &shield, cast, remaining, total, channel, resistance);
+}
 // Individual projectile slots, Conflagrate, then the autonomous pet are resolved
 // in that order. Direct hits consume the virtual shield before periodic damage;
 // aggregate HP/shield accounting remains in the combat kernel. Misses, resists,

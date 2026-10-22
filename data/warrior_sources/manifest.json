@@ -1,0 +1,73 @@
+{
+  "target_client_build": "1.60.1.69893",
+  "imported_on": "2026-10-21",
+  "reference_checkout": "mythicsim-forever-engine-go",
+  "reference_head": "51da1856fc932401bd880e3691cba14b33039dc1",
+  "spell_data_upstream": "wowsims/forever@8b7ed8c97",
+  "files": {
+    "talents.json": {
+      "source_path": "ui/core/talents/trees/warrior.json",
+      "sha256": "350a709fa550837368d6a31eebe292ed63d18c999a9fc43291376bcd7bd094cb"
+    },
+    "spell_data.go": {
+      "source_path": "sim/warrior/spell_data_auto_gen.go",
+      "sha256": "5d2ccd7bc9365e956a82a31583c9a9f1438e3eb585f1a4104f6bcb6d76c219cd"
+    },
+    "ruleset.go": {
+      "source_path": "sim/core/ruleset.go",
+      "sha256": "213a81b45e93ec291905ac7c4ad1974d770a6170e7ab219b3c0b280a3ef274ea"
+    },
+    "stances.go": {
+      "source_path": "sim/warrior/stances.go",
+      "sha256": "45101a5c3b0903134c7c435cbe80fa3757554d60404369bdd6386c7f61bad927"
+    },
+    "client_audit.md": {
+      "source_path": "docs/beta-pass/warrior.md",
+      "sha256": "1da0a34c5d6e5973d15f1cd2312cdb16db0065ad5257ca5f6a0b4c9c3401c196"
+    },
+    "LICENSE": {
+      "source_path": "LICENSE",
+      "sha256": "09adfc10507b7166fc8997b10e361668b05d04077c28ad5e8dbb454313304acd"
+    },
+    "bloodthirst.go": {
+      "source_path": "sim/warrior/bloodthirst.go",
+      "sha256": "2efcc3c895530f93518b97caaaec4373d2957e531eb05fe85b82ee6f6013f9f8"
+    },
+    "whirlwind.go": {
+      "source_path": "sim/warrior/whirlwind.go",
+      "sha256": "e9aa389442512bccc1f4cd00c35191643a903d21cbc62c2ef3091b374bd1250c"
+    },
+    "talents.go": {
+      "source_path": "sim/warrior/talents.go",
+      "sha256": "789f50d4909ee6aecec4aa06f64cb6c24982ff96e1959d8376ad7d3969feda57"
+    },
+    "core_rage.go": {
+      "source_path": "sim/core/rage.go",
+      "sha256": "8fcc81d3d00be4e29900af026d9d4cb39189b9755cae2a199890c65a34394710"
+    },
+    "core_spell_result.go": {
+      "source_path": "sim/core/spell_result.go",
+      "sha256": "ccbcfe0e5990c8d85e587321a26708c06d43e1bfdeb2389ec14cf6066ac5cdf5"
+    },
+    "core_spell_resistances.go": {
+      "source_path": "sim/core/spell_resistances.go",
+      "sha256": "1003619d77ac7f5b69ebcd2f217c44c9301d803029f18576905fc72585bd2861"
+    },
+    "berserker_rage.go": {
+      "source_path": "sim/warrior/berserker_rage.go",
+      "sha256": "069b9d31b993d514744ed29ef317f6b1eda95da757e9dd59268a65446b48a0d2"
+    },
+    "bloodrage.go": {
+      "source_path": "sim/warrior/bloodrage.go",
+      "sha256": "d50adef7b7ddff96ee74c5f06fa9cdebe19b0fca50244d146ceb5b9c7ab51adc"
+    },
+    "heroic_strike_cleave.go": {
+      "source_path": "sim/warrior/heroic_strike_cleave.go",
+      "sha256": "fa6e714e8b6f4abf1cf18e183c3c90eaaa54a378f16fc82ea7674d786cb2d9f2"
+    },
+    "core_flags.go": {
+      "source_path": "sim/core/flags.go",
+      "sha256": "b7b5d45f4c4220c0a8f45b47c4d78c4a8f08ddd0459f91a80765bc38a5166023"
+    }
+  }
+}

@@ -866,14 +866,14 @@ test "Priest scripted rollouts consider utility and situational Mana Burn on bot
         var rng = std.Random.DefaultPrng.init(42);
         var burns: usize = 0;
         for (0..100) |_| {
-            const action = mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false);
+            const action = mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false, null);
             if (action.ability == 24) burns += 1;
         }
         try std.testing.expect(burns >= 90);
         @field(s, "hp" ++ own)[0] = 100;
         var idles: usize = 0;
         for (0..100) |_| {
-            if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false).ability == 0) idles += 1;
+            if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false, null).ability == 0) idles += 1;
         }
         try std.testing.expect(idles >= 90);
         inline for (.{ 21, 22, 23 }) |id| {
@@ -881,7 +881,7 @@ test "Priest scripted rollouts consider utility and situational Mana Burn on bot
             masks[id] = @splat(true);
             var selected: usize = 0;
             for (0..100) |_| {
-                if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false).ability == id) selected += 1;
+                if (mcts.rolloutFast(.priest, side, &d, 0, masks, rng.random(), false, null).ability == id) selected += 1;
             }
             try std.testing.expect(selected >= 90);
             masks[id] = @splat(false);

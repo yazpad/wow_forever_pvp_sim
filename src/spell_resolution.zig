@@ -6,7 +6,7 @@ const V = simd.f32x16;
 const U = simd.u32x16;
 const B = simd.bool16;
 pub const School = enum { shadow, fire, frost, arcane, holy };
-pub const Outcome = enum(u32) { none, miss, resist, hit, crit };
+pub const Outcome = enum(u32) { none, miss, resist, hit, crit, dodge, parry, block };
 pub const Stats = struct {
     max_health: f32 = 2000,
     // Total stamina before talents; max_health already includes its base HP.
@@ -35,6 +35,10 @@ pub const Stats = struct {
     pet_hit_chance: f32 = 1,
     pet_crit_chance: f32 = 0,
     melee_avoidance_chance: f32 = 0,
+    melee_dodge_chance: f32 = 0,
+    melee_parry_chance: f32 = 0,
+    melee_block_chance: f32 = 0,
+    melee_block_value: f32 = 0,
     armor_damage_reduction: f32 = 0,
 
     pub fn validate(self: Stats) !void {
@@ -47,17 +51,44 @@ pub const Stats = struct {
                 if (value < 1 or value > 100000) return error.InvalidCombatStats;
             } else if (comptime std.mem.eql(u8, field.name, "stamina")) {
                 if (value > 10000) return error.InvalidCombatStats;
+            } else if (comptime std.mem.eql(u8, field.name, "melee_block_value")) {
+                if (value > 10000) return error.InvalidCombatStats;
             } else if (comptime std.mem.endsWith(u8, field.name, "_power")) {
                 if (value > 10000) return error.InvalidCombatStats;
             } else if (comptime std.mem.endsWith(u8, field.name, "_resistance") or std.mem.eql(u8, field.name, "spell_penetration")) {
                 if (value > 10000) return error.InvalidCombatStats;
             } else if (value > 1) return error.InvalidCombatStats;
         }
+        const separate = self.melee_dodge_chance + self.melee_parry_chance + self.melee_block_chance;
+        if (separate > 1 or (separate > 0 and self.melee_avoidance_chance > 0)) return error.InvalidCombatStats;
+        if (self.melee_block_chance > 0 and self.melee_block_value <= 0) return error.InvalidCombatStats;
+        const separate_avoidance = self.melee_dodge_chance + self.melee_parry_chance + self.melee_block_chance;
+        if (separate_avoidance > 1 or (separate_avoidance > 0 and self.melee_avoidance_chance > 0)) return error.InvalidCombatStats;
     }
 };
 pub fn spellPower(state: anytype, comptime side: bool, i: usize, comptime school: School) V {
     const field_prefix = if (school == .holy) "shadow" else @tagName(school);
     return (@field(state, field_prefix ++ "_power" ++ (if (side) "_a" else "_b"))[i..][0..16].* + @import("demon_passives.zig").knowledge(state, side, i)) * @import("racials.zig").powerMultiplier(state, side, i);
+}
+
+/// Resolves a melee attack table with distinct avoidance outcomes. Block is a
+/// landed hit reduced by block value; dodge and parry avoid the attack.
+pub fn meleeRolls(damage: V, hit_chance: V, dodge_chance: V, parry_chance: V, block_chance: V, block_value: V, crit_chance: V, crit_multiplier: V, rolls: [3]V, mask: B) Result {
+    const hit = simd.vAnd16(mask, rolls[0] < chance(hit_chance));
+    const dodge = simd.vAnd16(hit, rolls[1] < chance(dodge_chance));
+    const after_dodge = rolls[1] >= chance(dodge_chance);
+    const parry = simd.vAnd16(hit, simd.vAnd16(after_dodge, rolls[1] < chance(dodge_chance + parry_chance)));
+    const after_parry = rolls[1] >= chance(dodge_chance + parry_chance);
+    const block = simd.vAnd16(hit, simd.vAnd16(after_parry, rolls[1] < chance(dodge_chance + parry_chance + block_chance)));
+    const landed = simd.vAnd16(hit, simd.vNot16(simd.vOr16(dodge, parry)));
+    const crit = simd.vAnd16(landed, simd.vAnd16(simd.vNot16(block), rolls[2] < chance(crit_chance)));
+    const ordinary = simd.vAnd16(landed, simd.vNot16(simd.vOr16(block, crit)));
+    const blocked_damage = @max(v(0), damage - block_value);
+    return .{
+        .damage = @select(f32, crit, damage * crit_multiplier, @select(f32, block, blocked_damage, @select(f32, ordinary, damage, v(0)))),
+        .landed = landed,
+        .outcome = @select(u32, mask, @select(u32, hit, @select(u32, dodge, @as(U, @splat(@intFromEnum(Outcome.dodge))), @select(u32, parry, @as(U, @splat(@intFromEnum(Outcome.parry))), @select(u32, block, @as(U, @splat(@intFromEnum(Outcome.block))), @select(u32, crit, @as(U, @splat(@intFromEnum(Outcome.crit))), @as(U, @splat(@intFromEnum(Outcome.hit))))))), @as(U, @splat(@intFromEnum(Outcome.miss)))), @as(U, @splat(@intFromEnum(Outcome.none)))),
+    };
 }
 pub const Profile = struct {
     school: School,
@@ -124,8 +155,11 @@ pub fn resolve(state: anytype, comptime side: bool, i: usize, damage: V, mask: B
 pub fn setStats(state: anytype, comptime side: bool, lane: usize, stats: Stats) void {
     inline for (std.meta.fields(Stats)) |field| {
         // Stamina is resolved at setup; combat only needs the resulting HP.
+        if (comptime std.mem.eql(u8, field.name, "melee_dodge_chance") or std.mem.eql(u8, field.name, "melee_parry_chance") or std.mem.eql(u8, field.name, "melee_block_chance") or std.mem.eql(u8, field.name, "melee_block_value")) continue;
         if (comptime !std.mem.eql(u8, field.name, "stamina")) @field(state, field.name ++ (if (side) "_a" else "_b"))[lane] = @field(stats, field.name);
     }
+    const separate = stats.melee_dodge_chance + stats.melee_parry_chance + stats.melee_block_chance;
+    @field(state, "melee_avoidance_chance" ++ (if (side) "_a" else "_b"))[lane] = if (separate > 0) separate else stats.melee_avoidance_chance;
 }
 
 // Applications resolve hit/full resist once; landed periodic effects roll only
@@ -173,6 +207,11 @@ fn applyPartial(state: anytype, comptime side: bool, i: usize, result: Result, a
     return reduced;
 }
 pub fn petMelee(state: anytype, comptime side: bool, i: usize, damage: V, mask: B) V {
+    var raw: V = v(0);
+    return petMeleeWithRaw(state, side, i, damage, mask, &raw);
+}
+pub fn petMeleeWithRaw(state: anytype, comptime side: bool, i: usize, damage: V, mask: B, raw: *V) V {
+    raw.* = v(0);
     const own = if (side) "_a" else "_b";
     const target = if (side) "_b" else "_a";
     const acting = simd.vAnd16(mask, state.is_active[i..][0..16].* != @as(U, @splat(0)));
@@ -192,6 +231,7 @@ pub fn petMelee(state: anytype, comptime side: bool, i: usize, damage: V, mask: 
     const landed_on_priest = simd.vAnd16(inner_active, resolved.damage > v(0));
     inner_charges.* = @select(f32, landed_on_priest, @max(v(0), inner_charges.* - v(1)), inner_charges.*);
     inner_timer.* = @select(f32, landed_on_priest, @select(f32, inner_charges.* <= v(0), v(0), inner_timer.*), inner_timer.*);
+    raw.* = resolved.damage;
     return resolved.damage * (v(1) - effective_armor);
 }
 

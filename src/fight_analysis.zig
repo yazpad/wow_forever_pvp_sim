@@ -13,6 +13,8 @@ pub const SavedOptions = struct {
     warlock_talents_b: spec.WarlockTalentRanks = .{},
     priest_talents_a: spec.PriestTalentRanks = .{},
     priest_talents_b: spec.PriestTalentRanks = .{},
+    warrior_a: @import("warrior_arena.zig").Config = .{},
+    warrior_b: @import("warrior_arena.zig").Config = .{},
     action_mask_a: u32 = std.math.maxInt(u32),
     action_mask_b: u32 = std.math.maxInt(u32),
 };
@@ -24,6 +26,16 @@ pub const SavedRun = struct {
     initial_state: sim.Snapshot,
     decisions: []Decision,
 };
+pub fn SavedRunFor(comptime a: spec.Spec, comptime b: spec.Spec) type {
+    if (a != .warrior and b != .warrior) return SavedRun;
+    return struct {
+        simulator_version: []const u8,
+        simulator_fingerprint: ?[]const u8 = null,
+        options: SavedOptions,
+        initial_state: sim.SnapshotFor(a, b),
+        decisions: []struct { tick: u32, actions: [2]sim.Action, state: ?sim.SnapshotFor(a, b) = null },
+    };
+}
 pub const Result = struct {
     action: sim.Action,
     chosen: bool,
@@ -58,7 +70,7 @@ pub fn continuationConfig(original: mcts.Config, settings: Settings, stop_file: 
     config.stop_file = stop_file;
     return config;
 }
-pub fn verifyEngine(run: SavedRun) !bool {
+pub fn verifyEngine(run: anytype) !bool {
     if (run.simulator_fingerprint) |fingerprint| {
         if (!std.mem.eql(u8, fingerprint, identity.fingerprint)) return error.SimulatorSourceMismatch;
         return true;
@@ -97,22 +109,24 @@ pub const Report = struct {
     score_definition: []const u8 = "win=1, loss=0, draw/unresolved=0.5; unresolved counts are reported separately",
     results: []Result,
 };
-pub fn configure(duel: anytype, options: SavedOptions) void {
+pub fn configure(duel: anytype, options: SavedOptions) !void {
+    if (@TypeOf(duel.*).SpecA == .warrior) try duel.setWarriorConfig(true, options.warrior_a);
+    if (@TypeOf(duel.*).SpecB == .warrior) try duel.setWarriorConfig(false, options.warrior_b);
     duel.setWarlockTalentRanksA(switch (options.a) {
         .warlock => options.warlock_talents_a.encode(),
         .priest => options.priest_talents_a.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     });
     duel.setWarlockTalentRanksB(switch (options.b) {
         .warlock => options.warlock_talents_b.encode(),
         .priest => options.priest_talents_b.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     });
     duel.setActionMaskA(options.action_mask_a);
     duel.setActionMaskB(options.action_mask_b);
 }
 /// Replay commands, never re-run the original search or re-load mutable specs.
-pub fn reconstruct(duel: anytype, run: SavedRun, index: usize) !sim.Snapshot {
+pub fn reconstruct(duel: anytype, run: anytype, index: usize) !@TypeOf(duel.*).StateSnapshot {
     if (index >= run.decisions.len) return error.UnknownDecision;
     if (run.decisions[index].state) |state| {
         if (state.tick != run.decisions[index].tick) return error.InvalidDecisionSnapshot;
@@ -142,11 +156,11 @@ fn cancelled(path: ?[]const u8) bool {
     }
     return false;
 }
-pub fn analyze(comptime a: spec.Spec, comptime b: spec.Spec, comptime side: bool, allocator: std.mem.Allocator, run: SavedRun, index: usize, samples: usize, seed: u64, stop_file: ?[]const u8, settings: Settings) !Report {
+pub fn analyze(comptime a: spec.Spec, comptime b: spec.Spec, comptime side: bool, allocator: std.mem.Allocator, run: SavedRunFor(a, b), index: usize, samples: usize, seed: u64, stop_file: ?[]const u8, settings: Settings) !Report {
     if (samples < 2 or samples > 4096) return error.InvalidSamples;
     var duel = try sim.Duel(a, b).init(allocator);
     defer duel.deinit();
-    configure(&duel, run.options);
+    try configure(&duel, run.options);
     const engine_verified = try verifyEngine(run);
     var config = try continuationConfig(run.options.config, settings, stop_file);
     config.seed = seed;
@@ -155,13 +169,15 @@ pub fn analyze(comptime a: spec.Spec, comptime b: spec.Spec, comptime side: bool
     search.setWarlockTalentRanksA(switch (a) {
         .warlock => run.options.warlock_talents_a.encode(),
         .priest => run.options.priest_talents_a.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     });
     search.setWarlockTalentRanksB(switch (b) {
         .warlock => run.options.warlock_talents_b.encode(),
         .priest => run.options.priest_talents_b.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     });
+    if (a == .warrior) try search.setWarriorConfig(true, run.options.warrior_a);
+    if (b == .warrior) try search.setWarriorConfig(false, run.options.warrior_b);
     search.setActionMaskA(run.options.action_mask_a);
     search.setActionMaskB(run.options.action_mask_b);
     var search_decisions: u64 = 0;
@@ -265,6 +281,15 @@ pub fn analyze(comptime a: spec.Spec, comptime b: spec.Spec, comptime side: bool
     return .{ .decision = index, .tick = run.decisions[index].tick, .side = if (side) 0 else 1, .samples = samples, .seed = seed, .max_ticks = run.options.config.max_ticks, .hp = hp, .mana = mana, .chosen = chosen, .opponent_action = opponent, .engine_verified = engine_verified, .continuation_search = config, .search_decisions = search_decisions, .search_rollouts = search_rollouts, .results = results };
 }
 
+fn analyzeBytes(comptime a: spec.Spec, comptime b: spec.Spec, allocator: std.mem.Allocator, bytes: []const u8, side: u1, index: usize, samples: usize, seed: u64, stop_file: ?[]const u8, settings: Settings) !Report {
+    const parsed = try std.json.parseFromSlice(SavedRunFor(a, b), allocator, bytes, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    const run = parsed.value;
+    if (!std.mem.eql(u8, run.simulator_version, "mcts-simultaneous-v2-pets")) return error.IncompatibleSimulatorVersion;
+    if (index >= run.decisions.len or run.options.config.max_ticks > 60000 or run.options.config.max_ticks == 0) return error.InvalidRun;
+    return if (side == 0) analyze(a, b, true, allocator, run, index, samples, seed, stop_file, settings) else analyze(a, b, false, allocator, run, index, samples, seed, stop_file, settings);
+}
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     var args = std.process.args();
@@ -286,19 +311,13 @@ pub fn main() !void {
     if (std.mem.eql(u8, input.?, output.?)) return error.OutputMustDifferFromInput;
     const bytes = try std.fs.cwd().readFileAlloc(allocator, input.?, 128 * 1024 * 1024);
     defer allocator.free(bytes);
-    const parsed = try std.json.parseFromSlice(SavedRun, allocator, bytes, .{ .ignore_unknown_fields = true });
-    defer parsed.deinit();
-    const run = parsed.value;
-    if (!std.mem.eql(u8, run.simulator_version, "mcts-simultaneous-v2-pets")) return error.IncompatibleSimulatorVersion;
-    if (index >= run.decisions.len or run.options.config.max_ticks > 60000 or run.options.config.max_ticks == 0) return error.InvalidRun;
+    const header = try std.json.parseFromSlice(struct { options: struct { a: spec.Spec, b: spec.Spec } }, allocator, bytes, .{ .ignore_unknown_fields = true });
+    defer header.deinit();
     settings.progress_file = try std.fmt.allocPrint(allocator, "{s}.progress.json", .{output.?});
     defer allocator.free(settings.progress_file.?);
-    const report = switch (run.options.a) {
-        inline else => |spec_a| switch (run.options.b) {
-            inline else => |spec_b| if (side == 0)
-                try analyze(spec_a, spec_b, true, allocator, run, index, samples, seed, stop_file, settings)
-            else
-                try analyze(spec_a, spec_b, false, allocator, run, index, samples, seed, stop_file, settings),
+    const report = switch (header.value.options.a) {
+        inline else => |spec_a| switch (header.value.options.b) {
+            inline else => |spec_b| try analyzeBytes(spec_a, spec_b, allocator, bytes, side, index, samples, seed, stop_file, settings),
         },
     };
     defer allocator.free(report.results);
@@ -311,7 +330,7 @@ test "analysis reconstructs saved commands exactly for mirror and mixed matchups
         var duel = try sim.Duel(.warlock, b).init(std.testing.allocator);
         defer duel.deinit();
         const options = SavedOptions{ .a = .warlock, .b = b, .config = .{ .max_ticks = 300, .boundary = .event } };
-        configure(&duel, options);
+        try configure(&duel, options);
         const initial = duel.snapshot(0);
         const decisions = [_]Decision{
             .{ .tick = 0, .actions = .{ .{ .ability = 2 }, .{ .ability = 4 } } },

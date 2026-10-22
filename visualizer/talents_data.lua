@@ -8,6 +8,7 @@ local CLASS_TREES = {
     frost_mage = { "Arcane", "Fire", "Frost" },
     mage = { "Arcane", "Fire", "Frost" },
     priest = { "Discipline", "Holy", "Shadow Magic" },
+    warrior = { "Arms", "Fury", "Protection" },
 }
 
 function talents.getClassTrees(className)
@@ -21,7 +22,8 @@ function talents.load(className)
 
     if talents.loaded[cls] then return talents.loaded[cls] end
     
-    local filename = cls == "frost_mage" and "talents_frost_mage.json" or (cls == "priest" and "talents_priest.json" or "talents_warlock.json")
+    local filename = ({ frost_mage = "talents_frost_mage.json",
+        priest = "talents_priest.json", warrior = "talents_warrior.json" })[cls] or "talents_warlock.json"
     local contents = nil
     if type(love) == "table" and love.filesystem then
         local path = "data/" .. filename
@@ -34,8 +36,8 @@ function talents.load(className)
     if not contents then
         local f = io.open("visualizer/data/" .. filename, "r") or
                   io.open("data/" .. filename, "r") or
-                  io.open("../data/" .. filename, "r") or
-                  io.open("data/talents_warlock_forever.json", "r")
+                  io.open("../data/" .. filename, "r")
+        if not f and cls == "warlock" then f = io.open("data/talents_warlock_forever.json", "r") end
         if f then
             contents = f:read("*a")
             f:close()
@@ -121,7 +123,10 @@ function talents.cloneBuild(build)
 end
 
 function talents.canInvest(treeData, build, treeName, talent)
-    local total = talents.getTotalPoints(treeData, build)
+    local total = 0
+    for name in pairs(treeData) do
+        total = total + talents.getTreePoints(treeData, build, name)
+    end
     if total >= 51 then
         return false, "Maximum 51 talent points reached"
     end

@@ -4,6 +4,8 @@ local talents_data = require("talents_data")
 local action_catalog = require("action_catalog")
 
 local gear = require("gear")
+local warrior = require("warrior")
+local warriorConfig = warrior.copy()
 local equipment, gearBase = nil, nil
 local spec_editor = {}
 
@@ -12,6 +14,7 @@ local TREE_ORDER_MAP = {
     frost_mage = { "Arcane", "Fire", "Frost" },
     mage = { "Arcane", "Fire", "Frost" },
     priest = { "Discipline", "Holy", "Shadow Magic" },
+    warrior = { "Arms", "Fury", "Protection" },
 }
 
 local TREE_COLORS_MAP = {
@@ -23,6 +26,9 @@ local TREE_COLORS_MAP = {
     Arcane = { border = { 0.70, 0.35, 0.90, 0.85 }, title = { 0.85, 0.50, 1.0, 1.0 }, bg = { 0.08, 0.06, 0.14, 0.95 } },
     Fire = { border = { 0.90, 0.35, 0.15, 0.85 }, title = { 1.0, 0.50, 0.20, 1.0 }, bg = { 0.12, 0.05, 0.04, 0.95 } },
     Frost = { border = { 0.25, 0.65, 0.95, 0.85 }, title = { 0.45, 0.85, 1.0, 1.0 }, bg = { 0.04, 0.08, 0.15, 0.95 } },
+    Arms = { border={0.7,0.4,0.2,0.85},title={1,0.7,0.4,1},bg={0.12,0.07,0.04,0.95} },
+    Fury = { border={0.8,0.25,0.15,0.85},title={1,0.5,0.3,1},bg={0.12,0.04,0.03,0.95} },
+    Protection = { border={0.4,0.5,0.7,0.85},title={0.7,0.8,1,1},bg={0.05,0.07,0.1,0.95} },
     -- Priest trees
     Discipline = { border = { 0.85, 0.75, 0.35, 0.85 }, title = { 1.0, 0.90, 0.55, 1.0 }, bg = { 0.10, 0.09, 0.05, 0.95 } },
     Holy = { border = { 0.95, 0.85, 0.45, 0.85 }, title = { 1.0, 0.95, 0.65, 1.0 }, bg = { 0.11, 0.10, 0.05, 0.95 } },
@@ -51,7 +57,10 @@ local STAT_FIELDS = {
     { "shadow_resistance", "Shadow resistance", 0, 0, 10000 }, { "fire_resistance", "Fire resistance", 0, 0, 10000 },
     { "frost_resistance", "Frost resistance", 0, 0, 10000 }, { "arcane_resistance", "Arcane resistance", 0, 0, 10000 },
     { "pet_hit_chance", "Pet hit", 1 }, { "pet_crit_chance", "Pet crit", 0 },
-    { "melee_avoidance_chance", "Melee avoidance", 0 }, { "armor_damage_reduction", "Armor reduction", 0 },
+    { "melee_avoidance_chance", "Legacy melee avoidance", 0 },
+    { "melee_dodge_chance", "Melee dodge", 0 }, { "melee_parry_chance", "Melee parry", 0 },
+    { "melee_block_chance", "Melee block", 0 }, { "melee_block_value", "Block value", 0, 0, 10000 },
+    { "armor_damage_reduction", "Armor reduction", 0 },
 }
 local function copyCombatStats(source)
     local result = {}
@@ -119,7 +128,7 @@ local function defaultActionSlots(className, build)
     for i = 2, #catalog - 1 do
         if slot >= TOTAL_SLOT_COUNT then break end
         local name = catalog[i]
-        local locked = ((className == "warlock" or className == "priest") and isTalentLocked(name, build)) or isPetLocked(name, selectedActionPet())
+        local locked = isTalentLocked(name, build) or isPetLocked(name, selectedActionPet())
         if not locked and name ~= "None" then slots[slot] = name; slot = slot + 1 end
     end
     return slots
@@ -146,7 +155,7 @@ local function defaultActionLoadout(className, build)
     local result = {}
     for _, name in ipairs(ACTION_CATALOG[className] or {}) do
         if name ~= "Idle/Maneuver" and name ~= "Cancel Cast" and
-            not ((className == "warlock" or className == "priest") and isTalentLocked(name, build)) and
+            not isTalentLocked(name, build) and
             not isPetLocked(name, selectedActionPet()) then
             table.insert(result, name)
         end
@@ -161,7 +170,7 @@ local function cloneActionLoadout(actions, className, build)
     for _, name in ipairs(actions) do
         if type(name) == "string" and not seen[name] then
             for _, supported in ipairs(catalog) do
-                local talent_locked = (className == "warlock" or className == "priest") and isTalentLocked(name, build)
+                local talent_locked = isTalentLocked(name, build)
                 if name == supported and not talent_locked and not isPetLocked(name, selectedActionPet()) then
                     table.insert(result, name)
                     seen[name] = true
@@ -200,13 +209,15 @@ function spec_editor.setClass(newClass)
     currentRace = races.normalize(currentRace, cls)
     equipment, gearBase = nil, nil
     combatStats = copyCombatStats()
+    warriorConfig = warrior.copy()
+    if cls == "warrior" then combatStats.max_health, combatStats.max_mana, combatStats.armor_damage_reduction = 4000, 1, 0.4 end
     treeData = talents_data.load(cls)
     currentBuild = talents_data.newEmptyBuild(cls)
     actionLoadout = defaultActionLoadout(cls, currentBuild)
     actionSlots = defaultActionSlots(cls, currentBuild)
     warlockPet = "imp"
     sacrificePet = "imp"
-    specName = cls == "frost_mage" and "New Frost Mage Build" or (cls == "priest" and "New Priest Build" or "New Warlock Build")
+    specName = cls == "frost_mage" and "New Frost Mage Build" or (cls == "priest" and "New Priest Build" or (cls == "warrior" and "New Warrior Build" or "New Warlock Build"))
     specDesc = "Custom 51-point level 60 talent build."
     spec_editor.equipPrebis()
 end
@@ -224,11 +235,12 @@ function spec_editor.loadSpec(specObj)
         treeData = talents_data.load(sc)
     end
     currentRace = races.normalize(specObj.race, currentClass)
+    warriorConfig = warrior.copy(specObj.warrior)
     combatStats = copyCombatStats(specObj.combat_stats)
     if specObj.gear and not (specObj.combat_stats and specObj.combat_stats.stamina) then
         combatStats.stamina = (specObj.gear_base_stats and specObj.gear_base_stats.stamina or 0) + gear.totals(specObj.gear).stamina
     end
-    equipment = specObj.gear and gear.validate(specObj.gear, currentClass) or nil
+    equipment = currentClass ~= "warrior" and specObj.gear and gear.validate(specObj.gear, currentClass) or nil
     gearBase = equipment and copyCombatStats(specObj.gear_base_stats) or nil
     -- Saved resolved stats include explicit overrides from the stats editor.
     if equipment and not specObj.combat_stats then combatStats = gear.resolve(equipment, currentClass, gearBase) end
@@ -272,6 +284,7 @@ function spec_editor.getCurrentSpecConfig()
         level = 60,
         description = specDesc,
         combat_stats = copyCombatStats(combatStats),
+        warrior = currentClass == "warrior" and warrior.copy(warriorConfig) or nil,
         gear = equipment and gear.copy(equipment) or nil,
         gear_base_stats = gearBase and copyCombatStats(gearBase) or nil,
         talents_summary = summary,
@@ -286,6 +299,7 @@ function spec_editor.getCurrentSpecConfig()
 end
 
 function spec_editor.setGear(slot,id)
+    if currentClass == "warrior" then return false,"Edit Warrior weapon stats directly" end
     local nextGear=gear.copy(equipment)
     local ok,err=gear.equip(nextGear,slot,id,currentClass)
     if not ok then return false,err end
@@ -295,6 +309,7 @@ function spec_editor.setGear(slot,id)
     return true
 end
 function spec_editor.equipPrebis()
+    if currentClass == "warrior" then equipment,gearBase=nil,nil;return end
     gearBase=gearBase or copyCombatStats(combatStats)
     equipment=gear.prebis(currentClass)
     combatStats=gear.resolve(equipment,currentClass,gearBase)
@@ -304,6 +319,12 @@ function spec_editor.clearGear()
     equipment,gearBase=nil,nil
 end
 
+function spec_editor.setWarriorStat(key,value)
+    if currentClass ~= "warrior" then return false,"Select Warrior first" end
+    local nextConfig,err=warrior.set(warriorConfig,key,value)
+    if not nextConfig then return false,err end
+    warriorConfig=nextConfig;return true
+end
 function spec_editor.getStatFields() return STAT_FIELDS end
 
 function spec_editor.setCombatStat(key, value)
@@ -569,8 +590,8 @@ function spec_editor.draw(trainingController)
 
     -- 2. Header
     local isMage = (currentClass == "frost_mage")
-    local classIconName = isMage and "mage" or (currentClass == "priest" and "priest" or "warlock")
-    local classDisplayName = isMage and "Frost Mage" or (currentClass == "priest" and "Priest" or "Warlock")
+    local classIconName = isMage and "mage" or (currentClass == "priest" and "priest" or (currentClass == "warrior" and "warrior" or "warlock"))
+    local classDisplayName = isMage and "Frost Mage" or (currentClass == "priest" and "Priest" or (currentClass == "warrior" and "Warrior" or "Warlock"))
     local classSubtitle = classDisplayName .. " 51-Point Talent Tree Calculator"
     local classAccent = isMage and { 0.35, 0.75, 1.0, 0.9 } or { 0.65, 0.50, 0.90, 0.9 }
 

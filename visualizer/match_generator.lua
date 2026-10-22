@@ -27,6 +27,10 @@ local function refreshSavedSpecs()
     end
 end
 refreshSavedSpecs()
+-- Adding starter presets should not silently change the existing launch pair.
+local initialSpecs={}
+for _,spec in ipairs(savedSpecs) do if spec.class~='warrior' then initialSpecs[#initialSpecs+1]=spec end end
+if #initialSpecs==0 then initialSpecs=savedSpecs end
 
 local rolloutsOptions = { 1024, 4096, 16384, 65536 }
 local workersOptions = { 1, 2, 4, 8, 16, 32 }
@@ -36,10 +40,10 @@ local distances = { 10, 20, 25, 35 }
 local petOptions = { "none", "imp", "succubus", "felhunter", "voidwalker" }
 
 local config = {
-    spec_a_obj = savedSpecs[1] or { name = "Warlock", class = "warlock", filename = "warlock" },
-    spec_b_obj = savedSpecs[#savedSpecs] or { name = "Frost Mage", class = "frost_mage", filename = "frost_mage" },
-    spec_a = (savedSpecs[1] and savedSpecs[1].class) or "warlock",
-    spec_b = (savedSpecs[#savedSpecs] and savedSpecs[#savedSpecs].class) or "frost_mage",
+    spec_a_obj = initialSpecs[1] or { name = "Warlock", class = "warlock", filename = "warlock" },
+    spec_b_obj = initialSpecs[#initialSpecs] or { name = "Frost Mage", class = "frost_mage", filename = "frost_mage" },
+    spec_a = (initialSpecs[1] and initialSpecs[1].class) or "warlock",
+    spec_b = (initialSpecs[#initialSpecs] and initialSpecs[#initialSpecs].class) or "frost_mage",
     rollouts = 4096,
     workers = 8,
     algorithm = "puct",
@@ -155,7 +159,7 @@ function match_generator.update(dt)
                 neuroTelemetry.ticks_sec = msg.ticks_sec or neuroTelemetry.ticks_sec
                 local h = neuroTelemetry.history or {}
                 neuroTelemetry.history = h
-                if #h == 0 or h[#h].gen ~= neuroTelemetry.gens or h[#h].win_rate_a ~= neuroTelemetry.win_rate_a then
+                if #h == 0 or h[#h].gen ~= neuroTelemetry.gens or h[#h].win_rate_a ~= neuroTelemetry.win_rate_a or h[#h].pair_win_rate_a ~= neuroTelemetry.pair_win_rate_a then
                     h[#h + 1] = {
                         gen = neuroTelemetry.gens or #h,
                         epoch = neuroTelemetry.epoch or 0,
@@ -182,9 +186,10 @@ function match_generator.update(dt)
                 local h = neuroTelemetry.history or {}
                 neuroTelemetry.history = h
                 h[#h + 1] = {
-                    gen = (#h > 0 and h[#h].gen) or neuroTelemetry.gens or #h,
+                    gen = neuroTelemetry.gens or #h,
                     epoch = neuroTelemetry.epoch or 0,
-                    win_rate_a = (#h > 0 and h[#h].win_rate_a) or neuroTelemetry.win_rate_a,
+                    -- Final archive selection is not a new training sample.
+                    win_rate_a = nil,
                     pair_win_rate_a = neuroTelemetry.pair_win_rate_a,
                     side = 'final selected pair',
                 }
@@ -373,6 +378,11 @@ function match_generator.startLeaguePlay(overrideConfig)
 
     local args = { binPath }
     appendCommonArgs(args, cfg)
+    if cfg.seed then
+        table.insert(args, "--seed"); table.insert(args, tostring(cfg.seed))
+    end
+    table.insert(args, "--jitter-start-lag"); table.insert(args, tostring(cfg.jitter_start_lag or 0))
+    table.insert(args, "--jitter-pos"); table.insert(args, tostring(cfg.jitter_pos or 0))
     table.insert(args, "--fights-per-epoch"); table.insert(args, tostring(fightsPerEpoch))
     table.insert(args, "--epochs"); table.insert(args, tostring(maxEpochs))
     table.insert(args, "--population-size"); table.insert(args, tostring(popSize))

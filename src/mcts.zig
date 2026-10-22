@@ -138,6 +138,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
     return struct {
         const Self = @This();
         const Duel = sim.Duel(a, b);
+        const StateSnapshot = sim.SnapshotFor(a, b);
         const Worker = struct {
             duel: Duel,
             nodes: []Node,
@@ -145,7 +146,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             used: u32 = 0,
             rng: std.Random.DefaultPrng,
             stats: Stats = .{},
-            fn run(w: *Worker, root: sim.Snapshot, config: Config, budget: usize, deadline: i128) void {
+            fn run(w: *Worker, root: StateSnapshot, config: Config, budget: usize, deadline: i128) void {
                 w.used = 1;
                 w.stats = .{};
                 w.duel.restoreAll(root);
@@ -306,7 +307,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             if (config.workers == 0 or config.depth == 0 or config.nodes == 0 or config.rollouts == 0 or config.max_ticks == 0) return error.InvalidSearchConfig;
             const node_bytes = try std.math.mul(usize, config.nodes, @sizeOf(Node));
             const path_bytes = try std.math.mul(usize, config.depth, 16 * @sizeOf(Visit));
-            const worker_bytes = try std.math.add(usize, try std.math.add(usize, node_bytes, path_bytes), 3 * 16 * (@sizeOf(sim.Snapshot) - 4));
+            const worker_bytes = try std.math.add(usize, try std.math.add(usize, node_bytes, path_bytes), 3 * 16 * (@sizeOf(StateSnapshot) - 4));
             const required = try std.math.mul(usize, worker_bytes, config.workers);
             if (required > config.memory_limit) return error.SearchMemoryLimitExceeded;
             const self = try allocator.create(Self);
@@ -348,6 +349,9 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
                 worker.rng = std.Random.DefaultPrng.init(seed +% (@as(u64, @intCast(i)) *% 0x9e3779b97f4a7c15));
             }
         }
+        pub fn setWarriorConfig(self: *Self, comptime side: bool, config: @import("warrior_arena.zig").Config) !void {
+            for (self.workers) |*worker| try worker.duel.setWarriorConfig(side, config);
+        }
         pub fn setWarlockTalentRanksA(self: *Self, encoded: u128) void {
             for (self.workers) |*worker| worker.duel.setWarlockTalentRanksA(encoded);
         }
@@ -361,7 +365,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             for (self.workers) |*worker| worker.duel.setActionMaskB(mask);
         }
         pub const Result = struct { actions: [2]sim.Action, distributions: [2][MaxChoices]f32, choices: [2]sim.Choices, stats: Stats, seconds: f64 };
-        pub fn decide(self: *Self, root: sim.Snapshot, random: std.Random) Result {
+        pub fn decide(self: *Self, root: StateSnapshot, random: std.Random) Result {
             const start = std.time.nanoTimestamp();
             // No game-theoretic decision exists when both actions are forced.
             // Preserve committed-RNG consumption, but spend no search budget.
@@ -412,7 +416,7 @@ pub fn Search(comptime a: Spec, comptime b: Spec) type {
             return result;
         }
         pub fn memoryBytes(self: *Self) usize {
-            return self.workers.len * (self.config.nodes * @sizeOf(Node) + 16 * self.config.depth * @sizeOf(Visit) + 3 * 16 * (@sizeOf(sim.Snapshot) - 4));
+            return self.workers.len * (self.config.nodes * @sizeOf(Node) + 16 * self.config.depth * @sizeOf(Visit) + 3 * 16 * (@sizeOf(StateSnapshot) - 4));
         }
     };
 }
@@ -445,6 +449,7 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
     const priorities = switch (spec) {
         .warlock => &[_]u32{ 19, 17, 18, 15, 9, 16, 2, 1, 8, 7, 6, 13, 12, 5, 4, 3 },
         .frost_mage => &[_]u32{ 19, 17, 18, 6, 7, 2, 1, 4, 3, 5 },
+        .warrior => &[_]u32{ 2, 1 },
         .priest => &[_]u32{ 25, 19, 20, 17, 18, 16, 22, 7, 6, 3, 21, 23, 9, 2, 8, 1, 12, 11, 24, 15, 4, 13, 5, 14 },
     };
     for (priorities) |candidate| {
@@ -485,6 +490,12 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
                 11 => hp < max_hp * 0.55,
                 else => true,
             };
+        } else if (spec == .warrior) {
+            allowed = switch (candidate) {
+                1 => d.arena.warrior.floats(side, .rage, 0).*[lane] >= 30,
+                2 => d.arena.warrior.floats(side, .hamstring, 0).*[lane] < 1,
+                else => true,
+            };
         } else allowed = switch (candidate) {
             19 => if ((if (side) @TypeOf(d.arena).SpecB else @TypeOf(d.arena).SpecA) == .frost_mage) @field(s, "agony_timer" ++ own)[lane] > 0 or @field(s, "corruption_timer" ++ own)[lane] > 0 else false,
             7 => @field(s, "cast_id" ++ enemy)[lane] != 0,
@@ -498,7 +509,7 @@ pub fn rolloutFast(comptime spec: Spec, comptime side: bool, d: anytype, lane: u
         if (id != 0) break;
     }
     const dist = s.distance[lane];
-    const mv: f32 = if (dist > 25.0) -1.0 else if (dist < 15.0) 1.0 else 0.0;
+    const mv: f32 = if (spec == .warrior) (if (dist > 3.5) @as(f32, -1) else 0) else if (dist > 25.0) -1.0 else if (dist < 15.0) 1.0 else 0.0;
     return .{ .ability = id, .movement = mv };
 }
 
@@ -577,6 +588,8 @@ pub fn evaluateHeuristic(comptime spec_a: Spec, comptime spec_b: Spec, d: anytyp
     // Distance / kite score
     var kite_score: f32 = 0;
     const dist = s.distance[lane];
+    if (spec_a == .warrior and dist <= 5) kite_score += 0.05;
+    if (spec_b == .warrior and dist <= 5) kite_score -= 0.05;
     if (spec_a == .frost_mage or spec_a == .warlock or spec_a == .priest) {
         // Caster prefers safe range (15m - 28m)
         if (dist >= 15.0 and dist <= 28.0) kite_score += 0.05;
@@ -723,6 +736,15 @@ pub fn computePriors(comptime spec: Spec, comptime side: bool, d: anytype, lane:
                 },
                 else => {},
             }
+        } else if (spec == .warrior) {
+            const rage = d.arena.warrior.floats(side, .rage, 0).*[lane];
+            weight = switch (action.ability) {
+                1 => if (rage >= 40) 4 else 0.2,
+                2 => if (d.arena.warrior.floats(side, .hamstring, 0).*[lane] < 1) 6 else 0.2,
+                13, 14, 15 => 0.1,
+                10 => 0.1,
+                else => 1,
+            };
         } else {
             // Frost Mage
             switch (action.ability) {
@@ -756,8 +778,13 @@ pub fn computePriors(comptime spec: Spec, comptime side: bool, d: anytype, lane:
         }
 
         // Movement preference
-        if (action.movement == 1 and dist < 15.0) weight *= 1.3; // Kite away when close
-        if (action.movement == -1 and dist > 26.0) weight *= 1.3; // Advance when far
+        if (spec == .warrior) {
+            if (action.movement == -1 and dist > 3.5) weight *= 2;
+            if (action.movement == 0 and dist <= 3.5) weight *= 1.5;
+        } else {
+            if (action.movement == 1 and dist < 15.0) weight *= 1.3; // Kite away when close
+            if (action.movement == -1 and dist > 26.0) weight *= 1.3; // Advance when far
+        }
 
         p[i] = weight;
     }

@@ -4,6 +4,13 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const class_perf = b.addExecutable(.{ .name = "class_perf", .root_source_file = b.path("src/class_perf_benchmark.zig"), .target = target, .optimize = optimize });
+    const install_class_perf = b.addInstallArtifact(class_perf, .{});
+    b.step("build-class-perf", "Build the caster integration regression benchmark").dependOn(&install_class_perf.step);
+
+    const verify_warrior_data = b.addSystemCommand(&.{ "python3", "scripts/generate_warrior_data.py", "--check" });
+    verify_warrior_data.setCwd(b.path("."));
+
     const generate_action_catalog = b.addSystemCommand(&.{ "python3", "scripts/generate_action_catalog.py" });
     generate_action_catalog.setCwd(b.path("."));
     generate_action_catalog.addFileInput(b.path("scripts/generate_action_catalog.py"));
@@ -38,7 +45,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     mcts.step.dependOn(&generate_identity.step);
-    b.installArtifact(mcts);
+    const install_mcts = b.addInstallArtifact(mcts, .{});
+    b.getInstallStep().dependOn(&install_mcts.step);
+    b.step("build-mcts", "Build the fight generator for the visualizer").dependOn(&install_mcts.step);
     const run_mcts = b.addRunArtifact(mcts);
     if (b.args) |args| run_mcts.addArgs(args);
     b.step("mcts", "Generate or benchmark a simultaneous MCTS fight").dependOn(&run_mcts.step);
@@ -74,6 +83,19 @@ pub fn build(b: *std.Build) void {
     b.step("neuro", "Run alternating neuroevolution self-play arena").dependOn(&run_neuro.step);
 
     const test_step = b.step("test", "Run library tests");
+    const warrior_demo = b.addExecutable(.{ .name = "warrior_demo", .root_source_file = b.path("src/warrior_demo.zig"), .target = target, .optimize = optimize });
+    warrior_demo.step.dependOn(&generate_identity.step);
+    const run_warrior_demo = b.addRunArtifact(warrior_demo);
+    b.step("warrior-demo", "Run the staged headless Warrior vs Priest integration fixture").dependOn(&run_warrior_demo.step);
+    test_step.dependOn(&verify_warrior_data.step);
+    const warrior_tests = b.addTest(.{
+        .root_source_file = b.path("src/warrior_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const warrior_test_step = b.step("test-warrior", "Verify staged Forever warrior data and foundation mechanics");
+    warrior_test_step.dependOn(&verify_warrior_data.step);
+    warrior_test_step.dependOn(&b.addRunArtifact(warrior_tests).step);
     const tests = b.addTest(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,

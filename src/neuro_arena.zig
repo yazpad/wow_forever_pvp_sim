@@ -85,6 +85,9 @@ pub fn main() !void {
 fn initBaseDuel(comptime a: Spec, comptime b: Spec, allocator: std.mem.Allocator, o: mcts_main.Options) !sim.Duel(a, b) {
     var d = try sim.Duel(a, b).init(allocator);
     errdefer d.deinit();
+    if (a == .warrior) try d.setWarriorConfig(true, o.warrior_a);
+    if (b == .warrior) try d.setWarriorConfig(false, o.warrior_b);
+    if (a == .warrior or b == .warrior) d.arena.warrior.reset(0);
     d.staggerOpening();
     const state = d.arena.combat();
     state.distance[0] = o.distance;
@@ -99,12 +102,12 @@ fn initBaseDuel(comptime a: Spec, comptime b: Spec, allocator: std.mem.Allocator
     const encoded_a = switch (a) {
         .warlock => o.warlock_talents_a.encode(),
         .priest => o.priest_talents_a.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     };
     const encoded_b = switch (b) {
         .warlock => o.warlock_talents_b.encode(),
         .priest => o.priest_talents_b.encode(),
-        .frost_mage => 0,
+        .frost_mage, .warrior => 0,
     };
     d.setWarlockTalentRanksA(encoded_a);
     d.setWarlockTalentRanksB(encoded_b);
@@ -114,8 +117,8 @@ fn initBaseDuel(comptime a: Spec, comptime b: Spec, allocator: std.mem.Allocator
     d.setRace(false, o.race_b);
     try d.setCombatStats(true, o.combat_stats_a);
     try d.setCombatStats(false, o.combat_stats_b);
-    state.mana_a[0] = state.max_mana_a[0];
-    state.mana_b[0] = state.max_mana_b[0];
+    state.mana_a[0] = if (a == .warrior) 0 else state.max_mana_a[0];
+    state.mana_b[0] = if (b == .warrior) 0 else state.max_mana_b[0];
     state.hp_a[0] = if (o.hp_a_set) @min(o.hp_a, state.max_health_a[0]) else state.max_health_a[0];
     state.hp_b[0] = if (o.hp_b_set) @min(o.hp_b, state.max_health_b[0]) else state.max_health_b[0];
     d.setActionMaskA(o.action_mask_a);
@@ -127,7 +130,7 @@ fn WorkerContext(comptime a: Spec, comptime b: Spec) type {
     return struct {
         const Self = @This();
         duel: sim.Duel(a, b),
-        base_snapshot: sim.Snapshot,
+        base_snapshot: sim.SnapshotFor(a, b),
         max_ticks: u32,
         next_idx: *std.atomic.Value(usize),
         individuals: []neuro_evolution.Individual,
@@ -187,7 +190,7 @@ fn scoreAgainstArchive(
     comptime a: Spec,
     comptime b: Spec,
     duel: *sim.Duel(a, b),
-    base_snapshot: sim.Snapshot,
+    base_snapshot: sim.SnapshotFor(a, b),
     candidate: *const Policy,
     opponents: *const HallOfFame,
     candidate_is_a: bool,
@@ -200,7 +203,7 @@ fn scoreAgainstArchive(
     for (opponents.champions[0..opponents.len], 0..) |*opponent, idx| {
         const policy_a = if (candidate_is_a) candidate else opponent;
         const policy_b = if (candidate_is_a) opponent else candidate;
-        const res = neuro_evolution.evaluateBatch16(
+        const res = neuro_evolution.evaluateBatch16Ex(
             a,
             b,
             duel,
@@ -210,23 +213,27 @@ fn scoreAgainstArchive(
             candidate_is_a,
             max_ticks,
             seed ^ (@as(u64, idx) *% 0x9e3779b97f4a7c15),
+            .{},
+            0,
+            null,
         );
         total += res.fitness_sum / @as(f64, @floatFromInt(res.matches));
     }
     return total / @as(f64, @floatFromInt(opponents.len));
 }
 
-/// Measures a champion pair over 112 fights with small per-fight opening and
-/// position variation. Seven SIMD batches keep this evaluation inexpensive.
+/// Measures a champion pair over 112 fights using the same seed schedule,
+/// optional jitter and strict argmax as batch evaluation.
 fn evaluateJitteredPair(
     comptime a: Spec,
     comptime b: Spec,
     duel: *sim.Duel(a, b),
-    base_snapshot: sim.Snapshot,
+    base_snapshot: sim.SnapshotFor(a, b),
     policy_a: *const Policy,
     policy_b: *const Policy,
     max_ticks: u32,
     seed: u64,
+    jitter: neuro_evolution.Jitter,
 ) f64 {
     var wins_a: u64 = 0;
     var draws: u64 = 0;
@@ -241,8 +248,9 @@ fn evaluateJitteredPair(
             policy_b,
             true,
             max_ticks,
-            seed ^ (@as(u64, batch) *% 0x9e3779b97f4a7c15),
-            .{ .start_lag = 0.25, .pos = 1.0 },
+            (seed ^ 0xe7a1_0000_0000) +% (@as(u64, batch) +% 1) *% 0x9e3779b97f4a7c15,
+            jitter,
+            0,
             null,
         );
         wins_a += res.wins;
@@ -365,7 +373,8 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
                 &champ_a,
                 &champ_b,
                 opts.base.config.max_ticks,
-                opts.base.config.seed ^ 0xc4a9 ^ @as(u64, total_generations),
+                opts.base.config.seed,
+                opts.jitter,
             );
             const gen_sec = @max(1e-6, @as(f64, @floatFromInt(std.time.nanoTimestamp() - gen_t0)) / 1_000_000_000.0);
             const gen_fights_per_sec = @as(f64, @floatFromInt(fights_per_gen)) / gen_sec;
@@ -494,7 +503,8 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
         &champ_a,
         &champ_b,
         opts.base.config.max_ticks,
-        opts.base.config.seed ^ 0xf1a1,
+        opts.base.config.seed,
+        opts.jitter,
     );
 
     // Save archive-selected representatives.
@@ -510,7 +520,7 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     var h2h_draws: u64 = 0;
     var h2h_matches: u64 = 0;
     for (0..20) |b_idx| {
-        const res = neuro_evolution.evaluateBatch16(
+        const res = neuro_evolution.evaluateBatch16Ex(
             a,
             b,
             &base_duel,
@@ -520,6 +530,9 @@ fn runArena(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
             true,
             opts.base.config.max_ticks,
             opts.base.config.seed ^ 0x7777_8888 ^ @as(u64, b_idx),
+            opts.jitter,
+            0,
+            null,
         );
         h2h_wins_a += res.wins;
         h2h_draws += res.draws;
@@ -578,7 +591,7 @@ fn EvalContext(comptime a: Spec, comptime b: Spec) type {
     return struct {
         const Self = @This();
         duel: sim.Duel(a, b),
-        base_snapshot: sim.Snapshot,
+        base_snapshot: sim.SnapshotFor(a, b),
         max_ticks: u32,
         next_batch: *std.atomic.Value(usize),
         num_batches: usize,
@@ -604,6 +617,7 @@ fn EvalContext(comptime a: Spec, comptime b: Spec) type {
                     self.max_ticks,
                     self.seed +% (@as(u64, idx) +% 1) *% 0x9e3779b97f4a7c15,
                     self.jitter,
+                    0,
                     slot,
                 );
             }
@@ -740,10 +754,10 @@ fn runEvaluate(comptime a: Spec, comptime b: Spec, opts: ArenaOptions) !void {
     try stdout.print(
         "NEURO_EVAL fights={d} wins_a={d} wins_b={d} draws={d} timeouts={d} win_rate_a={d:.4} ci95={d:.4} avg_fight_s={d:.2} min_fight_s={d:.2} median_fight_s={d:.2} max_fight_s={d:.2} avg_fight_s_a_wins={d:.2} avg_fight_s_b_wins={d:.2} avg_hp_left_a_wins={d:.4} avg_hp_left_b_wins={d:.4} seconds={d:.3} summary={s}\n",
         .{
-            summary.fights,              summary.wins_a,             summary.wins_b,             summary.draws,
-            summary.timeouts,            summary.win_rate_a,         summary.ci95,               summary.avg_fight_s,
-            summary.min_fight_s,         summary.median_fight_s,     summary.max_fight_s,        summary.avg_fight_s_a_wins,
-            summary.avg_fight_s_b_wins,  summary.avg_hp_left_a_wins, summary.avg_hp_left_b_wins, summary.seconds,
+            summary.fights,             summary.wins_a,             summary.wins_b,             summary.draws,
+            summary.timeouts,           summary.win_rate_a,         summary.ci95,               summary.avg_fight_s,
+            summary.min_fight_s,        summary.median_fight_s,     summary.max_fight_s,        summary.avg_fight_s_a_wins,
+            summary.avg_fight_s_b_wins, summary.avg_hp_left_a_wins, summary.avg_hp_left_b_wins, summary.seconds,
             eval_path,
         },
     );

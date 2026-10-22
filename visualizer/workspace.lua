@@ -1,8 +1,10 @@
 local races=require('races')
+local warrior=require('warrior')
 local ui = require('ui')
 local editor = require('spec_editor')
 local talents = require('talents_data')
 local generator = require('match_generator')
+local neuroGraph = require('neuro_graph')
 local camera = require('arena_camera')
 local icons = require('icons_manager')
 local actions = require('action_catalog')
@@ -29,6 +31,7 @@ end
 local drafts, selected, saved, buttons = {}, 1, nil, {}
 local scrolls, maxScrolls, message = {0,0}, {0,0}, ''
 local expanded, tooltip, tokenFrame = {false,false}, nil, nil
+local tokenDrawPositions
 local schoolOpen = {{},{}}
 local sectionsOpen = {{},{}}
 local input, dragging, arena = nil, nil, nil
@@ -44,7 +47,9 @@ local function resetPositions(d)
 end
 local function commitInput()
     if not input then return true end
-    local ok,err=editor.setCombatStat(input.key,tonumber(input.text))
+    local ok,err
+    if input.key:sub(1,8)=='warrior.' then ok,err=editor.setWarriorStat(input.key:sub(9),tonumber(input.text))
+    else ok,err=editor.setCombatStat(input.key,tonumber(input.text)) end
     if ok then
         playback=false; input=nil; message=''
         generator.invalidateChampions()
@@ -124,7 +129,9 @@ function workspace.select(i)
     return true
 end
 function workspace.getSelected() return expanded[selected] and selected or nil end
-function workspace.setTokenFrame(frame) tokenFrame=frame end
+function workspace.setTokenFrame(frame,drawPositions)
+    tokenFrame,tokenDrawPositions=frame,drawPositions
+end
 local function tile(x,y,size,icon,name,rank,active,detail,action)
     local g=love.graphics
     ui.drawCard(x,y,size,size,false,active,4)
@@ -202,6 +209,10 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                 ui.resetFont()
                 if section~='Gear' then y=y+26 end
                 if section=='Talents' then
+                    if spec.class=='warrior' then
+                        if y>=top and y+42<=bottom then g.setColor(ui.colors.textMuted);g.printf('Partial kit: auto attacks, Heroic Strike, Hamstring, stances. Hover talents for support.',ox+24,y,left-24) end
+                        y=y+46
+                    end
                     local cell=(left-24)/4
                     local size=math.min(44,cell-10)
                     local states=schoolOpen[i]
@@ -244,7 +255,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                                     local allowed,err=talents.canInvest(data,spec.trees,treeName,t)
                                     local detail=t.descriptions and (t.descriptions[tostring(math.min(t.max_ranks,rank+1))] or '') or ''
                                     tile(tx,ty,size,t.icon,t.name,rank..'/'..t.max_ranks,rank>0 or allowed,
-                                        t.name..'  '..rank..'/'..t.max_ranks..'\n'..detail..(not allowed and rank<t.max_ranks and ('\n'..tostring(err)) or ''),edit(function(b)
+                                        t.name..'  '..rank..'/'..t.max_ranks..'\n'..detail..(spec.class=='warrior' and ('\n'..warrior.supportText(t)) or '')..(not allowed and rank<t.max_ranks and ('\n'..tostring(err)) or ''),edit(function(b)
                                             local build=editor.getCurrentBuild()
                                             local ok,why
                                             if b==2 then ok,why=talents.canUninvest(data,build,treeName,t)
@@ -257,6 +268,49 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                         end
                         y=y+bodyHeight+12
                     end
+                elseif section=='Gear' and spec.class=='warrior' then
+                    ui.setFont('small')
+                    if y>=top and y+36<=bottom then
+                        g.setColor(ui.colors.textMuted);g.printf('Explicit weapon stats · gear catalog pending',ox+24,y,left-24)
+                    end
+                    y=y+38
+                    local fields={{'max_health','Health',1,100000},{'armor_damage_reduction','Armor reduction',0,1},{'melee_avoidance_chance','Legacy avoidance',0,1},{'melee_dodge_chance','Dodge chance',0,1},{'melee_parry_chance','Parry chance',0,1},{'melee_block_chance','Block chance',0,1},{'melee_block_value','Block value',0,0,10000}}
+                    for _,field in ipairs(warrior.fields) do
+                        if not field[1]:match('^off_hand%.') or spec.warrior.off_hand then
+                            fields[#fields+1]={'warrior.'..field[1],field[2],field[3],field[4]}
+                        end
+                    end
+                    for _,field in ipairs(fields) do
+                        local key,label=field[1],field[2]
+                        local value=key:sub(1,8)=='warrior.' and warrior.value(spec.warrior,key:sub(9)) or spec.combat_stats[key]
+                        if key=='warrior.main_hand.two_handed' then value=spec.warrior.main_hand.two_handed end
+                        if key=='warrior.off_hand' then value=spec.warrior.off_hand~=nil end
+                        if key=='warrior.damage_taken_rage' then value=spec.warrior.damage_taken_rage end
+                        local fx,fw=ox+24+(left-24)*0.58,(left-24)*0.42
+                        if y>=top and y+26<=bottom then
+                            g.setColor(ui.colors.textMuted);g.print(label,ox+24,y+5)
+                            if type(field[3])=='table' then
+                                local action=ui.dropdown('warrior_'..i..key,fx,y,fw,26,value,field[3],edit(function(nextValue)
+                                    local ok,err=editor.setWarriorStat(key:sub(9),nextValue);message=ok and '' or err
+                                end),function(v)
+                                    if key=='warrior.main_hand.two_handed' then return v and 'Two hand' or 'One hand' end
+                                    if key=='warrior.off_hand' then return v and 'Weapon' or 'Empty' end
+                                    if key=='warrior.damage_taken_rage' then return v and 'Enabled' or 'Disabled' end
+                                    return v:sub(1,1):upper()..v:sub(2)
+                                end)
+                                buttons[#buttons+1]={x=fx,y=y,w=fw,h=26,action=function(b) if b==1 and commitInput() then action() end end}
+                            else
+                                ui.drawCard(fx,y,fw,26,false,input and input.key==key,3)
+                                g.setColor(ui.colors.text);g.print(input and input.key==key and (input.text..'|') or tostring(value),fx+5,y+5)
+                                buttons[#buttons+1]={x=fx,y=y,w=fw,h=26,action=edit(function()
+                                    if commitInput() then input={key=key,text=tostring(value),replace=true} end
+                                end)}
+                            end
+                        end
+                        y=y+30
+                    end
+                    if y>=top and y+26<=bottom then button(ox+24,y,left-24,'Save spec',function() saveUnit(i) end) end
+                    y=y+32;ui.resetFont()
                 elseif section=='Gear' then
                     local half=(left-30)/2
                     if y>=top and y+26<=bottom then
@@ -402,7 +456,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
     local halfW = (right - 24 - 6) / 2
     local topY = 24
 
-    button(rx, topY, right-24, generator.isActive() and 'Evolving...' or 'Evolve/Train', function()
+    button(rx, topY, right-24, generator.isActive() and 'Running...' or 'Evolve/Train', function()
         local launch=prepareLaunchConfig()
         if not launch then return end
         local ok,err=generator.startLeaguePlay(launch)
@@ -447,7 +501,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
     local gh = 112
     ui.drawCard(gx, gy, gw, gh, false, false, 4)
 
-    local midY = gy + gh / 2
+    local midY = gy + (26 + gh - 14) / 2
     -- Baseline (50% / 0 net advantage)
     g.setColor(0.18, 0.24, 0.35, 0.7)
     g.setLineWidth(1)
@@ -461,15 +515,19 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
     g.print('B', gx + 6, gy + gh - 16)
     ui.resetFont()
 
+    local graphMX,graphMY=love.mouse.getPosition()
+    if graphMX>=gx and graphMX<=gx+gw and graphMY>=gy and graphMY<=gy+gh then
+        tooltip={text="Both lines show Fighter A's score (wins + half of draws).\nSolid blue / Train: current candidate against archived opponents; the evolving side alternates.\nDashed gold / Pair: current champions against each other in 112 fights, using the batch evaluation settings.\nThe final Pair point uses the saved champions. These percentages can differ and need not rise together.",x=graphMX,y=graphMY}
+    end
     local hist = nt and nt.history
-    if hist and #hist > 1 then
+    if hist and #hist > 0 then
         local maxGen = 1
         for _, pt in ipairs(hist) do
             if (pt.gen or 0) > maxGen then maxGen = pt.gen end
         end
         local plotX = gx + 22
         local plotW = gw - 30
-        local plotH = gh - 16
+        local plotH = gh - 40
 
         local points = {}
         local pairPoints = {}
@@ -477,10 +535,12 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             local xPct = (maxGen > 0) and ((pt.gen or idx) / maxGen) or ((idx - 1) / (#hist - 1))
             if #hist == 1 then xPct = 0.5 end
             local px = plotX + xPct * plotW
-            -- Win rate A: 1.0 -> top (gy + 8), 0.5 -> midY, 0.0 -> bottom (gy + gh - 8)
+            -- Keep the plot below the legend so 100% scores remain visible.
             local py = midY - ((pt.win_rate_a or 0.5) - 0.5) * 2 * (plotH / 2)
-            points[#points + 1] = px
-            points[#points + 1] = py
+            if pt.win_rate_a ~= nil then
+                points[#points + 1] = px
+                points[#points + 1] = py
+            end
             if pt.pair_win_rate_a then
                 local pairY = midY - (pt.pair_win_rate_a - 0.5) * plotH
                 pairPoints[#pairPoints + 1] = px
@@ -488,35 +548,26 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             end
         end
 
-        if #points >= 4 then
+        neuroGraph.draw(g,points,pairPoints,ui.colors.accentGold)
+
+        if #points >= 2 then
             g.setColor(0.35, 0.77, 0.98, 0.9)
-            g.setLineWidth(1.5)
-            g.line(points)
-            g.setLineWidth(1)
-
-            -- Endpoint marker
-            local lastX = points[#points - 1]
-            local lastY = points[#points]
-            g.setColor(0.35, 0.77, 0.98, 1.0)
-            g.circle('fill', lastX, lastY, 3)
-
             -- Training candidate rate label
-            local lastWR = (hist[#hist].win_rate_a or 0.5) * 100
+            local lastWR = (nt.win_rate_a or 0.5) * 100
+            for i=#hist,1,-1 do
+                if hist[i].win_rate_a ~= nil then lastWR=hist[i].win_rate_a*100;break end
+            end
             ui.setFont('small')
             g.setColor(0.35, 0.77, 0.98, 1.0)
-            g.print(string.format('Train %.0f%%', lastWR), gx + 22, gy + 3)
+            g.print(string.format('Train A %.0f%%', lastWR), gx + 22, gy + 3)
             ui.resetFont()
         end
 
-        if #pairPoints >= 4 then
+        if #pairPoints >= 2 then
             g.setColor(ui.colors.accentGold)
-            g.setLineWidth(1.5)
-            g.line(pairPoints)
-            g.setLineWidth(1)
-            g.circle('fill', pairPoints[#pairPoints - 1], pairPoints[#pairPoints], 3)
             ui.setFont('small')
             g.setColor(ui.colors.accentGold)
-            g.print(string.format('Pair %.0f%%', (hist[#hist].pair_win_rate_a or 0.5) * 100), gx + 92, gy + 3)
+            g.print(string.format('Pair A %.0f%%', (hist[#hist].pair_win_rate_a or 0.5) * 100), gx + 120, gy + 3)
             ui.resetFont()
         end
     else
@@ -764,10 +815,10 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             buttons[#buttons+1]={x=fx+x*scale,y=fy+y*scale,w=width*scale,h=height*scale,
                 action=function(b) if b==1 and commitInput() then action() end end}
         end
-        anchor('class_'..i,4,3,62,62,spec.class,{'warlock','frost_mage','priest'},function(class)
+        anchor('class_'..i,4,3,62,62,spec.class,{'warlock','frost_mage','priest','warrior'},function(class)
             if class==drafts[i].class then return end
             editUnit(i,function() editor.setClass(class);scrolls[i]=0 end)()
-        end,function(class) return class=='frost_mage' and 'Mage' or (class=='priest' and 'Priest' or 'Warlock') end,
+        end,function(class) return class=='frost_mage' and 'Mage' or (class=='priest' and 'Priest' or (class=='warrior' and 'Warrior' or 'Warlock')) end,
             nil,{portrait=true,menuWidth=180})
         local preset
         for _,candidate in ipairs(saved) do
@@ -777,11 +828,11 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
             editor.loadSpec(value);scrolls[i]=0
         end),function(value) return value.name or value.filename or 'Unnamed spec' end,
             (i==1 and 'A · ' or 'B · ')..(spec.name or 'Custom spec'),{menuWidth=320})
-        anchor('class_text_'..i,72,27,118,22,spec.class,{'warlock','frost_mage','priest'},function(class)
+        anchor('class_text_'..i,72,27,118,22,spec.class,{'warlock','frost_mage','priest','warrior'},function(class)
             if class~=drafts[i].class then
                 editUnit(i,function() editor.setClass(class);scrolls[i]=0 end)()
             end
-        end,function(class) return class=='frost_mage' and 'Mage' or (class=='priest' and 'Priest' or 'Warlock') end,
+        end,function(class) return class=='frost_mage' and 'Mage' or (class=='priest' and 'Priest' or (class=='warrior' and 'Warrior' or 'Warlock')) end,
             nil,{menuWidth=180})
         local race=races.normalize(spec.race,spec.class)
         anchor('race_'..i,194,27,118,22,race,races.choices(spec.class),function(value)
@@ -833,9 +884,17 @@ function workspace.mousepressed(x,y,b)
     end
     local view=replayViewport
     if b==1 and view and tokenFrame then
+        local scale=camera.worldScale
+        local ax,ay,bx,by
+        if tokenDrawPositions then
+            ax,ay,bx,by=tokenDrawPositions[1],tokenDrawPositions[2],tokenDrawPositions[3],tokenDrawPositions[4]
+        else
+            ax,ay,bx,by=camera.tokenPositions(tokenFrame[3]*scale,(tokenFrame[49] or 0)*scale,
+                tokenFrame[4]*scale,(tokenFrame[50] or 0)*scale)
+        end
         for i=2,1,-1 do
             local vx,vy=ui.viewportPoint(view,x,y)
-            local px,py=camera.worldPoint(view,tokenFrame[2+i],tokenFrame[48+i] or 0)
+            local px,py=camera.worldPoint(view,(i==1 and ax or bx)/scale,(i==1 and ay or by)/scale)
             if x>=view.x and x<=view.x+view.w and y>=view.y and y<=view.y+view.h
                 and vy>154 and vy<view.virtualH-(arena and 60 or 120) and (vx-px)^2+(vy-py)^2<=(32*camera.zoom)^2 then
                 if not focus(i) then return true end
@@ -921,7 +980,7 @@ end
 function workspace.preview()
     init(); capture()
     local frame,meta={}, {total_time=0,victor=-1}
-    for i=1,104 do frame[i]=0 end
+    for i=1,136 do frame[i]=0 end
     frame[2]=distance()
     local kinds={imp=1,succubus=2,felhunter=3,voidwalker=4}
     local hp={500,700,900,1200}
@@ -933,6 +992,12 @@ function workspace.preview()
         local felVitality = spec.class=='warlock' and (t['105903'] or t[105903] or 0) or 0
         local maxMana = races.maxMana(spec.race,spec.combat_stats.max_mana)*(1+0.05*felVitality)
         meta['max_mana_'..side]=maxMana
+        if spec.class=='warrior' then
+            meta['max_rage_'..side]=warrior.maxRage(spec)
+            frame[124+i]=math.min(spec.warrior.starting_rage,warrior.maxRage(spec))
+            frame[126+i]=warrior.stances[spec.warrior.starting_stance]
+            maxMana=0;meta['max_mana_'..side]=1
+        end
         meta['action_loadout_'..side]=spec.action_loadout
         meta['race_'..side]=spec.race or 'human'
         meta['spec_'..side]=spec.class

@@ -4,6 +4,7 @@ local classes = require('class_view')
 local icons = require('icons_manager')
 local frames = {}
 local catalog = require('action_catalog')
+local warrior = require('warrior')
 local pets = {'Imp','Succubus','Felhunter','Voidwalker'}
 local petIcons = {'pet_imp','pet_succubus','pet_felhunter','pet_voidwalker'}
 local petHp = {500,700,900,1200}
@@ -16,19 +17,25 @@ function frames.describe(meta,f,side,extra)
     local spec=classes.spec(meta,side)
     local mage=spec=='frost_mage'
     local priest=spec=='priest'
+    local isWarrior=spec=='warrior'
     local kind=value(83+side*4)
     local hp=value(84+side*4)
     local warlockTalents=meta and meta[side==0 and 'warlock_talents_a' or 'warlock_talents_b']
     local petMaxHp=petHp[kind] and petHp[kind]*(1+0.05*((warlockTalents and warlockTalents.fel_vitality) or 0)) or nil
     local cast=value(11)
     local isChannel=(not mage and cast==5) or (priest and cast==15)
-    local result={name=meta[side==0 and 'name_a' or 'name_b'] or (mage and 'Mage' or (priest and 'Priest' or 'Warlock')),
+    local result={name=meta[side==0 and 'name_a' or 'name_b'] or (mage and 'Mage' or (priest and 'Priest' or (isWarrior and 'Warrior' or 'Warlock'))),
         class=classes.classIcon(meta,side),hp=value(5),mana=value(7),shield=(mage or priest) and value(45) or 0,
         cast=cast,castName=classes.name(meta,side,cast),castIcon=classes.icon(meta,side,cast>0 and cast or value(39)),
         castProgress=clamp(isChannel and value(13)/math.max(0.001,value(15))
             or 1-value(13)/math.max(0.001,value(15))),
         castRemaining=math.max(0,value(13)),cooldowns={},buffs={},debuffs={},
-        pet=(not mage and not priest) and pets[kind] and {name=pets[kind],icon=petIcons[kind],hp=hp,maxHp=petMaxHp} or nil}
+        pet=spec=='warlock' and pets[kind] and {name=pets[kind],icon=petIcons[kind],hp=hp,maxHp=petMaxHp} or nil}
+    result.resource=isWarrior and 'rage' or 'mana'
+    result.power=isWarrior and value(125) or result.mana
+    result.rage=isWarrior and value(125) or nil
+    result.stance=isWarrior and (warrior.stanceNames[value(127)] or 'Battle') or nil
+    result.swing=isWarrior and value(129) or nil
     local suffix=side==0 and 'a' or 'b'
     local loadout=meta['action_loadout_'..suffix]
     local mask=meta['action_mask_'..suffix]
@@ -55,6 +62,19 @@ function frames.describe(meta,f,side,extra)
         if value(25)>0 or result.shield>0 then
             result.buffs[1]={icon='icebarrier',remaining=value(25)>0 and value(25) or 20,total=20}
         end
+    elseif isWarrior then
+        cd('Battle Stance','ability_warrior_offensivestance',135,1)
+        if value(153)>0 then result.buffs[#result.buffs+1]={icon='spell_shadow_unholyfrenzy',remaining=value(153),total=12} end
+        if value(155)>0 then result.buffs[#result.buffs+1]={icon='ability_ghoulfrenzy',remaining=0,total=0,count=value(155)} end
+        cd('Charge','ability_warrior_charge',147,15)
+        cd('Intercept','ability_rogue_sprint',149,value(151)>0 and value(151) or 30)
+        cd('Bloodthirst','spell_nature_bloodlust',137,6)
+        cd('Whirlwind','ability_whirlwind',139,10)
+        cd('Death Wish','spell_shadow_deathpact',141,180)
+        if value(143)>0 then result.buffs[#result.buffs+1]={icon='spell_shadow_deathpact',remaining=value(143),total=30} end
+        if value(145)>0 then result.buffs[#result.buffs+1]={icon='spell_nature_bloodlust',remaining=value(145),total=10} end
+        result.buffs[#result.buffs+1]={icon=warrior.stanceIcons[value(127)] or warrior.stanceIcons[1],remaining=0,total=0}
+        if value(131)>0 then result.buffs[#result.buffs+1]={icon='ability_rogue_ambush',remaining=0,total=0} end
     elseif priest then
         if value(115)>0 then result.buffs[#result.buffs+1]={icon='spell_holy_renew',remaining=value(115),total=15} end
         if value(117)>0 then result.buffs[#result.buffs+1]={icon='spell_frost_windwalkon',remaining=0,total=0} end
@@ -104,6 +124,7 @@ function frames.describe(meta,f,side,extra)
         if remaining>0 then result.debuffs[#result.debuffs+1]={icon=icon,remaining=remaining,total=total,count=count} end
     end
     aura('spell_shadow_gathershadows',value(109),3) -- Blackout stun
+    if classes.spec(meta,1-side)=='warrior' then aura('ability_shockwave',f[133+(1-side)] or 0,15) end
     aura('horror',value(23),3)
     aura('seduction',value(101),15)
     if extra.lockSchool then
@@ -153,7 +174,7 @@ function frames.draw(meta,f,side,x,y,selected,extra)
     local hpLabel=string.format('%d HP',math.floor(d.hp))
     if d.shield>0 then hpLabel=hpLabel..string.format(' (+%d)',math.floor(d.shield)) end
     bar(bx,y+53,bw,18,vitals.fraction(meta,side,'health',d.hp),{0.16,0.60,0.23,1},hpLabel)
-    bar(bx,y+74,bw,14,vitals.fraction(meta,side,'mana',d.mana),{0.12,0.35,0.73,1},string.format('%d MP',math.floor(d.mana)))
+    bar(bx,y+74,bw,14,vitals.fraction(meta,side,d.resource,d.power),d.resource=='rage' and {0.75,0.16,0.10,1} or {0.12,0.35,0.73,1},string.format('%d %s',math.floor(d.power),d.resource=='rage' and 'RAGE' or 'MP'))
     local cx,cy=x+35,y+34
     g.setColor(0.01,0.015,0.02,1);g.circle('fill',cx,cy,31)
     g.stencil(function() g.circle('fill',cx,cy,28) end,'replace',1)
@@ -170,7 +191,7 @@ function frames.draw(meta,f,side,x,y,selected,extra)
     ui.setFont('normal')
     bar(bx+19,y+91,bw-19,16,flash and 1 or (d.cast>0 and d.castProgress or 0),{0.72,0.51,0.16,1},
         flash and classes.name(meta,side,flash.id) or
-        (d.cast>0 and string.format('%s · %.1fs',d.castName,d.castRemaining) or 'Ready'),alpha)
+        (d.cast>0 and string.format('%s · %.1fs',d.castName,d.castRemaining) or (d.stance and string.format('%s · Swing %.1fs',d.stance,d.swing) or 'Ready')),alpha)
     if d.pet then
         ui.setFont('small')
         text(d.pet.name,x+6,y+102,60)

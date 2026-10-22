@@ -44,6 +44,26 @@ test "combat stat probabilities reject invalid values" {
     try std.testing.expectError(error.InvalidCombatStats, (r.Stats{ .spell_hit_chance = 1.01 }).validate());
     try std.testing.expectError(error.InvalidCombatStats, (r.Stats{ .fire_resist_chance = -0.1 }).validate());
     try std.testing.expectError(error.InvalidCombatStats, (r.Stats{ .spell_crit_chance = std.math.nan(f32) }).validate());
+    try std.testing.expectError(error.InvalidCombatStats, (r.Stats{ .melee_dodge_chance = 0.4, .melee_parry_chance = 0.4, .melee_block_chance = 0.3, .melee_block_value = 10 }).validate());
+    try std.testing.expectError(error.InvalidCombatStats, (r.Stats{ .melee_block_chance = 0.2 }).validate());
+}
+
+test "melee attack table distinguishes dodge parry block and crit outcomes" {
+    var rolls: [3]V = .{ @splat(0), @splat(0), @splat(0) };
+    for (0..16) |lane| rolls[1][lane] = switch (lane % 4) {
+        0 => 0.1,
+        1 => 0.3,
+        2 => 0.5,
+        else => 0.9,
+    };
+    const resolved = r.meleeRolls(@splat(100), @splat(1), @splat(0.2), @splat(0.2), @splat(0.2), @splat(30), @splat(1), @splat(2), rolls, @splat(true));
+    const expected = [_]r.Outcome{ .dodge, .parry, .block, .crit };
+    const damage = [_]f32{ 0, 0, 70, 200 };
+    for (0..16) |lane| {
+        try std.testing.expectEqual(@intFromEnum(expected[lane % 4]), resolved.outcome[lane]);
+        try std.testing.expectEqual(lane % 4 >= 2, resolved.landed[lane]);
+        try std.testing.expectEqual(damage[lane % 4], resolved.damage[lane]);
+    }
 }
 
 test "spell resolution talent ranks preserve neighbors and match scalar modifiers" {
@@ -473,5 +493,3 @@ test "Agonizing Flames provides Searing Pain crit bonus and Destruction damage b
         try std.testing.expectApproxEqAbs(@as(f32, 143.0), proj_damage, 0.01);
     }
 }
-
-

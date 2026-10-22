@@ -15,7 +15,7 @@ A **Hall of Fame** (mixture of past frozen champions) is maintained for both sid
 ## 1. Compact SIMD Neural Policy Network (`src/neuro_policy.zig`)
 - [x] **Architecture Design**:
   - Keep weights compact (~1,500 – 3,000 parameters) to optimize evolutionary efficiency (`ParamCount = 1,588`: 36 inputs $\to$ 24 ReLU hidden units $\to$ 28 outputs).
-  - Residual Tactical Prior (`tacticalPrior`): Combines baseline tactical awareness (cast continuation, interrupt urgency, DoT uptime, range/CC awareness) with the evolved neural network residuals so evolution immediately explores high-level strategy rather than wasting generations learning basic mechanics.
+  - Learned ability and movement logits refine finite tactical priors for every class, providing a useful starting policy while remaining overridable.
   - Use Zig `@Vector(16, f32)` SIMD operations for 16-lane simultaneous batch forward passes (`Policy.forward16`).
 - [x] **Combat State Feature Extraction**:
   - Distance between fighters, relative positions.
@@ -25,9 +25,9 @@ A **Hall of Fame** (mixture of past frozen champions) is maintained for both sid
   - CC states and diminishing returns (Stun, Fear, Silence, Lockout, Horror).
   - Active auras and DoT timers (Agony, Corruption, Immolate, Siphon Life, Shields).
   - Projectiles currently in flight and active pet HP ratio.
-- [x] **Action Selection, Pruning & Masking**:
+- [x] **Action Selection & Legal Masking**:
   - Apply legal ability mask (cooldowns, out of range, out of mana, silence/lockout).
-  - Hard tactical pruning against self-destructive actions: blocks `CancelCast` spam unless the enemy interrupt is off cooldown and the cast is in the 25%–85% juke window; blocks refreshing DoTs that still have $> 2.5\text{s}$ remaining; penalizes `IdleOrManeuver` when off GCD with legal spells available.
+  - Legal cast cancellation, early DoT refreshes, idling, stance changes and movement remain available regardless of tactical context. Casting and crowd control still enforce physical movement restrictions.
   - Temperature-based exploration noise during training; strict argmax during champion replay generation (`selectActions16`, `selectActionSingle`).
 
 ---
@@ -81,3 +81,41 @@ A **Hall of Fame** (mixture of past frozen champions) is maintained for both sid
 - [x] **Policy Inspector / Telemetry**:
   - Displays policy generation stats (epoch progress, win rate, throughput in fights/s).
   - Added **`Champ A vs MCTS B`** and **`MCTS A vs Champ B`** buttons after evolution completes to pit the evolved champion policies directly against the MCTS engine.
+
+## Graph and evaluation semantics (2026-10-22)
+
+The graph works for all supported classes, including Warrior. **Train A** is
+Fighter A's score against the sampled opponent archive (complemented when B is
+training); **Pair A** is the current champions' score over 112 fights. Both count
+wins as one and draws as one half. The archive and current champions are different
+opponents, so these curves can disagree and alternate sharply between epochs.
+The final graph point reports the archive-selected saved pair without inventing
+a new training sample. Hover the graph for this explanation.
+
+Champion pair and batch evaluation use strict argmax, the configured opening and
+position jitter, and a common seed schedule. Training retains 0.05 action noise.
+For the same seed, presets, saved policies, duration, jitter and 112 fights, final
+Pair A and batch A score should agree. Other sample sizes or seeds can differ.
+
+Validation: ReleaseFast build and Lua graph syntax/telemetry checks passed,
+including zero values, pair-only updates and final selection. Two short Warrior
+training runs (Warrior on A and B; one and two workers; zero and nonzero jitter)
+saved/reloaded champions and reproduced the final Pair A score exactly in
+112-fight batch evaluation: 0.41964285714285715 and 0.7276785714285714.
+Artifacts were written under `/tmp/warrior-graph`, leaving saved user champions
+untouched. These short 15-second fixtures validate telemetry agreement, not
+class balance or training convergence.
+
+### Restored neural baseline guidance
+
+League training plays candidate neural policies against archived neural champions;
+it does not call scripted MCTS rollouts. Neural policies again add tactical and
+positioning priors to learned logits, including Warrior rage, stance, gap closer,
+Hamstring and Fury special guidance. These are runtime residual scores, not saved
+initial weights. Former tactical exclusions are finite penalties (-2.5), so every
+simulator-legal action remains available for evolution to discover.
+
+Champion playback and explicitly configured neural MCTS rollouts use the same
+selector. Ordinary MCTS is unchanged. Existing NEPL weights remain compatible;
+resume training with the restored guidance. Fitness still includes health/resource
+margin and time shaping. Training quality has not been benchmarked for this change.

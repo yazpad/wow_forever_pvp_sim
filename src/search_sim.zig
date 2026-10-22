@@ -29,7 +29,9 @@ fn actionWrite(comptime name: []const u8, comptime has_priest: bool) ActionWrite
         if (std.mem.startsWith(u8, name, "horror_timer_")) return .unchanged;
     }
     if (has_priest) {
-        inline for (.{ "priest_pi_", "action6_", "soul_link_" }) |prefix| if (std.mem.startsWith(u8, name, prefix)) return .shared;
+        // Enemy Dispel Magic can remove Inner Fire, so both sides must merge
+        // these columns even when the priest taking the action is not owner.
+        inline for (.{ "priest_pi_", "inner_fire_", "action6_", "soul_link_" }) |prefix| if (std.mem.startsWith(u8, name, prefix)) return .shared;
     }
     inline for (.{ "five_sec_timer_", "race_", "racial_", "priest_pi_", "inner_fire_", "projectile_", "mana_", "gcd_", "move_intent_", "action6_", "death_coil_cd_", "shadowburn_cd_", "soul_shards_", "conflagrate_", "spell_rng_", "spell_outcome_", "shadow_flame_timer_", "nightfall_timer_", "cast_pushback_count_", "channel_elapsed_", "pushback_rng_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return .owner;
@@ -46,6 +48,17 @@ pub const Snapshot = struct {
     extras: [10]f32 = @splat(0),
     tick: u32 = 0,
 };
+/// Preserve the exact legacy type/layout for caster-only matches. Warrior
+/// dynamic state is present only in matchups that can actually use it.
+pub fn SnapshotFor(comptime a: Spec, comptime b: Spec) type {
+    if (a != .warrior and b != .warrior) return Snapshot;
+    return struct {
+        words: [columns]u32,
+        extras: [10]f32 = @splat(0),
+        tick: u32 = 0,
+        warrior: [@import("warrior_arena.zig").count(a == .warrior, b == .warrior) * @import("warrior_arena.zig").column_count]u32 = @splat(0),
+    };
+}
 fn simdMask(ready: @Vector(16, bool), actions: @Vector(16, u32)) @Vector(16, bool) {
     return @select(bool, ready, actions == @as(@Vector(16, u32), @splat(5)), @as(@Vector(16, bool), @splat(false)));
 }
@@ -62,7 +75,9 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
     return struct {
         pub const SpecA = a;
         pub const SpecB = b;
+        pub const StateSnapshot = SnapshotFor(a, b);
         const Self = @This();
+        const has_warrior = a == .warrior or b == .warrior;
         const has_priest = (a == .priest or b == .priest);
         const Arena = @import("multi_spec.zig").ArenaPool(a, b);
         arena: Arena,
@@ -134,6 +149,18 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 @memset(@field(pool.combat(), if (side) "race_a" else "race_b"), @intFromEnum(race));
             }
         }
+        /// Immutable Warrior configuration is installed in all staging arenas
+        /// and each search worker separately, never copied inside snapshots.
+        pub fn setWarriorConfig(self: *Self, comptime side: bool, config: @import("warrior_arena.zig").Config) !void {
+            if ((if (side) a else b) != .warrior) @compileError("Not a Warrior side");
+            try config.validate();
+            inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
+                var installed = config;
+                const current = pool.warrior.configs[@TypeOf(pool.warrior).slot(side)].target_melee;
+                if (!installed.target_melee.configured and current.configured) installed.target_melee = current;
+                pool.warrior.configs[@TypeOf(pool.warrior).slot(side)] = installed;
+            }
+        }
         pub fn setCombatStats(self: *Self, comptime side: bool, stats: @import("spell_resolution.zig").Stats) !void {
             try stats.validate();
             var adjusted = stats;
@@ -147,6 +174,15 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
             }
             inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
                 for (0..16) |lane| @import("spell_resolution.zig").setStats(pool.combat(), side, lane, adjusted);
+                const melee_table = @import("warrior_arena.zig").MeleeTable.fromStats(adjusted);
+                if (melee_table.configured) {
+                    if (a == .warrior and !side) pool.warrior.configs[0].target_melee = melee_table;
+                    if (b == .warrior and side) pool.warrior.configs[@TypeOf(pool.warrior).slot(false)].target_melee = melee_table;
+                }
+                if ((if (side) a else b) == .warrior) {
+                    @memset(@field(pool.combat(), if (side) "mana_a" else "mana_b"), 0);
+                    @memset(@field(pool.combat(), if (side) "max_mana_a" else "max_mana_b"), 1);
+                }
             }
         }
         pub fn setActionMaskA(self: *Self, mask: u32) void {
@@ -160,11 +196,13 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 .warlock => @intCast(@intFromEnum(combat.WarlockAction.IdleOrManeuver)),
                 .frost_mage => @intCast(@intFromEnum(@import("spec.zig").FrostAction.IdleOrManeuver)),
                 .priest => @intCast(@intFromEnum(@import("spec.zig").PriestAction.IdleOrManeuver)),
+                .warrior => 0,
             };
             const cancel_id: u5 = switch (spec) {
                 .warlock => @intCast(@intFromEnum(combat.WarlockAction.CancelCast)),
                 .frost_mage => @intCast(@intFromEnum(@import("spec.zig").FrostAction.CancelCast)),
                 .priest => @intCast(@intFromEnum(@import("spec.zig").PriestAction.CancelCast)),
+                .warrior => 10,
             };
             return (@as(u32, 1) << idle_id) | (@as(u32, 1) << cancel_id);
         }
@@ -181,18 +219,21 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
         pub fn getActionMaskB(self: *const Self, lane: usize) [combat.WarlockAction.COUNT]@Vector(16, bool) {
             return filterActions(self.allowed_actions_b, self.arena.getActionMaskB(lane));
         }
-        pub fn snapshot(self: *Self, lane: usize) Snapshot {
+        pub fn snapshot(self: *Self, lane: usize) StateSnapshot {
             @setEvalBranchQuota(40000);
-            var s: Snapshot = .{ .words = undefined, .tick = self.ticks[lane] };
+            var s: StateSnapshot = .{ .words = undefined, .tick = self.ticks[lane] };
             inline for (fields[3..], 0..) |f, j| {
                 if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_") and !std.mem.startsWith(u8, f.name, "talent_extra_")) s.words[snapshotIndex(j)] = @bitCast(@field(self.arena.combat(), f.name)[lane]);
             }
             if (@hasField(Arena, "extras")) inline for (0..10) |j| {
                 s.extras[j] = self.arena.extras[j * 16 + lane];
             };
+            if (has_warrior) {
+                for (&s.warrior, 0..) |*word, j| word.* = self.arena.warrior.words[j * 16 + lane];
+            }
             return s;
         }
-        pub fn restore(self: *Self, lane: usize, s: Snapshot) void {
+        pub fn restore(self: *Self, lane: usize, s: StateSnapshot) void {
             @setEvalBranchQuota(40000);
             inline for (fields[3..], 0..) |f, j| {
                 if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_") and !std.mem.startsWith(u8, f.name, "talent_extra_")) @field(self.arena.combat(), f.name)[lane] = @bitCast(s.words[snapshotIndex(j)]);
@@ -201,8 +242,11 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 self.arena.extras[j * 16 + lane] = s.extras[j];
             };
             self.ticks[lane] = s.tick;
+            if (has_warrior) {
+                for (s.warrior, 0..) |word, j| self.arena.warrior.words[j * 16 + lane] = word;
+            }
         }
-        pub fn restoreAll(self: *Self, s: Snapshot) void {
+        pub fn restoreAll(self: *Self, s: StateSnapshot) void {
             @setEvalBranchQuota(40000);
             inline for (fields[3..], 0..) |f, j| {
                 if (comptime !std.mem.startsWith(u8, f.name, "talent_ranks_") and !std.mem.startsWith(u8, f.name, "talent_flags_") and !std.mem.startsWith(u8, f.name, "talent_extra_")) {
@@ -215,6 +259,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 self.arena.extras[j * 16 ..][0..16].* = @as(@Vector(16, f32), @splat(s.extras[j]));
             };
             self.ticks = @splat(s.tick);
+            if (has_warrior) for (s.warrior, 0..) |word, j| @memset(self.arena.warrior.words[j * 16 ..][0..16], word);
         }
         pub fn ready(self: *Self, comptime side: bool) @Vector(16, bool) {
             const result = if (side) self.arena.needsDecisionA(0) else self.arena.needsDecisionB(0);
@@ -248,6 +293,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                     .warlock => action_catalog.warlock_starts_cast[id],
                     .frost_mage => action_catalog.frost_mage_starts_cast[id],
                     .priest => action_catalog.priest_starts_cast[id],
+                    .warrior => action_catalog.warrior_starts_cast[id],
                 };
                 if (controlled or casting or starts_cast) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
             }
@@ -276,6 +322,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                     .warlock => action_catalog.warlock_starts_cast[id],
                     .frost_mage => action_catalog.frost_mage_starts_cast[id],
                     .priest => action_catalog.priest_starts_cast[id],
+                    .warrior => action_catalog.warrior_starts_cast[id],
                 };
                 if (controlled or casting or starts_cast) c.add(.{ .ability = @intCast(id) }) else for ([_]f32{ -1, 0, 1 }) |m| c.add(.{ .ability = @intCast(id), .movement = m });
             }
@@ -344,6 +391,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 @memcpy(@field(self.original.combat(), f.name), @field(self.arena.combat(), f.name));
             }
             if (@hasField(Arena, "extras")) @memcpy(self.original.extras, self.arena.extras);
+            if (has_warrior) @memcpy(self.original.warrior.words, self.arena.warrior.words);
             if (side_a) self.arena.stageActionA(0, actions, movement) else self.arena.stageActionB(0, actions, movement);
             inline for (fields[3..]) |f| {
                 if (comptime actionWrite(f.name, has_priest) == .unchanged or
@@ -360,6 +408,14 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 }
                 @field(self.arena.combat(), f.name)[0..16].* = value;
             }
+            if (has_warrior) inline for (.{ true, false }) |owner| {
+                if (comptime (if (owner) a else b) == .warrior) inline for (0..@import("warrior_arena.zig").column_count) |j| {
+                    const offset = (@TypeOf(self.arena.warrior).slot(owner) * @import("warrior_arena.zig").column_count + j) * 16;
+                    const old: @Vector(16, u32) = self.original.warrior.words[offset..][0..16].*;
+                    const changed: @Vector(16, u32) = self.arena.warrior.words[offset..][0..16].*;
+                    self.arena.warrior.words[offset..][0..16].* = @select(u32, ready_mask, changed, old);
+                };
+            };
             if ((if (side_a) a else b) == .frost_mage and @reduce(.Or, simdMask(ready_mask, actions)))
                 _ = @import("movement_2d.zig").refresh(self.arena.combat(), 0, true);
             if (@hasField(Arena, "extras")) inline for (0..10) |j| {
@@ -407,6 +463,10 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 ma[i] = aa[i].movement;
                 mb[i] = bb[i].movement;
             }
+            if (has_warrior) {
+                @memcpy(self.scratch.warrior.words, self.arena.warrior.words);
+                @memcpy(self.original.warrior.words, self.arena.warrior.words);
+            }
             self.arena.stageActionA(0, va, ma);
             self.scratch.stageActionB(0, vb, mb);
             inline for (fields[3..]) |f| {
@@ -424,6 +484,14 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 if (comptime std.mem.eql(u8, f.name, "distance")) value = @min(@as(V, @splat(35)), @max(@as(V, @splat(0)), old + (x - old) + (y - old)));
                 @field(self.arena.combat(), f.name)[0..16].* = value;
             }
+            if (has_warrior) inline for (.{ true, false }) |owner| {
+                if (comptime (if (owner) a else b) == .warrior) inline for (0..@import("warrior_arena.zig").column_count) |j| {
+                    const offset = (@TypeOf(self.arena.warrior).slot(owner) * @import("warrior_arena.zig").column_count + j) * 16;
+                    const old: @Vector(16, u32) = self.original.warrior.words[offset..][0..16].*;
+                    const changed: @Vector(16, u32) = (if (owner) self.arena.warrior.words else self.scratch.warrior.words)[offset..][0..16].*;
+                    self.arena.warrior.words[offset..][0..16].* = @select(u32, if (owner) ra else rb, changed, old);
+                };
+            };
             // Newly activated root/snare immunity wins simultaneous applications.
             inline for (.{ true, false }) |side| {
                 const requested = if (side) va else vb;
