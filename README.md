@@ -158,3 +158,4 @@ Each caster has four fixed projectile slots in aligned SoA arrays, with no per-s
 ## Learned MCTS experiment
 
 See [the fresh value-learning strategy](LEARNED_MCTS_STRATEGY.md) for class-specific versus shared models, the frozen bare-MCTS control, validation gates, and reproducible commands. Measured pilot outcomes are recorded in [learning results](benchmarks/learning/RESULTS.md). The experimental arena is separate from normal fight generation.
+# wow_forever_pvp_sim
