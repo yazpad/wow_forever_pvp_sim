@@ -322,3 +322,29 @@ casts/ticks. Missiles retain damage calculated at launch. Search caches retain
 only static talents; live pet bonuses are recomputed after snapshot restore.
 Pet-targeted attacks and pet Shadow damage spells are not modeled yet. Soul Link
 transfers damage after owner mitigation without applying mitigation twice.
+
+
+### Provisional level-60 stat profiles
+
+Load `specs/warlock_reference_level60.json`, `specs/frost_mage_reference_level60.json`
+or `specs/priest_reference_level60.json` with `--spec-id-a` / `--spec-id-b` to exercise
+the opt-in `level60_reference_v1` profile. It supplies class/race baselines before
+items and supported racial/talent modifiers. Explicit `combat_stats` still win;
+`gear_base_stats` cannot be combined with the profile. See
+[STAT_PROFILES.md](STAT_PROFILES.md) for source conflicts, rounding and editor
+behavior. These empty-talent presets are provisional stat fixtures.
+
+
+```sh
+zig-out/bin/mcts_fight --spec-id-a specs/warlock_reference_level60.json --spec-id-b specs/frost_mage_reference_level60.json --output matches/reference.lua
+```
+
+
+### Warrior item loadouts
+
+Use `--spec-id-a specs/warrior_gear_two_hand.json`,
+`specs/warrior_gear_dual_wield.json` or `specs/warrior_gear_shield.json` for the
+initial item-resolved starters. Specs may supply `gear_base_stats` and
+`gear_base_warrior`; explicit `combat_stats` and `warrior` objects still win on
+load. These use a compact baseline and exclude item procs, set bonuses, defense
+scaling and verified racial attributes. See [WARRIOR_GEAR.md](WARRIOR_GEAR.md).

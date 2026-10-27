@@ -61,7 +61,7 @@ Target: level-60 Forever PvP, starting with the existing 1v1 arena.
   one-Rage ticks over 10 seconds; Improved Bloodrage scales both. Health cost
   and the triggered regen interaction still need source interpretation.
 - [ ] Add the remaining first Arms kit.
-  Item-based gear and full talent effects remain pending.
+  Initial item-based gear is supported; full talent effects remain pending.
 
 See [Warrior setup and playback](WARRIOR.md) for the current workflow.
 
@@ -301,8 +301,10 @@ The inventory below comes from the local Forever tree and needs the audit above.
 
 ## 6. Gear, stats and race
 
-- [ ] Add legal warrior gear, weapon and shield metadata, sensible starter gear,
-  and independently checked stat totals; preserve explicit overrides.
+- [x] Add an initial legal Warrior catalog, weapon/shield metadata and three
+  starter inventories with independently checked compact stat totals; preserve
+  explicit overrides. See [WARRIOR_GEAR.md](WARRIOR_GEAR.md). Authentic class/race
+  baselines, broader item choices and unsupported effects remain below.
 - [ ] Resolve Strength/Agility/Stamina, AP, armor, melee hit/crit, weapon skill,
   defense, dodge/parry/block, block value and talent/racial modifiers once.
 - [ ] Audit Forever race/class eligibility and melee racial effects, including

@@ -532,6 +532,8 @@ pub const SpecConfig = struct {
     modifiers: CombatModifiers,
     combat_stats: CombatStats = .{},
     race: Race = .human,
+    reference_stat_profile: bool = false,
+    pvp_trinket: u32 = 0,
 
     pub fn init(id: []const u8, name: []const u8, class: Spec, talents: TalentBuild) SpecConfig {
         return .{
@@ -567,7 +569,7 @@ fn rankInTree(trees: std.json.ObjectMap, tree_name: []const u8, talent_id: []con
 }
 
 /// Build capabilities are independent of current mana, cooldowns and crowd control.
-pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTalentRanks, priest: PriestTalentRanks, race: Race, pet: pets.Kind) u32 {
+pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTalentRanks, priest: PriestTalentRanks, race: Race, pet: pets.Kind, pvp_trinket: u32) u32 {
     var mask = configured & AllActionBits;
     inline for (0..ActionCount) |id| {
         const name = switch (class) {
@@ -604,6 +606,8 @@ pub fn filterActionCapabilities(class: Spec, configured: u32, warlock: WarlockTa
         if (pet != .succubus) mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.Seduction));
         if (pet != .felhunter) mask &= ~(@as(u32, 1) << @intFromEnum(action_catalog.WarlockAction.SpellLock));
     }
+    const item_bit = @as(u32, 1) << @import("item_actions.zig").action_id;
+    if (@import("item_actions.zig").supported(pvp_trinket)) mask |= item_bit else mask &= ~item_bit;
     return mask;
 }
 
@@ -958,19 +962,64 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         break :blk pets.Kind.parse(value.string) orelse return error.UnknownPet;
     } else null;
     var action_mask = try actionMaskFromRoot(root, class);
-    const combat_stats = if (root.get("combat_stats")) |value| blk: {
+    const pvp_trinket = if (root.get("gear")) |value| try @import("item_actions.zig").fromGear(value) else 0;
+    const reference = if (root.get("stat_profile")) |value| blk: {
+        if (value != .string or !std.mem.eql(u8, value.string, @import("reference_stats.zig").profile_name)) return error.UnknownStatProfile;
+        if (Spec.parse(class_str) == null) return error.UnsupportedStatProfileClass;
+        if (root.contains("gear_base_stats")) return error.ConflictingStatProfileBase;
+        if (root.get("level")) |level| {
+            if (level != .integer or level.integer != 60) return error.UnsupportedStatProfileLevel;
+        }
+        break :blk try @import("reference_stats.zig").load(allocator, @tagName(class), @tagName(race));
+    } else null;
+    var combat_stats = if (root.get("combat_stats")) |value| blk: {
         const stats = try std.json.parseFromValue(CombatStats, allocator, value, .{});
         defer stats.deinit();
         try stats.value.validate();
         break :blk stats.value;
-    } else CombatStats{};
+    } else if (reference) |model| model.stats else CombatStats{};
+    if (reference != null and combat_stats.level != 60) return error.UnsupportedStatProfileLevel;
+
+    if (class != .warrior) if (root.get("gear")) |equipment| {
+        const base = if (root.get("gear_base_stats")) |value| blk: {
+            const parsed_base = try std.json.parseFromValue(CombatStats, allocator, value, .{});
+            defer parsed_base.deinit();
+            try parsed_base.value.validate();
+            break :blk parsed_base.value;
+        } else if (reference) |model| model.stats else CombatStats{};
+        const resolved = try @import("equipment.zig").resolveWithReference(allocator, equipment, @tagName(class), base, reference);
+        // Explicit resolved stats can include manual editor overrides.
+        if (root.get("combat_stats")) |exported| {
+            // Older editor exports omitted stamina while retaining total health.
+            if (!exported.object.contains("stamina")) combat_stats.stamina = resolved.stamina;
+        } else combat_stats = resolved;
+    };
 
     var talents = TalentBuild{};
     var warlock_talents = WarlockTalentRanks{};
     var priest_talents = PriestTalentRanks{};
     var warrior_config = @import("warrior_arena.zig").Config{};
     if (class == .warrior) {
-        if (root.get("gear")) |_| return error.WarriorUsesExplicitWeaponStats;
+        if (root.get("gear")) |equipment| {
+            const base = if (root.get("gear_base_stats")) |value| blk: {
+                const parsed_base = try std.json.parseFromValue(CombatStats, allocator, value, .{});
+                defer parsed_base.deinit();
+                try parsed_base.value.validate();
+                break :blk parsed_base.value;
+            } else @import("equipment.zig").warriorBaseStats();
+            const config_base = if (root.get("gear_base_warrior")) |value| blk: {
+                const parsed_base = try std.json.parseFromValue(@import("warrior_arena.zig").Config, allocator, value, .{});
+                defer parsed_base.deinit();
+                if (value != .object or value.object.contains("build")) return error.InvalidWarriorConfig;
+                try parsed_base.value.validate();
+                break :blk parsed_base.value;
+            } else @import("warrior_arena.zig").Config{};
+            const resolved = try @import("equipment.zig").resolveWarrior(allocator, equipment, base, config_base);
+            warrior_config = resolved.config;
+            if (root.get("combat_stats")) |exported| {
+                if (!exported.object.contains("stamina")) combat_stats.stamina = resolved.stats.stamina;
+            } else combat_stats = resolved.stats;
+        }
         if (root.get("warrior")) |value| {
             if (value != .object or value.object.contains("build")) return error.InvalidWarriorConfig;
             const config = try std.json.parseFromValue(@import("warrior_arena.zig").Config, allocator, value, .{});
@@ -1039,8 +1088,10 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
     if (class == .warrior) {
         try warrior_config.validate();
         if (pet != .none or sacrifice_pet != .none) return error.PetRequiresWarlock;
-        action_mask = filterActionCapabilities(class, action_mask, warlock_talents, priest_talents, race, pet);
+        action_mask = filterActionCapabilities(class, action_mask, warlock_talents, priest_talents, race, pet, pvp_trinket);
     }
+    const item_bit = @as(u32, 1) << @import("item_actions.zig").action_id;
+    if (pvp_trinket != 0) action_mask |= item_bit else action_mask &= ~item_bit;
     const name = if (root.get("name")) |n| try allocator.dupe(u8, n.string) else try allocator.dupe(u8, path);
     const id = try allocator.dupe(u8, std.fs.path.stem(path));
 
@@ -1058,6 +1109,8 @@ pub fn loadSpecFile(allocator: std.mem.Allocator, path: []const u8) !SpecConfig 
         .modifiers = modifiers,
         .combat_stats = race.applyPassives(combat_stats),
         .race = race,
+        .reference_stat_profile = reference != null,
+        .pvp_trinket = pvp_trinket,
     };
 }
 
@@ -1272,10 +1325,199 @@ test "automatic capabilities include baselines and talent unlocks despite legacy
 
 test "recorded capabilities exclude unsupported cooldowns for canonical builds" {
     const shadow = findCanonicalSpec("shadow_priest").?;
-    const shadow_mask = filterActionCapabilities(shadow.class, shadow.action_mask, shadow.warlock_talents, shadow.priest_talents, shadow.race, shadow.pet);
+    const shadow_mask = filterActionCapabilities(shadow.class, shadow.action_mask, shadow.warlock_talents, shadow.priest_talents, shadow.race, shadow.pet, shadow.pvp_trinket);
     const pi = @as(u32, 1) << @intFromEnum(action_catalog.PriestAction.PowerInfusion);
     try std.testing.expect(shadow_mask & pi == 0);
     const disc = findCanonicalSpec("disc_priest").?;
-    const disc_mask = filterActionCapabilities(disc.class, disc.action_mask, disc.warlock_talents, disc.priest_talents, disc.race, disc.pet);
+    const disc_mask = filterActionCapabilities(disc.class, disc.action_mask, disc.warlock_talents, disc.priest_talents, disc.race, disc.pet, disc.pvp_trinket);
     try std.testing.expect(disc_mask & pi != 0);
+}
+
+test "native equipment resolves stats once and preserves legacy exports" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "gear.json", .data = "{}" });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "gear.json");
+    defer std.testing.allocator.free(path);
+    const cases = .{
+        .{ "{\"race\":\"undead\",\"gear\":{\"head\":18727}}", @as(f32, 2080), @as(f32, 1120), @as(f32, 30) },
+        .{ "{\"race\":\"undead\",\"gear\":{\"head\":18727},\"combat_stats\":{\"max_health\":4444}}", @as(f32, 4444), @as(f32, 1000), @as(f32, 0) },
+        .{ "{\"race\":\"undead\",\"gear\":{\"head\":18727},\"gear_base_stats\":{\"max_health\":3000,\"max_mana\":2000,\"shadow_power\":10},\"combat_stats\":{\"max_health\":9999}}", @as(f32, 9999), @as(f32, 1000), @as(f32, 0) },
+        .{ "{\"race\":\"undead\",\"gear\":{\"head\":18727},\"gear_base_stats\":{\"max_health\":3000,\"max_mana\":2000,\"shadow_power\":10}}", @as(f32, 3080), @as(f32, 2120), @as(f32, 40) },
+        .{ "{\"gear\":{}}", @as(f32, 2000), @as(f32, 1000), @as(f32, 0) },
+    };
+    inline for (cases) |case| {
+        try tmp.dir.writeFile(.{ .sub_path = "gear.json", .data = case[0] });
+        const cfg = try loadSpecFile(std.testing.allocator, path);
+        defer std.testing.allocator.free(cfg.id);
+        defer std.testing.allocator.free(cfg.name);
+        try std.testing.expectEqual(case[1], cfg.combat_stats.max_health);
+        try std.testing.expectEqual(case[2], cfg.combat_stats.max_mana);
+        try std.testing.expectEqual(case[3], cfg.combat_stats.shadow_power);
+    }
+    const invalid = .{
+        .{ "{\"gear\":{\"head\":999999}}", error.UnknownItemId },
+        .{ "{\"gear\":{\"head\":14152}}", error.InvalidItemSlot },
+        .{ "{\"gear\":{\"chest\":14152}}", error.InvalidItemClass },
+        .{ "{\"gear\":{\"main_hand\":944,\"off_hand\":11904}}", error.TwoHandOffHandConflict },
+        .{ "{\"gear\":{\"trinket1\":12930,\"trinket2\":12930}}", error.DuplicateUniqueItem },
+        .{ "{\"gear\":{\"unknown\":0}}", error.UnknownEquipmentSlot },
+        .{ "{\"gear\":{\"head\":-1}}", error.InvalidItemId },
+        .{ "{\"gear\":[]}", error.InvalidEquipment },
+        .{ "{\"class\":\"warrior\",\"gear\":{}}", error.MissingWarriorMainHand },
+    };
+    inline for (invalid) |case| {
+        try tmp.dir.writeFile(.{ .sub_path = "gear.json", .data = case[0] });
+        try std.testing.expectError(case[1], loadSpecFile(std.testing.allocator, path));
+    }
+}
+
+test "native loadout totals match frozen editor parity fixtures" {
+    const allocator = std.testing.allocator;
+    const fixtures = try std.json.parseFromSlice(std.json.Value, allocator, @embedFile("testdata/equipment_parity.json"), .{});
+    defer fixtures.deinit();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "parity.json", .data = "{}" });
+    const path = try tmp.dir.realpathAlloc(allocator, "parity.json");
+    defer allocator.free(path);
+    for (fixtures.value.array.items) |fixture| {
+        const input = try std.json.stringifyAlloc(allocator, fixture.object.get("input").?, .{});
+        defer allocator.free(input);
+        try tmp.dir.writeFile(.{ .sub_path = "parity.json", .data = input });
+        const cfg = try loadSpecFile(allocator, path);
+        defer allocator.free(cfg.id);
+        defer allocator.free(cfg.name);
+        var expected = fixture.object.get("expected").?.object.iterator();
+        while (expected.next()) |entry| {
+            const number: f32 = switch (entry.value_ptr.*) {
+                .integer => |n| @floatFromInt(n),
+                .float => |n| @floatCast(n),
+                else => unreachable,
+            };
+            inline for (std.meta.fields(CombatStats)) |field| {
+                if (std.mem.eql(u8, field.name, entry.key_ptr.*)) {
+                    try std.testing.expectApproxEqAbs(number, @field(cfg.combat_stats, field.name), 0.00001);
+                }
+            }
+        }
+    }
+}
+
+test "reference stat profiles match independent class race and override totals" {
+    const allocator = std.testing.allocator;
+    const fixtures = try std.json.parseFromSlice(std.json.Value, allocator, @embedFile("testdata/reference_stats.json"), .{});
+    defer fixtures.deinit();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "reference.json", .data = "{}" });
+    const path = try tmp.dir.realpathAlloc(allocator, "reference.json");
+    defer allocator.free(path);
+    for (fixtures.value.array.items) |fixture| {
+        const input = try std.json.stringifyAlloc(allocator, fixture.object.get("input").?, .{});
+        defer allocator.free(input);
+        try tmp.dir.writeFile(.{ .sub_path = "reference.json", .data = input });
+        const cfg = try loadSpecFile(allocator, path);
+        defer allocator.free(cfg.name);
+        defer allocator.free(cfg.id);
+        try std.testing.expect(cfg.reference_stat_profile);
+        var entries = fixture.object.get("native_expected").?.object.iterator();
+        while (entries.next()) |entry| {
+            const number: f32 = switch (entry.value_ptr.*) {
+                .integer => |n| @floatFromInt(n),
+                .float => |n| @floatCast(n),
+                else => unreachable,
+            };
+            inline for (std.meta.fields(CombatStats)) |field| {
+                if (std.mem.eql(u8, field.name, entry.key_ptr.*)) try std.testing.expectApproxEqAbs(number, @field(cfg.combat_stats, field.name), 0.001);
+            }
+        }
+    }
+    const invalid = .{
+        .{ "{\"stat_profile\":\"unknown\"}", error.UnknownStatProfile },
+        .{ "{\"stat_profile\":123}", error.UnknownStatProfile },
+        .{ "{\"stat_profile\":\"level60_reference_v1\",\"gear_base_stats\":{}}", error.ConflictingStatProfileBase },
+        .{ "{\"stat_profile\":\"level60_reference_v1\",\"level\":59}", error.UnsupportedStatProfileLevel },
+        .{ "{\"stat_profile\":\"level60_reference_v1\",\"combat_stats\":{\"level\":61}}", error.UnsupportedStatProfileLevel },
+        .{ "{\"stat_profile\":\"level60_reference_v1\",\"class\":\"warrior\"}", error.UnsupportedStatProfileClass },
+    };
+    inline for (invalid) |case| {
+        try tmp.dir.writeFile(.{ .sub_path = "reference.json", .data = case[0] });
+        try std.testing.expectError(case[1], loadSpecFile(allocator, path));
+    }
+}
+
+test "Warrior item loadouts resolve independently checked stats and weapons" {
+    const allocator = std.testing.allocator;
+    const fixtures = try std.json.parseFromSlice(std.json.Value, allocator, @embedFile("testdata/warrior_equipment.json"), .{});
+    defer fixtures.deinit();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "warrior.json", .data = "{}" });
+    const path = try tmp.dir.realpathAlloc(allocator, "warrior.json");
+    defer allocator.free(path);
+    for (fixtures.value.array.items) |fixture| {
+        const input = try std.json.stringifyAlloc(allocator, fixture.object.get("input").?, .{});
+        defer allocator.free(input);
+        try tmp.dir.writeFile(.{ .sub_path = "warrior.json", .data = input });
+        const cfg = try loadSpecFile(allocator, path);
+        defer allocator.free(cfg.name);
+        defer allocator.free(cfg.id);
+        const expected = try std.json.parseFromValue(@import("warrior_arena.zig").Config, allocator, fixture.object.get("expected_warrior").?, .{});
+        defer expected.deinit();
+        try std.testing.expectEqualDeep(expected.value.main_hand, cfg.warrior.main_hand);
+        try std.testing.expectEqualDeep(expected.value.off_hand, cfg.warrior.off_hand);
+        try std.testing.expectEqual(expected.value.shield, cfg.warrior.shield);
+        inline for (.{ "attack_power", "crit", "white_hit", "special_hit", "starting_rage" }) |field| {
+            try std.testing.expectApproxEqAbs(@field(expected.value, field), @field(cfg.warrior, field), 0.0001);
+        }
+        var entries = fixture.object.get("expected_stats").?.object.iterator();
+        while (entries.next()) |entry| {
+            const number: f32 = switch (entry.value_ptr.*) {
+                .integer => |n| @floatFromInt(n),
+                .float => |n| @floatCast(n),
+                else => unreachable,
+            };
+            inline for (std.meta.fields(CombatStats)) |field| {
+                if (std.mem.eql(u8, field.name, entry.key_ptr.*)) try std.testing.expectApproxEqAbs(number, @field(cfg.combat_stats, field.name), 0.0001);
+            }
+        }
+    }
+    const invalid = .{
+        .{ "{\"class\":\"warrior\",\"gear\":{\"main_hand\":12784,\"off_hand\":12602}}", error.TwoHandOffHandConflict },
+        .{ "{\"class\":\"warrior\",\"gear\":{\"main_hand\":17705,\"off_hand\":17705}}", error.DuplicateUniqueItem },
+        .{ "{\"class\":\"warlock\",\"gear\":{\"main_hand\":12784}}", error.InvalidItemClass },
+        .{ "{\"class\":\"warrior\",\"gear\":{\"main_hand\":13964}}", error.InvalidItemClass },
+        .{ "{\"class\":\"warrior\",\"gear\":{\"off_hand\":12602}}", error.MissingWarriorMainHand },
+        .{ "{\"class\":\"warrior\",\"warrior\":{\"shield\":true}}", error.InvalidWarriorWeapon },
+    };
+    inline for (invalid) |case| {
+        try tmp.dir.writeFile(.{ .sub_path = "warrior.json", .data = case[0] });
+        try std.testing.expectError(case[1], loadSpecFile(allocator, path));
+    }
+}
+
+test "item capabilities derive only from validated equipped Greater Insignia variants" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "item.json", .data = "{}" });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "item.json");
+    defer std.testing.allocator.free(path);
+    inline for (.{ "warlock", "frost_mage", "priest", "warrior" }) |class| {
+        const contents = "{\"class\":\"" ++ class ++ "\",\"gear\":{\"trinket2\":274445},\"action_loadout\":[]}";
+        try tmp.dir.writeFile(.{ .sub_path = "item.json", .data = contents });
+        const cfg = try loadSpecFile(std.testing.allocator, path);
+        defer std.testing.allocator.free(cfg.name);
+        defer std.testing.allocator.free(cfg.id);
+        try std.testing.expectEqual(@as(u32, 274445), cfg.pvp_trinket);
+        try std.testing.expect(cfg.action_mask & (@as(u32, 1) << 26) != 0);
+    }
+    try tmp.dir.writeFile(.{ .sub_path = "item.json", .data = "{\"action_loadout\":[\"PvP Trinket\"],\"pvp_trinket\":274445}" });
+    const naked = try loadSpecFile(std.testing.allocator, path);
+    defer std.testing.allocator.free(naked.name);
+    defer std.testing.allocator.free(naked.id);
+    try std.testing.expectEqual(@as(u32, 0), naked.pvp_trinket);
+    try std.testing.expect(naked.action_mask & (@as(u32, 1) << 26) == 0);
+    try tmp.dir.writeFile(.{ .sub_path = "item.json", .data = "{\"gear\":{\"trinket1\":274445,\"trinket2\":274444}}" });
+    try std.testing.expectError(error.DuplicateItemEffect, loadSpecFile(std.testing.allocator, path));
 }

@@ -1,6 +1,8 @@
 const std = @import("std");
 
 test {
+    _ = @import("item_actions_test.zig");
+    _ = @import("equipment_test.zig");
     _ = @import("warrior_test.zig");
     _ = @import("warrior_integration_test.zig");
     _ = @import("racials_test.zig");

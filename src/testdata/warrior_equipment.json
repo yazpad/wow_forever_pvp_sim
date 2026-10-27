@@ -1,0 +1,455 @@
+[
+  {
+    "name": "two_hand",
+    "input": {
+      "name": "Warrior Item Starter - Two Hand",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 16731,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 12784
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+    },
+    "expected_stats": {
+      "max_health": 5440.0,
+      "max_mana": 1,
+      "stamina": 144.0,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.028,
+      "melee_block_chance": 0,
+      "melee_block_value": 0,
+      "armor_damage_reduction": 0.40437513536928743,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 982.0,
+      "crit": 0.078,
+      "white_hit": 0.95,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 153,
+        "max": 256,
+        "speed": 3.8,
+        "two_handed": true
+      },
+      "off_hand": null,
+      "shield": false
+    }
+  },
+  {
+    "name": "dual_wield",
+    "input": {
+      "name": "Warrior Item Starter - Dual Wield",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 16731,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 17705,
+        "off_hand": 15806
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+    },
+    "expected_stats": {
+      "max_health": 5310.0,
+      "max_mana": 1,
+      "stamina": 131.0,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.0325,
+      "melee_block_chance": 0,
+      "melee_block_value": 0,
+      "armor_damage_reduction": 0.40553393860786857,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 938.0,
+      "crit": 0.0825,
+      "white_hit": 0.76,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 66,
+        "max": 124,
+        "speed": 2.7,
+        "two_handed": false
+      },
+      "off_hand": {
+        "min": 57,
+        "max": 87,
+        "speed": 1.8,
+        "two_handed": false
+      },
+      "shield": false
+    }
+  },
+  {
+    "name": "shield",
+    "input": {
+      "name": "Warrior Item Starter - Shield",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 16731,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 17705,
+        "off_hand": 12602
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+    },
+    "expected_stats": {
+      "max_health": 5380.0,
+      "max_mana": 1,
+      "stamina": 138.0,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.028,
+      "melee_block_chance": 0.05,
+      "melee_block_value": 44.5,
+      "armor_damage_reduction": 0.5169930622639852,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 10.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 920.0,
+      "crit": 0.078,
+      "white_hit": 0.95,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 66,
+        "max": 124,
+        "speed": 2.7,
+        "two_handed": false
+      },
+      "off_hand": null,
+      "shield": true
+    }
+  },
+  {
+    "name": "weapon_only",
+    "input": {
+      "name": "Warrior Item Starter - Two Hand",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "main_hand": 12784
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+    },
+    "expected_stats": {
+      "max_health": 4130.0,
+      "max_mana": 1,
+      "stamina": 13.0,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.0,
+      "melee_block_chance": 0,
+      "melee_block_value": 0,
+      "armor_damage_reduction": 0.0,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 762.0,
+      "crit": 0.05,
+      "white_hit": 0.95,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 153,
+        "max": 256,
+        "speed": 3.8,
+        "two_handed": true
+      },
+      "off_hand": null,
+      "shield": false
+    }
+  },
+  {
+    "name": "without_helm",
+    "input": {
+      "name": "Warrior Item Starter - Shield",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 0,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 17705,
+        "off_hand": 12602
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+    },
+    "expected_stats": {
+      "max_health": 5150.0,
+      "max_mana": 1,
+      "stamina": 115.0,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.0235,
+      "melee_block_chance": 0.05,
+      "melee_block_value": 43.75,
+      "armor_damage_reduction": 0.4927603061883243,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 10.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 890.0,
+      "crit": 0.0735,
+      "white_hit": 0.95,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 66,
+        "max": 124,
+        "speed": 2.7,
+        "two_handed": false
+      },
+      "off_hand": null,
+      "shield": true
+    }
+  },
+  {
+    "name": "custom_bases",
+    "input": {
+      "name": "Warrior Item Starter - Dual Wield",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 16731,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 17705,
+        "off_hand": 15806
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md.",
+      "gear_base_stats": {
+        "max_health": 5000,
+        "stamina": 100,
+        "max_mana": 1,
+        "armor_damage_reduction": 0.2,
+        "melee_avoidance_chance": 0.04
+      },
+      "gear_base_warrior": {
+        "attack_power": 800,
+        "crit": 0.1,
+        "white_hit": 0.98,
+        "special_hit": 0.98,
+        "starting_rage": 20
+      }
+    },
+    "expected_stats": {
+      "max_health": 6310.0,
+      "max_mana": 1,
+      "stamina": 231.0,
+      "armor_damage_reduction": 0.4824503622847464,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0.0725,
+      "melee_block_chance": 0,
+      "melee_block_value": 0,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    },
+    "expected_warrior": {
+      "attack_power": 1038.0,
+      "crit": 0.1325,
+      "white_hit": 0.79,
+      "special_hit": 0.98,
+      "starting_rage": 20,
+      "starting_stance": "battle",
+      "damage_taken_rage": true,
+      "main_hand": {
+        "min": 66,
+        "max": 124,
+        "speed": 2.7,
+        "two_handed": false
+      },
+      "off_hand": {
+        "min": 57,
+        "max": 87,
+        "speed": 1.8,
+        "two_handed": false
+      },
+      "shield": false
+    }
+  },
+  {
+    "name": "explicit_overrides",
+    "input": {
+      "name": "Warrior Item Starter - Shield",
+      "class": "warrior",
+      "race": "undead",
+      "gear": {
+        "head": 16731,
+        "shoulder": 16733,
+        "chest": 16730,
+        "wrist": 16735,
+        "hands": 16737,
+        "waist": 16736,
+        "legs": 16732,
+        "feet": 16734,
+        "main_hand": 17705,
+        "off_hand": 12602
+      },
+      "level": 60,
+      "trees": {
+        "Arms": {},
+        "Fury": {},
+        "Protection": {}
+      },
+      "automatic_actions": true,
+      "pet": "none",
+      "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md.",
+      "combat_stats": {
+        "max_health": 7777,
+        "stamina": 170,
+        "max_mana": 1,
+        "armor_damage_reduction": 0.3,
+        "melee_block_chance": 0.1,
+        "melee_block_value": 55
+      },
+      "warrior": {
+        "main_hand": {
+          "min": 80,
+          "max": 120,
+          "speed": 2.5,
+          "two_handed": false
+        },
+        "shield": true,
+        "attack_power": 999,
+        "crit": 0.12
+      }
+    },
+    "expected_stats": {
+      "max_health": 7777,
+      "max_mana": 1,
+      "stamina": 170,
+      "melee_avoidance_chance": 0,
+      "melee_dodge_chance": 0,
+      "melee_block_chance": 0.1,
+      "melee_block_value": 55,
+      "armor_damage_reduction": 0.3,
+      "shadow_resistance": 0,
+      "fire_resistance": 0,
+      "frost_resistance": 0,
+      "arcane_resistance": 0
+    },
+    "expected_warrior": {
+      "main_hand": {
+        "min": 80,
+        "max": 120,
+        "speed": 2.5,
+        "two_handed": false
+      },
+      "off_hand": null,
+      "shield": true,
+      "attack_power": 999,
+      "crit": 0.12,
+      "white_hit": 0.95,
+      "special_hit": 0.95,
+      "starting_rage": 0,
+      "starting_stance": "battle",
+      "damage_taken_rage": true
+    }
+  }
+]

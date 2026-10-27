@@ -68,3 +68,56 @@ editor.loadSpec(preset)
 assert(editor.getCurrentSpecConfig().combat_stats.shadow_power==preset.combat_stats.shadow_power)
 assert(editor.getCurrentSpecConfig().gear.chest==14136)
 print('Gear catalog, stat totals, slot/class restrictions, unique items, two-hand rules, persistence, class changes and legacy specs passed.')
+
+-- Frozen cross-language totals: changing formulas requires reviewing this fixture.
+local parityFile=assert(io.open('src/testdata/equipment_parity.json'))
+local fixtures=json.decode(parityFile:read('*a'));parityFile:close()
+for _,fixture in ipairs(fixtures) do
+    local input=fixture.input
+    local actual=gear.resolve(input.gear,input.class,input.gear_base_stats or {})
+    assert(same(actual,fixture.expected),'Editor/native equipment parity fixture changed')
+end
+assert(not gear.validate({main_hand=944,off_hand=11904},'warlock'))
+assert(not gear.validate({unknown=0},'warlock'))
+assert(not gear.validate({head=-1},'warlock'))
+
+editor.loadSpec(a)
+assert(editor.setCombatStat('max_health',4444))
+local overridden=clone(editor.getCurrentSpecConfig())
+editor.loadSpec(overridden)
+near(editor.getCurrentSpecConfig().combat_stats.max_health,4444)
+
+local referenceFile=assert(io.open('src/testdata/reference_stats.json'))
+local referenceCases=json.decode(referenceFile:read('*a'));referenceFile:close()
+for _,case in ipairs(referenceCases) do
+    editor.loadSpec(case.input)
+    local spec=clone(editor.getCurrentSpecConfig())
+    assert(spec.stat_profile=='level60_reference_v1' and spec.gear_base_stats==nil)
+    for key,value in pairs(case.expected) do near(spec.combat_stats[key],value) end
+    editor.loadSpec(spec)
+    for key,value in pairs(case.expected) do near(editor.getCurrentSpecConfig().combat_stats[key],value) end
+end
+-- A reference race change derives the new baseline; changing class leaves it.
+editor.loadSpec(referenceCases[2].input) -- Human Warlock, geared.
+editor.setRace('gnome')
+local gnome=editor.getCurrentSpecConfig()
+for key,value in pairs(referenceCases[4].expected) do near(gnome.combat_stats[key],value) end
+editor.clearGear()
+near(editor.getCurrentSpecConfig().combat_stats.max_health,1874)
+editor.equipPrebis()
+near(editor.getCurrentSpecConfig().combat_stats.max_health,2544)
+local before=clone(editor.getCurrentSpecConfig())
+assert(editor.loadSpec({class='priest',stat_profile='unknown',trees={}})==false)
+assert(same(before,editor.getCurrentSpecConfig()))
+editor.setClass('warlock')
+assert(editor.getCurrentSpecConfig().stat_profile==nil)
+near(editor.getCurrentSpecConfig().combat_stats.max_health,2670)
+print('32 reference profile cases, race rebasing, round trips and legacy class defaults passed.')
+
+local stable=clone(editor.getCurrentSpecConfig())
+assert(editor.loadSpec({class='priest',stat_profile=false,trees={}})==false)
+assert(same(stable,editor.getCurrentSpecConfig()))
+
+editor.loadSpec(referenceCases[2].input)
+assert(not editor.setCombatStat('level',59))
+assert(editor.getCurrentSpecConfig().combat_stats.level==60)

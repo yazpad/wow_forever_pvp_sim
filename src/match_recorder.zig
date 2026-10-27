@@ -29,6 +29,7 @@ pub const EventKind = enum(u8) {
     PetAttack = 16,
     SpellLock = 17,
     StunApplied = 18,
+    ItemActivated = 19,
 };
 
 pub const RecordedEvent = struct {
@@ -80,6 +81,8 @@ pub fn RecordedFrameFor(comptime has_warrior: bool) type {
         priest_pi_timer_b: f32 = 0,
         priest_pi_cd_a: f32 = 0,
         priest_pi_cd_b: f32 = 0,
+        item_cd_a: f32 = 0,
+        item_cd_b: f32 = 0,
         stun_a: f32 = 0,
         stun_b: f32 = 0,
         projectiles: [32]f32 = @splat(0),
@@ -154,6 +157,8 @@ pub fn MatchTrajectoryFor(comptime has_warrior: bool) type {
         const Self = @This();
         // Optional opening positions for presentation-only gap-closer animation.
         initial_positions: ?[4]f32 = null, // x_a, y_a, x_b, y_b
+        pvp_trinket_a: u32 = 0,
+        pvp_trinket_b: u32 = 0,
         max_rage_a: f32 = 100,
         max_rage_b: f32 = 100,
         max_health_a: f32 = 2000,
@@ -221,7 +226,8 @@ pub fn MatchTrajectoryFor(comptime has_warrior: bool) type {
             try writer.print("{{\n  \"meta\": {{\n", .{});
             if (self.initial_positions) |pos| try writer.print("    \"initial_positions\": [{d}, {d}, {d}, {d}],\n", .{ pos[0], pos[1], pos[2], pos[3] });
             try writer.print("    \"max_health_a\": {d}, \"max_health_b\": {d}, \"max_mana_a\": {d}, \"max_mana_b\": {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
-            try writer.print("    \"frame_version\": 2, \"max_rage_a\": {d}, \"max_rage_b\": {d},\n", .{ self.max_rage_a, self.max_rage_b });
+            try writer.print("    \"frame_version\": 3, \"max_rage_a\": {d}, \"max_rage_b\": {d},\n", .{ self.max_rage_a, self.max_rage_b });
+            try writer.print("    \"pvp_trinket_a\": {d}, \"pvp_trinket_b\": {d}, \"item_cooldown_column\": {d},\n", .{ self.pvp_trinket_a, self.pvp_trinket_b, @as(u32, if (has_warrior) 163 else 125) });
             try writer.print("    \"action_mask_a\": {d}, \"action_mask_b\": {d},\n", .{ self.action_mask_a, self.action_mask_b });
             try writer.print("    \"spec_a\": \"{s}\", \"spec_b\": \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
             try writer.print("    \"race_a\": \"{s}\", \"race_b\": \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
@@ -277,6 +283,7 @@ pub fn MatchTrajectoryFor(comptime has_warrior: bool) type {
                 try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{ f.priest_pi_timer_a, f.priest_pi_timer_b, f.priest_pi_cd_a, f.priest_pi_cd_b });
                 for (f.priest_auras) |value| try writer.print(",{d:0.2}", .{value});
                 if (has_warrior) for (f.warrior) |value| try writer.print(",{d:0.2}", .{value});
+                try writer.print(",{d:0.2},{d:0.2}", .{ f.item_cd_a, f.item_cd_b });
                 try writer.print("]{s}\n", .{if (idx + 1 < self.frames.items.len) "," else ""});
             }
             try writer.print("  ]\n}}\n", .{});
@@ -292,7 +299,8 @@ pub fn MatchTrajectoryFor(comptime has_warrior: bool) type {
             try writer.print("return {{\n  meta = {{\n", .{});
             if (self.initial_positions) |pos| try writer.print("    initial_positions = {{{d}, {d}, {d}, {d}}},\n", .{ pos[0], pos[1], pos[2], pos[3] });
             try writer.print("    max_health_a = {d}, max_health_b = {d}, max_mana_a = {d}, max_mana_b = {d},\n", .{ self.max_health_a, self.max_health_b, self.max_mana_a, self.max_mana_b });
-            try writer.print("    frame_version = 2, max_rage_a = {d}, max_rage_b = {d},\n", .{ self.max_rage_a, self.max_rage_b });
+            try writer.print("    frame_version = 3, max_rage_a = {d}, max_rage_b = {d},\n", .{ self.max_rage_a, self.max_rage_b });
+            try writer.print("    pvp_trinket_a = {d}, pvp_trinket_b = {d}, item_cooldown_column = {d},\n", .{ self.pvp_trinket_a, self.pvp_trinket_b, @as(u32, if (has_warrior) 163 else 125) });
             try writer.print("    action_mask_a = {d}, action_mask_b = {d},\n", .{ self.action_mask_a, self.action_mask_b });
             try writer.print("    spec_a = \"{s}\", spec_b = \"{s}\",\n", .{ @tagName(self.spec_a), @tagName(self.spec_b) });
             try writer.print("    race_a = \"{s}\", race_b = \"{s}\",\n", .{ @tagName(self.race_a), @tagName(self.race_b) });
@@ -347,6 +355,7 @@ pub fn MatchTrajectoryFor(comptime has_warrior: bool) type {
                 try writer.print(",{d:0.2},{d:0.2},{d:0.2},{d:0.2}", .{ f.priest_pi_timer_a, f.priest_pi_timer_b, f.priest_pi_cd_a, f.priest_pi_cd_b });
                 for (f.priest_auras) |value| try writer.print(",{d:0.2}", .{value});
                 if (has_warrior) for (f.warrior) |value| try writer.print(",{d:0.2}", .{value});
+                try writer.print(",{d:0.2},{d:0.2}", .{ f.item_cd_a, f.item_cd_b });
                 try writer.writeAll(" },\n");
             }
             try writer.print("  }}\n}}\n", .{});
@@ -433,7 +442,7 @@ test "MatchTrajectory json and lua export" {
     const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, json_bytes, .{});
     defer parsed.deinit();
     const row = parsed.value.object.get("frames").?.array.items[0].array.items;
-    try std.testing.expectEqual(@as(usize, 124), row.len);
+    try std.testing.expectEqual(@as(usize, 126), row.len);
     for (traj.frames.items[0].priest_auras, 114..) |expected, index| {
         try std.testing.expectApproxEqAbs(@as(f64, expected), row[index].float, 0.001);
     }

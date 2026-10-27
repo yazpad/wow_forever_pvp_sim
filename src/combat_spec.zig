@@ -214,6 +214,8 @@ pub const WarlockArenaPool = struct {
     priest_pi_timer_a: []align(ALIGNMENT) f32,
     inner_fire_timer_a: []align(ALIGNMENT) f32,
     inner_fire_charges_a: []align(ALIGNMENT) f32,
+    item_id_a: []align(ALIGNMENT) u32,
+    item_cd_a: []align(ALIGNMENT) f32,
     racial_cd_a: []align(ALIGNMENT) f32,
     racial_power_timer_a: []align(ALIGNMENT) f32,
     racial_haste_timer_a: []align(ALIGNMENT) f32,
@@ -306,6 +308,8 @@ pub const WarlockArenaPool = struct {
     priest_pi_timer_b: []align(ALIGNMENT) f32,
     inner_fire_timer_b: []align(ALIGNMENT) f32,
     inner_fire_charges_b: []align(ALIGNMENT) f32,
+    item_id_b: []align(ALIGNMENT) u32,
+    item_cd_b: []align(ALIGNMENT) f32,
     racial_cd_b: []align(ALIGNMENT) f32,
     racial_power_timer_b: []align(ALIGNMENT) f32,
     racial_haste_timer_b: []align(ALIGNMENT) f32,
@@ -548,6 +552,10 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(inner_fire_timer_a);
         const inner_fire_charges_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(inner_fire_charges_a);
+        const item_id_a = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(item_id_a);
+        const item_cd_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(item_cd_a);
         const racial_cd_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(racial_cd_a);
         const racial_power_timer_a = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -719,6 +727,10 @@ pub const WarlockArenaPool = struct {
         errdefer allocator.free(inner_fire_timer_b);
         const inner_fire_charges_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(inner_fire_charges_b);
+        const item_id_b = try allocator.alignedAlloc(u32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(item_id_b);
+        const item_cd_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
+        errdefer allocator.free(item_cd_b);
         const racial_cd_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
         errdefer allocator.free(racial_cd_b);
         const racial_power_timer_b = try allocator.alignedAlloc(f32, ALIGNMENT, padded_cap);
@@ -943,6 +955,8 @@ pub const WarlockArenaPool = struct {
             .priest_pi_timer_a = priest_pi_timer_a,
             .inner_fire_timer_a = inner_fire_timer_a,
             .inner_fire_charges_a = inner_fire_charges_a,
+            .item_id_a = item_id_a,
+            .item_cd_a = item_cd_a,
             .racial_cd_a = racial_cd_a,
             .racial_power_timer_a = racial_power_timer_a,
             .racial_haste_timer_a = racial_haste_timer_a,
@@ -1027,6 +1041,8 @@ pub const WarlockArenaPool = struct {
             .priest_pi_timer_b = priest_pi_timer_b,
             .inner_fire_timer_b = inner_fire_timer_b,
             .inner_fire_charges_b = inner_fire_charges_b,
+            .item_id_b = item_id_b,
+            .item_cd_b = item_cd_b,
             .racial_cd_b = racial_cd_b,
             .racial_power_timer_b = racial_power_timer_b,
             .racial_haste_timer_b = racial_haste_timer_b,
@@ -1210,6 +1226,8 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.priest_pi_timer_a);
         self.allocator.free(self.inner_fire_timer_a);
         self.allocator.free(self.inner_fire_charges_a);
+        self.allocator.free(self.item_id_a);
+        self.allocator.free(self.item_cd_a);
         self.allocator.free(self.racial_cd_a);
         self.allocator.free(self.racial_power_timer_a);
         self.allocator.free(self.racial_haste_timer_a);
@@ -1294,6 +1312,8 @@ pub const WarlockArenaPool = struct {
         self.allocator.free(self.priest_pi_timer_b);
         self.allocator.free(self.inner_fire_timer_b);
         self.allocator.free(self.inner_fire_charges_b);
+        self.allocator.free(self.item_id_b);
+        self.allocator.free(self.item_cd_b);
         self.allocator.free(self.racial_cd_b);
         self.allocator.free(self.racial_power_timer_b);
         self.allocator.free(self.racial_haste_timer_b);
@@ -1450,6 +1470,8 @@ pub const WarlockArenaPool = struct {
         @memset(self.priest_pi_timer_a, 0);
         @memset(self.inner_fire_timer_a, 0);
         @memset(self.inner_fire_charges_a, 0);
+        @memset(self.item_id_a, 0);
+        @memset(self.item_cd_a, 0);
         @memset(self.racial_cd_a, 0);
         @memset(self.racial_power_timer_a, 0);
         @memset(self.racial_haste_timer_a, 0);
@@ -1534,6 +1556,8 @@ pub const WarlockArenaPool = struct {
         @memset(self.priest_pi_timer_b, 0);
         @memset(self.inner_fire_timer_b, 0);
         @memset(self.inner_fire_charges_b, 0);
+        @memset(self.item_id_b, 0);
+        @memset(self.item_cd_b, 0);
         @memset(self.racial_cd_b, 0);
         @memset(self.racial_power_timer_b, 0);
         @memset(self.racial_haste_timer_b, 0);
@@ -1683,6 +1707,8 @@ pub const WarlockArenaPool = struct {
         self.priest_pi_timer_a[i] = 0;
         self.inner_fire_timer_a[i] = 0;
         self.inner_fire_charges_a[i] = 0;
+        self.item_id_a[i] = 0;
+        self.item_cd_a[i] = 0;
         self.racial_cd_a[i] = 0;
         self.racial_power_timer_a[i] = 0;
         self.racial_haste_timer_a[i] = 0;
@@ -1767,6 +1793,8 @@ pub const WarlockArenaPool = struct {
         self.priest_pi_timer_b[i] = 0;
         self.inner_fire_timer_b[i] = 0;
         self.inner_fire_charges_b[i] = 0;
+        self.item_id_b[i] = 0;
+        self.item_cd_b[i] = 0;
         self.racial_cd_b[i] = 0;
         self.racial_power_timer_b[i] = 0;
         self.racial_haste_timer_b[i] = 0;
@@ -2068,7 +2096,8 @@ pub const WarlockArenaPool = struct {
         const gcd_free = gcd <= v_zeros;
         const can_act = vAnd16(vNot16(is_cc), vNot16(is_casting));
 
-        var masks: [WarlockAction.COUNT]bool16 = undefined;
+        // Shared catalog slots without a Warlock ability must stay illegal.
+        var masks: [WarlockAction.COUNT]bool16 = @splat(@as(bool16, @splat(false)));
 
         // 0. Idle / Maneuver: Legal unless CC'd
         masks[@intFromEnum(WarlockAction.IdleOrManeuver)] = vNot16(is_cc);
@@ -2161,7 +2190,8 @@ pub const WarlockArenaPool = struct {
         const gcd_free = gcd <= v_zeros;
         const can_act = vAnd16(vNot16(is_cc), vNot16(is_casting));
 
-        var masks: [WarlockAction.COUNT]bool16 = undefined;
+        // Shared catalog slots without a Warlock ability must stay illegal.
+        var masks: [WarlockAction.COUNT]bool16 = @splat(@as(bool16, @splat(false)));
 
         // 0. Idle / Maneuver: Legal unless CC'd
         masks[@intFromEnum(WarlockAction.IdleOrManeuver)] = vNot16(is_cc);

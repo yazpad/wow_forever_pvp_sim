@@ -19,10 +19,10 @@ fn setup(d: anytype, comptime side: bool) !void {
 test "Warrior storage is absent from legacy arenas and snapshots retain their measured size" {
     try std.testing.expect(sim.SnapshotFor(.priest, .warlock) == sim.Snapshot);
     try std.testing.expect(sim.SnapshotFor(.frost_mage, .priest) == sim.Snapshot);
-    try std.testing.expectEqual(@as(usize, 956), @sizeOf(sim.Snapshot));
-    try std.testing.expectEqual(@as(usize, 496), @sizeOf(@import("match_recorder.zig").RecordedFrame));
+    try std.testing.expectEqual(@as(usize, 972), @sizeOf(sim.Snapshot));
+    try std.testing.expectEqual(@as(usize, 504), @sizeOf(@import("match_recorder.zig").RecordedFrame));
     try std.testing.expectEqual(@sizeOf(@import("match_recorder.zig").RecordedFrame) + 38 * @sizeOf(f32), @sizeOf(@import("match_recorder.zig").RecordedFrameFor(true)));
-    try std.testing.expectEqual(@as(usize, 63), @import("action_catalog_generated.zig").MaxChoices);
+    try std.testing.expectEqual(@as(usize, 65), @import("action_catalog_generated.zig").MaxChoices);
     const LegacyArena = @import("multi_spec.zig").ArenaPool(.priest, .warlock);
     try std.testing.expectEqual(@as(usize, 0), @sizeOf(@FieldType(LegacyArena, "warrior")));
     try std.testing.expectEqual(@sizeOf(sim.Snapshot) + 4 * warrior.column_count, @sizeOf(sim.SnapshotFor(.warrior, .priest)));

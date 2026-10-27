@@ -6,7 +6,9 @@ local action_catalog = require("action_catalog")
 local gear = require("gear")
 local warrior = require("warrior")
 local warriorConfig = warrior.copy()
-local equipment, gearBase = nil, nil
+local equipment, gearBase, gearBaseWarrior = nil, nil, nil
+local statProfile, referenceModel = nil, nil
+local referenceStats = require("reference_stats")
 local spec_editor = {}
 
 local TREE_ORDER_MAP = {
@@ -105,6 +107,7 @@ local function isTalentLocked(name, build)
     return gate ~= nil and talents_data.getRank(build and build[gate.tree], gate.id) == 0
 end
 local function isPetLocked(name, pet)
+    if name=="PvP Trinket" and not gear.pvpItem(equipment) then return true end
     local required = action_catalog.pet_gates[name]
     local race = action_catalog.race_gates[name]
     return (required ~= nil and pet ~= required) or (race ~= nil and race ~= currentRace)
@@ -190,14 +193,16 @@ function spec_editor.init()
     for _, s in ipairs(savedSpecs) do
         local sc = (s.class or "warlock"):lower()
         if sc == "mage" then sc = "frost_mage" end
-        if sc == currentClass then
+        if sc == currentClass and not s.stat_profile then
             spec_editor.loadSpec(s)
             found = true
             break
         end
     end
-    if not found and #savedSpecs > 0 then
-        spec_editor.loadSpec(savedSpecs[1])
+    if not found then
+        for _,s in ipairs(savedSpecs) do
+            if not s.stat_profile then spec_editor.loadSpec(s);break end
+        end
     end
     if not equipment then spec_editor.equipPrebis() end
 end
@@ -207,7 +212,8 @@ function spec_editor.setClass(newClass)
     if cls == "mage" then cls = "frost_mage" end
     currentClass = cls
     currentRace = races.normalize(currentRace, cls)
-    equipment, gearBase = nil, nil
+    equipment, gearBase, gearBaseWarrior = nil, nil, nil
+    statProfile, referenceModel = nil, nil
     combatStats = copyCombatStats()
     warriorConfig = warrior.copy()
     if cls == "warrior" then combatStats.max_health, combatStats.max_mana, combatStats.armor_damage_reduction = 4000, 1, 0.4 end
@@ -230,22 +236,43 @@ function spec_editor.loadSpec(specObj)
     if not specObj or not specObj.trees then return end
     local sc = (specObj.class or "warlock"):lower()
     if sc == "mage" then sc = "frost_mage" end
+    if specObj.stat_profile~=nil and specObj.stat_profile~=referenceStats.name then return false,"Unknown stat profile" end
+    if specObj.stat_profile and (not referenceStats.data.classes[sc] or (specObj.race and not referenceStats.data.race_offsets[specObj.race]) or specObj.gear_base_stats or (specObj.level and specObj.level~=60) or (specObj.combat_stats and specObj.combat_stats.level and specObj.combat_stats.level~=60)) then
+        return false,"Invalid reference stat profile"
+    end
+    local validatedEquipment
+    if specObj.gear then
+        local err;validatedEquipment,err=gear.validate(specObj.gear,sc)
+        if not validatedEquipment then return false,err end
+    end
     if sc ~= currentClass then
         currentClass = sc
         treeData = talents_data.load(sc)
     end
     currentRace = races.normalize(specObj.race, currentClass)
+    statProfile=specObj.stat_profile
+    local profileBase
+    referenceModel=nil
+    if statProfile then profileBase,referenceModel=referenceStats.baseline(currentClass,currentRace) end
     warriorConfig = warrior.copy(specObj.warrior)
-    combatStats = copyCombatStats(specObj.combat_stats)
+    combatStats = copyCombatStats(specObj.combat_stats or profileBase)
     if specObj.gear and not (specObj.combat_stats and specObj.combat_stats.stamina) then
-        combatStats.stamina = (specObj.gear_base_stats and specObj.gear_base_stats.stamina or 0) + gear.totals(specObj.gear).stamina
+        combatStats.stamina = ((specObj.gear_base_stats or profileBase or {}).stamina or 0) + gear.totals(specObj.gear).stamina
     end
-    equipment = currentClass ~= "warrior" and specObj.gear and gear.validate(specObj.gear, currentClass) or nil
-    gearBase = equipment and copyCombatStats(specObj.gear_base_stats) or nil
+    equipment = validatedEquipment
+    gearBase = equipment and copyCombatStats(specObj.gear_base_stats or profileBase) or nil
+    gearBaseWarrior=nil
+    if equipment and currentClass=="warrior" then
+        gearBase=copyCombatStats(specObj.gear_base_stats or {max_health=4000,max_mana=1})
+        gearBaseWarrior=warrior.copy(specObj.gear_base_warrior)
+        local resolved,resolvedConfig=gear.resolveWarrior(equipment,gearBase,gearBaseWarrior)
+        if not specObj.combat_stats then combatStats=resolved end
+        if not specObj.warrior then warriorConfig=resolvedConfig end
+    end
     -- Saved resolved stats include explicit overrides from the stats editor.
-    if equipment and not specObj.combat_stats then combatStats = gear.resolve(equipment, currentClass, gearBase) end
+    if equipment and currentClass~="warrior" and not specObj.combat_stats then combatStats = gear.resolve(equipment, currentClass, gearBase, referenceModel) end
     -- Priest presets predating gear support otherwise enter fights at baseline.
-    if currentClass == "priest" and not specObj.gear and not specObj.combat_stats then spec_editor.equipPrebis() end
+    if currentClass == "priest" and not statProfile and not specObj.gear and not specObj.combat_stats then spec_editor.equipPrebis() end
     currentBuild = talents_data.cloneBuild(specObj.trees)
     sacrificePet = specObj.sacrifice_pet or "none"
     warlockPet = specObj.pet or "imp"
@@ -259,6 +286,11 @@ end
 
 function spec_editor.setRace(race)
     currentRace = races.normalize(race, currentClass)
+    if statProfile then
+        local base; base,referenceModel=referenceStats.baseline(currentClass,currentRace)
+        gearBase=equipment and copyCombatStats(base) or nil
+        combatStats=equipment and gear.resolve(equipment,currentClass,gearBase,referenceModel) or copyCombatStats(base)
+    end
     actionSlots = cloneActionSlots(actionSlots, currentClass, currentBuild)
 end
 
@@ -286,7 +318,9 @@ function spec_editor.getCurrentSpecConfig()
         combat_stats = copyCombatStats(combatStats),
         warrior = currentClass == "warrior" and warrior.copy(warriorConfig) or nil,
         gear = equipment and gear.copy(equipment) or nil,
-        gear_base_stats = gearBase and copyCombatStats(gearBase) or nil,
+        gear_base_warrior = gearBaseWarrior and warrior.copy(gearBaseWarrior) or nil,
+        gear_base_stats = not statProfile and gearBase and copyCombatStats(gearBase) or nil,
+        stat_profile = statProfile,
         talents_summary = summary,
         hash = hash,
         trees = talents_data.cloneBuild(currentBuild),
@@ -299,24 +333,44 @@ function spec_editor.getCurrentSpecConfig()
 end
 
 function spec_editor.setGear(slot,id)
-    if currentClass == "warrior" then return false,"Edit Warrior weapon stats directly" end
     local nextGear=gear.copy(equipment)
     local ok,err=gear.equip(nextGear,slot,id,currentClass)
     if not ok then return false,err end
+    if currentClass=="warrior" then
+        local base=gearBase or copyCombatStats(combatStats)
+        local baseWarrior=gearBaseWarrior or warrior.copy(warriorConfig)
+        local resolved,config=gear.resolveWarrior(nextGear,base,baseWarrior)
+        if not resolved then return false,config end
+        gearBase,gearBaseWarrior=base,baseWarrior
+        equipment,combatStats,warriorConfig=nextGear,resolved,config
+        return true
+    end
     gearBase=gearBase or copyCombatStats(combatStats)
     equipment=nextGear
-    combatStats=gear.resolve(equipment,currentClass,gearBase)
+    combatStats=gear.resolve(equipment,currentClass,gearBase,referenceModel)
+    return true
+end
+function spec_editor.equipWarriorStarter(kind)
+    if currentClass~="warrior" then return false,"Select Warrior first" end
+    local nextGear=gear.warriorStarter(kind)
+    local base=gearBase or copyCombatStats(combatStats)
+    local baseWarrior=gearBaseWarrior or warrior.copy(warriorConfig)
+    local resolved,config=gear.resolveWarrior(nextGear,base,baseWarrior)
+    if not resolved then return false,config end
+    gearBase,gearBaseWarrior=base,baseWarrior
+    equipment,combatStats,warriorConfig=nextGear,resolved,config
     return true
 end
 function spec_editor.equipPrebis()
-    if currentClass == "warrior" then equipment,gearBase=nil,nil;return end
+    if currentClass == "warrior" then return end
     gearBase=gearBase or copyCombatStats(combatStats)
     equipment=gear.prebis(currentClass)
-    combatStats=gear.resolve(equipment,currentClass,gearBase)
+    combatStats=gear.resolve(equipment,currentClass,gearBase,referenceModel)
 end
 function spec_editor.clearGear()
     if gearBase then combatStats=copyCombatStats(gearBase) end
-    equipment,gearBase=nil,nil
+    if gearBaseWarrior then warriorConfig=warrior.copy(gearBaseWarrior) end
+    equipment,gearBase,gearBaseWarrior=nil,nil,nil
 end
 
 function spec_editor.setWarriorStat(key,value)
@@ -328,6 +382,7 @@ end
 function spec_editor.getStatFields() return STAT_FIELDS end
 
 function spec_editor.setCombatStat(key, value)
+    if statProfile and key=="level" and value~=60 then return false,"Reference stats support level 60 only" end
     for _, field in ipairs(STAT_FIELDS) do
         if field[1] == key then
             if type(value) ~= "number" or value ~= value or value < (field[4] or 0) or value > (field[5] or 1) or (key == "level" and value % 1 ~= 0) then

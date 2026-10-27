@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "description": "Local level-60 reference profile. Attributes/offsets/crit scaling agree with saved planner; base crit conflicts are explicit. Not certified client data.",
+  "checkout_head": "51da1856fc932401bd880e3691cba14b33039dc1",
+  "files": {
+    "sim/core/base_stats.go": "a485e9ccd2043421511c73b28a91c4734b7768f4b4ee68f65954b4e984358f16",
+    "sim/core/character.go": "bcba461dff635df36114d402f8f1ba90db166ef12b85d8aac5ab09e09d6bcd75",
+    "sim/core/mana.go": "a0250df33e829c698e0834088e8cc534bfec5aca730fa8bd56d8e53465b64233",
+    "sim/core/stats/deps.go": "690c0b7bc8768c2a60e06c19c52197a20f2dbf9bb87cc4d8f37fbf544037d64c",
+    "sim/core/racials.go": "3a53cd76a210c05c980fded6189f19d5ee4d13aa0d7c1cfd541ab781eff96258",
+    "sim/core/specializations.go": "2814abe6d088bfb3b5ce60c691446be110b581a384cdab6c7af5db9c962510c7",
+    "sim/warlock/talents.go": "8e74d7ed8258371b9ed7527ac8e96a53ef34ce6265102a2ad1977924dca65931",
+    "assets/db_inputs/wowhead_forever_gearplanner.txt": "72f8265d8954efc282efaf691a88bb065d6fe0159c8180b09d2c6b4dbc8e3dd6"
+  },
+  "classes": {
+    "warlock": {
+      "health": 1414,
+      "mana": 1373,
+      "agility": 50,
+      "strength": 45,
+      "intellect": 110,
+      "spirit": 115,
+      "stamina": 65,
+      "base_spell_crit_percent": 1.7,
+      "spell_crit_percent_per_intellect": 0.0165,
+      "planner_base_spell_crit_percent": 0
+    },
+    "frost_mage": {
+      "health": 1370,
+      "mana": 1213,
+      "agility": 35,
+      "strength": 30,
+      "intellect": 125,
+      "spirit": 120,
+      "stamina": 45,
+      "base_spell_crit_percent": 0.2,
+      "spell_crit_percent_per_intellect": 0.0168,
+      "planner_base_spell_crit_percent": 0
+    },
+    "priest": {
+      "health": 1397,
+      "mana": 1376,
+      "agility": 40,
+      "strength": 35,
+      "intellect": 120,
+      "spirit": 125,
+      "stamina": 50,
+      "base_spell_crit_percent": 0.8,
+      "spell_crit_percent_per_intellect": 0.0168,
+      "planner_base_spell_crit_percent": 0
+    }
+  },
+  "race_offsets": {
+    "human": {
+      "agility": 0,
+      "strength": 0,
+      "intellect": 0,
+      "spirit": 0,
+      "stamina": 0
+    },
+    "gnome": {
+      "agility": 3,
+      "strength": -5,
+      "intellect": 3,
+      "spirit": 0,
+      "stamina": -1
+    },
+    "orc": {
+      "agility": -3,
+      "strength": 3,
+      "intellect": -3,
+      "spirit": 3,
+      "stamina": 2
+    },
+    "undead": {
+      "agility": -2,
+      "strength": -1,
+      "intellect": -2,
+      "spirit": 5,
+      "stamina": 1
+    },
+    "troll": {
+      "agility": 2,
+      "strength": 1,
+      "intellect": -4,
+      "spirit": 1,
+      "stamina": 1
+    }
+  },
+  "resource_offsets": {
+    "health": -180,
+    "mana": -280
+  },
+  "source_formulas": {
+    "health": "class health + 10 * total stamina - 180",
+    "mana": "class mana + 15 * total intellect - 280"
+  },
+  "rounding": "Reference dependency and Demonic Embrace calculations use floating-point values without explicit flooring. Client rounding is unverified.",
+  "racial_policy": "Use this project's pinned caster racials; the reference engine weapon-gates Human/Orc crit and is not authoritative for those bonuses."
+}

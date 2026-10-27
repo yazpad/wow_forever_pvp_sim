@@ -16,6 +16,15 @@ pub fn build(b: *std.Build) void {
     generate_action_catalog.addFileInput(b.path("scripts/generate_action_catalog.py"));
     generate_action_catalog.addFileInput(b.path("visualizer/data/action_catalog.json"));
 
+    const audit_gear = b.addSystemCommand(&.{ "python3", "scripts/audit_gear.py", "--check" });
+    audit_gear.setCwd(b.path("."));
+    b.step("audit-gear", "Check independent equipment totals and audit report").dependOn(&audit_gear.step);
+
+    const verify_gear = b.addSystemCommand(&.{ "python3", "scripts/generate_gear_catalog.py", "--check" });
+    verify_gear.setCwd(b.path("."));
+    verify_gear.step.dependOn(&audit_gear.step);
+    generate_action_catalog.step.dependOn(&verify_gear.step);
+
     const generate_identity = b.addSystemCommand(&.{ "python3", "scripts/generate_simulator_identity.py" });
     generate_identity.setCwd(b.path("."));
     generate_identity.step.dependOn(&generate_action_catalog.step);

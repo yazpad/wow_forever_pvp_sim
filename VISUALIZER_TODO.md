@@ -446,9 +446,15 @@ Unknown details below are verification tasks, not permission to use Classic valu
   for the selected items, including complete Warlock/Mage Pre-BiS sets and
   representative individual gear swaps. Verify item data, stamina/health,
   intellect/mana/crit, spell power by school, hit caps, armor and resistances.
+  Independent arithmetic for eight full-set/swap cases now matches Lua/Zig and
+  setup/Fight exports; see [GEAR_AUDIT.md](GEAR_AUDIT.md). Item-source accuracy,
+  the unreachable-with-current-items hit cap and replay comparison remain open.
 - [ ] Verify the baseline stats used with equipment match the intended level,
   class and race; distinguish baseline, equipment and talent/buff contributions
   and check that loading or re-equipping gear never counts bonuses twice.
+  Provisional opt-in class/race profiles and 32 independent checks are now
+  available; see [STAT_PROFILES.md](STAT_PROFILES.md). Source conflicts and
+  client rounding prevent marking the authentic-baseline audit complete.
 - [ ] Compare expected totals with editor stats, setup HP/MP, serialized Fight
   specs, simulator initialization and recorded replay values; document expected
   ranges and resolve discrepancies so each selected loadout produces plausible

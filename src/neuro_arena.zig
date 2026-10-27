@@ -114,7 +114,9 @@ fn initBaseDuel(comptime a: Spec, comptime b: Spec, allocator: std.mem.Allocator
     pets.set(state, true, 0, active_pet_a);
     pets.set(state, false, 0, active_pet_b);
     d.setRace(true, o.race_a);
+    d.setPvpTrinket(true, o.pvp_trinket_a);
     d.setRace(false, o.race_b);
+    d.setPvpTrinket(false, o.pvp_trinket_b);
     try d.setCombatStats(true, o.combat_stats_a);
     try d.setCombatStats(false, o.combat_stats_b);
     state.mana_a[0] = if (a == .warrior) 0 else state.max_mana_a[0];

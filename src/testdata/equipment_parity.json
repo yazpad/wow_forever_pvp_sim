@@ -1,0 +1,389 @@
+[
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 13964,
+        "neck": 18691,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 18735,
+        "chest": 14153,
+        "ring2": 12543,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 13001,
+        "shoulder": 18681,
+        "wand": 13396
+      },
+      "class": "warlock",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3515.0,
+      "shadow_power": 366.0,
+      "spell_crit_chance": 0.06666666666666667,
+      "armor_damage_reduction": 0.17964865760689427,
+      "frost_power": 301.0,
+      "fire_power": 313.0,
+      "stamina": 117.0,
+      "max_health": 3670.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.97,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0
+    },
+    "name": "warlock_prebis"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 13964,
+        "neck": 12103,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 11822,
+        "chest": 14152,
+        "ring2": 942,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 942,
+        "shoulder": 11782,
+        "wand": 13938
+      },
+      "class": "frost_mage",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3455.0,
+      "shadow_power": 276.0,
+      "spell_crit_chance": 0.07630252100840336,
+      "armor_damage_reduction": 0.17883211678832117,
+      "frost_power": 343.0,
+      "fire_power": 284.0,
+      "stamina": 106.0,
+      "max_health": 3560.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.98,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 20.0
+    },
+    "name": "mage_prebis"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 13964,
+        "neck": 18691,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 18735,
+        "chest": 14136,
+        "ring2": 12543,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 13001,
+        "shoulder": 18681,
+        "wand": 13396
+      },
+      "class": "priest",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3695.0,
+      "shadow_power": 360.0,
+      "spell_crit_chance": 0.06899159663865546,
+      "armor_damage_reduction": 0.1776042531982057,
+      "frost_power": 295.0,
+      "fire_power": 267.0,
+      "stamina": 103.0,
+      "max_health": 3530.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.97,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0
+    },
+    "name": "priest_starter"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 13964,
+        "neck": 18691,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 0,
+        "feet": 18735,
+        "chest": 14153,
+        "ring2": 12543,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 13001,
+        "shoulder": 18681,
+        "wand": 13396
+      },
+      "class": "warlock",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3395.0,
+      "shadow_power": 336.0,
+      "spell_crit_chance": 0.06534653465346535,
+      "armor_damage_reduction": 0.17029835735836407,
+      "frost_power": 271.0,
+      "fire_power": 283.0,
+      "stamina": 109.0,
+      "max_health": 3590.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.97,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0
+    },
+    "name": "warlock_without_head"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 944,
+        "neck": 12103,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 0,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 11822,
+        "chest": 14152,
+        "ring2": 942,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 942,
+        "shoulder": 11782,
+        "wand": 13938
+      },
+      "class": "frost_mage",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3335.0,
+      "shadow_power": 242.0,
+      "spell_crit_chance": 0.07495798319327732,
+      "armor_damage_reduction": 0.17883211678832117,
+      "frost_power": 345.0,
+      "fire_power": 286.0,
+      "stamina": 106.0,
+      "max_health": 3560.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.98,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 20.0,
+      "frost_resistance": 40.0
+    },
+    "name": "mage_staff_swap"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 17719,
+        "neck": 12103,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 11822,
+        "chest": 14152,
+        "ring2": 942,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 942,
+        "shoulder": 11782,
+        "wand": 13938
+      },
+      "class": "frost_mage",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3335.0,
+      "shadow_power": 262.0,
+      "spell_crit_chance": 0.08495798319327731,
+      "armor_damage_reduction": 0.17883211678832117,
+      "frost_power": 329.0,
+      "fire_power": 270.0,
+      "stamina": 106.0,
+      "max_health": 3560.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.98,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 20.0
+    },
+    "name": "mage_sword_swap"
+  },
+  {
+    "input": {
+      "gear": {
+        "waist": 11662,
+        "main_hand": 13964,
+        "neck": 12103,
+        "back": 11623,
+        "hands": 13253,
+        "wrist": 18497,
+        "off_hand": 11904,
+        "trinket1": 12930,
+        "head": 18727,
+        "feet": 11822,
+        "chest": 14152,
+        "ring2": 12545,
+        "trinket2": 13968,
+        "legs": 13170,
+        "ring1": 942,
+        "shoulder": 11782,
+        "wand": 13938
+      },
+      "class": "frost_mage",
+      "gear_base_stats": {
+        "max_mana": 2000,
+        "shadow_power": 12,
+        "spell_crit_chance": 0.03,
+        "armor_damage_reduction": 0.1,
+        "frost_power": 8,
+        "fire_power": 20,
+        "stamina": 50,
+        "max_health": 3000,
+        "arcane_resistance": 5
+      },
+      "race": "undead"
+    },
+    "expected": {
+      "max_mana": 3560.0,
+      "shadow_power": 294.0,
+      "spell_crit_chance": 0.07747899159663865,
+      "armor_damage_reduction": 0.17883211678832117,
+      "frost_power": 340.0,
+      "fire_power": 302.0,
+      "stamina": 106.0,
+      "max_health": 3560.0,
+      "arcane_resistance": 5.0,
+      "spell_hit_chance": 0.98,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 10.0
+    },
+    "name": "mage_horde_ring_swap"
+  },
+  {
+    "name": "empty_equipment",
+    "input": {
+      "class": "warlock",
+      "race": "undead",
+      "gear": {}
+    },
+    "expected": {
+      "max_health": 2000.0,
+      "max_mana": 1000.0,
+      "stamina": 0.0,
+      "spell_hit_chance": 0.96,
+      "spell_crit_chance": 0.0,
+      "armor_damage_reduction": 0.0,
+      "shadow_power": 0.0,
+      "fire_power": 0.0,
+      "frost_power": 0.0,
+      "shadow_resistance": 0.0,
+      "fire_resistance": 0.0,
+      "frost_resistance": 0.0,
+      "arcane_resistance": 0.0
+    }
+  }
+]

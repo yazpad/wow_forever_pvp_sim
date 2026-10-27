@@ -19,7 +19,7 @@ M.fields={
     {'starting_rage','Starting rage',0,130}, {'starting_stance','Starting stance',{'battle','defensive','berserker'}},
 }
 function M.copy(value)
-    local defaults={main_hand={min=180,max=270,speed=3.6,two_handed=true},attack_power=700,white_hit=0.95,special_hit=0.95,crit=0.05,starting_rage=0,starting_stance='battle',damage_taken_rage=true}
+    local defaults={main_hand={min=180,max=270,speed=3.6,two_handed=true},attack_power=700,white_hit=0.95,special_hit=0.95,crit=0.05,starting_rage=0,starting_stance='battle',damage_taken_rage=true,shield=false}
     for k,v in pairs(value or {}) do if k~='build' then defaults[k]=clone(v) end end
     if defaults.off_hand==false then defaults.off_hand=nil end
     return defaults
@@ -36,6 +36,7 @@ function M.value(config,key)
 end
 function M.validate(c)
     if c.damage_taken_rage~=nil and type(c.damage_taken_rage)~='boolean' then return false,'Incoming hit rage must be enabled or disabled.' end
+    if type(c.shield)~='boolean' then return false,'Shield must be enabled or disabled.' end
     if type(c.main_hand)~='table' then return false,'Main-hand weapon is required.' end
     local function finite(n) return type(n)=='number' and n==n and n~=math.huge and n~=-math.huge end
     for _,weapon in ipairs({c.main_hand,c.off_hand}) do
@@ -44,6 +45,7 @@ function M.validate(c)
             return false,'Weapon needs valid minimum, maximum and speed.'
         end
     end
+    if c.shield and (c.main_hand.two_handed or c.off_hand) then return false,'A shield requires a one-handed main hand and no off-hand weapon.' end
     if c.off_hand and (c.main_hand.two_handed or c.off_hand.two_handed) then return false,'Dual wield requires two one-handed weapons.' end
     for _,key in ipairs({'white_hit','special_hit','crit'}) do if not finite(c[key]) or c[key]<0 or c[key]>1 then return false,'Hit and crit must be between 0 and 1.' end end
     if not finite(c.attack_power) or c.attack_power<0 or c.attack_power>10000 or not finite(c.starting_rage) or c.starting_rage<0 or c.starting_rage>130 or not M.stances[c.starting_stance] then return false,'Invalid Warrior stats or starting stance.' end

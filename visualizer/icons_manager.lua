@@ -23,6 +23,8 @@ local CLASS_COORDS = {
 }
 
 local ICON_FILES = {
+    inv_jewelry_trinketpvp_01 = "icons/inv_jewelry_trinketpvp_01.jpg",
+    inv_jewelry_trinketpvp_02 = "icons/inv_jewelry_trinketpvp_02.jpg",
     -- Race portraits (Wowhead/ZAM achievement_character_<race>_male icons).
     race_human = "icons/race_human.jpg",
     race_gnome = "icons/race_gnome.jpg",

@@ -271,9 +271,36 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                 elseif section=='Gear' and spec.class=='warrior' then
                     ui.setFont('small')
                     if y>=top and y+36<=bottom then
-                        g.setColor(ui.colors.textMuted);g.printf('Explicit weapon stats · gear catalog pending',ox+24,y,left-24)
+                        g.setColor(ui.colors.textMuted);g.printf('Item starters and explicit stat overrides',ox+24,y,left-24)
                     end
                     y=y+38
+                    local half=(left-30)/2
+                    for row,pair in ipairs({{{'Two-hand set','two_hand'},{'Dual-wield set','dual_wield'}},{{'Shield set','shield'},{'Clear items',false}}}) do
+                        if y>=top and y+26<=bottom then
+                            for column,choice in ipairs(pair) do
+                                button(ox+24+(column-1)*(half+6),y,half,choice[1],edit(function()
+                                    if choice[2] then
+                                        local ok,err=editor.equipWarriorStarter(choice[2]);message=ok and '' or err
+                                    else editor.clearGear() end
+                                end))
+                            end
+                        end
+                        y=y+32
+                    end
+                    for _,slot in ipairs(gear.slots) do
+                        local fieldX,fieldWidth=ox+24+(left-24)*0.38,(left-24)*0.62
+                        if y>=top and y+26<=bottom then
+                            g.setColor(ui.colors.textMuted);g.print(slot[2],ox+24,y+5)
+                            local id=spec.gear and spec.gear[slot[1]] or 0
+                            local action=ui.dropdown('gear_'..i..'_'..slot[1],fieldX,y,fieldWidth,26,id,gear.choices(slot[1],'warrior'),edit(function(value)
+                                local ok,err=editor.setGear(slot[1],value);message=ok and '' or err
+                            end),function(value) local item=gear.item(value);return item and item.name or 'Empty' end,nil,{menuWidth=left-24})
+                            buttons[#buttons+1]={x=fieldX,y=y,w=fieldWidth,h=26,action=function(b) if b==1 then action() end end}
+                            local mx,my=ui.contentPoint(love.mouse.getPosition())
+                            if mx>=fieldX and mx<=ox+left and my>=y and my<=y+26 and not ui.dropdownOpen() then tooltip={text=gear.detail(id),x=mx,y=my} end
+                        end
+                        y=y+29
+                    end
                     local fields={{'max_health','Health',1,100000},{'armor_damage_reduction','Armor reduction',0,1},{'melee_avoidance_chance','Legacy avoidance',0,1},{'melee_dodge_chance','Dodge chance',0,1},{'melee_parry_chance','Parry chance',0,1},{'melee_block_chance','Block chance',0,1},{'melee_block_value','Block value',0,0,10000}}
                     for _,field in ipairs(warrior.fields) do
                         if not field[1]:match('^off_hand%.') or spec.warrior.off_hand then
@@ -295,6 +322,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                                 end),function(v)
                                     if key=='warrior.main_hand.two_handed' then return v and 'Two hand' or 'One hand' end
                                     if key=='warrior.off_hand' then return v and 'Weapon' or 'Empty' end
+                                    if key=='warrior.shield' then return v and 'Equipped' or 'None' end
                                     if key=='warrior.damage_taken_rage' then return v and 'Enabled' or 'Disabled' end
                                     return v:sub(1,1):upper()..v:sub(2)
                                 end)
@@ -332,6 +360,7 @@ function workspace.draw(drawReplay, hasReplay, loadReplay)
                         string.format('HP %.0f   MP %.0f   SP %.0f',maximumHealth(spec),maxMana,power),
                         string.format('Hit %.1f%%   Crit %.2f%%',stats.spell_hit_chance*100,math.min(1,stats.spell_crit_chance+races.critBonus(spec.race or 'human'))*100),
                     }
+                    if spec.stat_profile then table.insert(summary,1,"Reference stats (provisional)") end
                     if passive.mastery then summary[#summary+1]=passive.mastery end
                     for _,line in ipairs(summary) do
                         if y>=top and y+16<=bottom then ui.setFont('small');g.setColor(ui.colors.textMuted);g.print(line,ox+24,y);ui.resetFont() end
@@ -988,6 +1017,8 @@ function workspace.preview()
     for i,side in ipairs({'a','b'}) do
         local spec=drafts[i]
         meta['max_health_'..side]=maximumHealth(spec)
+        meta['pvp_trinket_'..side]=gear.pvpItem(spec.gear) or 0
+        meta.item_cooldown_column=163
         local t = spec.trees and spec.trees.Demonology or {}
         local felVitality = spec.class=='warlock' and (t['105903'] or t[105903] or 0) or 0
         local maxMana = races.maxMana(spec.race,spec.combat_stats.max_mana)*(1+0.05*felVitality)

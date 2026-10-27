@@ -1,0 +1,300 @@
+{
+  "version": "Classic level 60 Warrior starters v1; fixed passive stats only",
+  "source": "assets/db_inputs/wowhead_item_tooltips.csv",
+  "source_sha256": "17511657222a36859f83788988991590dfb0be395121fdc81e0d0f5f3209bc81",
+  "formula_sources": {
+    "sim/core/base_stats.go": "a485e9ccd2043421511c73b28a91c4734b7768f4b4ee68f65954b4e984358f16",
+    "sim/core/unit.go": "f4455aa79d67adc66eda5da6405e9cd0a905d885b2c3875eead85322ef23615a",
+    "sim/core/spell_outcome.go": "cb3319a63bb4fefb78bda3be4168c4207f24324be16c129b43a02fb755d66fbe",
+    "sim/warrior/warrior.go": "041f68d1b2765f12ccabf1b906d8e047d9e6f086add98553bd1aff2109be6173"
+  },
+  "ruleset_note": "Uses cached Classic tooltips; do not substitute Forever planner values. Starter examples, not verified PvP or Pre-BiS recommendations.",
+  "items": [
+    {
+      "id": 16731,
+      "name": "Helm of Valor",
+      "class": "warrior",
+      "slot": "head",
+      "stats": {
+        "strength": 15,
+        "agility": 9,
+        "stamina": 23,
+        "spirit": 8,
+        "armor": 526
+      },
+      "quality": 3,
+      "icon": "inv_helmet_02",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16731",
+      "source_row_sha256": "a496cb0a46b343a0ac8db01931aa50b6726dfd926eefd221c98476ab81fb66cb",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16733,
+      "name": "Spaulders of Valor",
+      "class": "warrior",
+      "slot": "shoulder",
+      "stats": {
+        "strength": 11,
+        "agility": 9,
+        "stamina": 17,
+        "armor": 470
+      },
+      "quality": 3,
+      "icon": "inv_shoulder_30",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16733",
+      "source_row_sha256": "49da8fa51cbd4033f2f52e81271f3c3aa415531a74bcca704f7c0820d6070764",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated."
+    },
+    {
+      "id": 16730,
+      "name": "Breastplate of Valor",
+      "class": "warrior",
+      "slot": "chest",
+      "stats": {
+        "strength": 15,
+        "agility": 10,
+        "stamina": 24,
+        "spirit": 6,
+        "armor": 657
+      },
+      "quality": 3,
+      "icon": "inv_chest_plate03",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16730",
+      "source_row_sha256": "205ef14c35a3819d07a532062c2ce5118a8639c55f399eb1c5a0210058255d32",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16735,
+      "name": "Bracers of Valor",
+      "class": "warrior",
+      "slot": "wrist",
+      "stats": {
+        "strength": 7,
+        "agility": 3,
+        "stamina": 14,
+        "spirit": 2,
+        "armor": 261
+      },
+      "quality": 3,
+      "icon": "inv_bracer_18",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16735",
+      "source_row_sha256": "bfc0f9953b517ac2004c8dcd40eb58f61d1e3b2c8092fb13c484e279946aec44",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16737,
+      "name": "Gauntlets of Valor",
+      "class": "warrior",
+      "slot": "hands",
+      "stats": {
+        "strength": 17,
+        "agility": 3,
+        "stamina": 10,
+        "spirit": 8,
+        "armor": 386
+      },
+      "quality": 3,
+      "icon": "inv_gauntlets_26",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16737",
+      "source_row_sha256": "da568b4318af3b5f387851d917a797cf5f8e3d4d3572250cc9bed2093a8c256d",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16736,
+      "name": "Belt of Valor",
+      "class": "warrior",
+      "slot": "waist",
+      "stats": {
+        "strength": 14,
+        "agility": 7,
+        "stamina": 8,
+        "spirit": 4,
+        "armor": 341
+      },
+      "quality": 3,
+      "icon": "inv_belt_34",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16736",
+      "source_row_sha256": "a37110edbd3e8c0d976618ea98b8691771e5e5b8a07fabfe1cfb4e55cb6478ea",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16732,
+      "name": "Legplates of Valor",
+      "class": "warrior",
+      "slot": "legs",
+      "stats": {
+        "strength": 23,
+        "agility": 11,
+        "stamina": 15,
+        "spirit": 4,
+        "armor": 557
+      },
+      "quality": 3,
+      "icon": "inv_pants_04",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16732",
+      "source_row_sha256": "494bb6979d67ee938394c08f7b4f6653b4e460e41f76c5bb05091532e014b4c0",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 16734,
+      "name": "Boots of Valor",
+      "class": "warrior",
+      "slot": "feet",
+      "stats": {
+        "strength": 8,
+        "agility": 4,
+        "stamina": 20,
+        "spirit": 3,
+        "armor": 424
+      },
+      "quality": 3,
+      "icon": "inv_boots_plate_03",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=16734",
+      "source_row_sha256": "0d2da72bf3af0ffc278bd5d5a49c615ae5c8d2cd375c736d40d6726652fdda3d",
+      "armor_type": "plate",
+      "effect_note": "Set bonuses are not simulated. Spirit grants no regeneration in the current simulator."
+    },
+    {
+      "id": 12784,
+      "name": "Arcanite Reaper",
+      "class": "warrior",
+      "slot": "main_hand",
+      "stats": {
+        "stamina": 13,
+        "attack_power": 62
+      },
+      "quality": 3,
+      "icon": "inv_axe_09",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=12784",
+      "source_row_sha256": "dde13783327e74030a4b9d6f79c70f151329d193785aeef4e0cfb0406b2173cb",
+      "weapon": {
+        "min": 153,
+        "max": 256,
+        "speed": 3.8,
+        "two_handed": true
+      },
+      "weapon_type": "axe",
+      "two_hand": true,
+      "off_hand_eligible": false
+    },
+    {
+      "id": 17705,
+      "name": "Thrash Blade",
+      "class": "warrior",
+      "slot": "main_hand",
+      "stats": {},
+      "quality": 3,
+      "icon": "inv_sword_36",
+      "unique": true,
+      "url": "https://www.wowhead.com/classic/item=17705",
+      "source_row_sha256": "5b48695a5a5480ea3288536589b3c389b0cb32a6483d4cc66e34ef4bbccd1ae1",
+      "weapon": {
+        "min": 66,
+        "max": 124,
+        "speed": 2.7,
+        "two_handed": false
+      },
+      "weapon_type": "sword",
+      "two_hand": false,
+      "off_hand_eligible": true,
+      "effect_note": "Weapon proc is not simulated."
+    },
+    {
+      "id": 15806,
+      "name": "Mirah's Song",
+      "class": "warrior",
+      "slot": "main_hand",
+      "stats": {
+        "strength": 9,
+        "agility": 9
+      },
+      "quality": 3,
+      "icon": "inv_sword_34",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=15806",
+      "source_row_sha256": "2bdae7c300021111f0aa15211146fbac1467fc3f20b99623cd79ac67927f6877",
+      "weapon": {
+        "min": 57,
+        "max": 87,
+        "speed": 1.8,
+        "two_handed": false
+      },
+      "weapon_type": "sword",
+      "two_hand": false,
+      "off_hand_eligible": true
+    },
+    {
+      "id": 12602,
+      "name": "Draconian Deflector",
+      "class": "warrior",
+      "slot": "off_hand",
+      "stats": {
+        "stamina": 7,
+        "armor": 2153,
+        "defense": 10,
+        "fire_resistance": 10
+      },
+      "quality": 3,
+      "icon": "inv_shield_20",
+      "unique": false,
+      "url": "https://www.wowhead.com/classic/item=12602",
+      "source_row_sha256": "5c9e58a78c942681c79d85778c234454a60d9bb4a0f958d4745c3bb234206ba8",
+      "armor_type": "shield",
+      "shield_block": 40,
+      "effect_note": "Defense is recorded but does not alter avoidance or critical strike suppression."
+    }
+  ],
+  "starters": {
+    "two_hand": {
+      "head": 16731,
+      "shoulder": 16733,
+      "chest": 16730,
+      "wrist": 16735,
+      "hands": 16737,
+      "waist": 16736,
+      "legs": 16732,
+      "feet": 16734,
+      "main_hand": 12784
+    },
+    "dual_wield": {
+      "head": 16731,
+      "shoulder": 16733,
+      "chest": 16730,
+      "wrist": 16735,
+      "hands": 16737,
+      "waist": 16736,
+      "legs": 16732,
+      "feet": 16734,
+      "main_hand": 17705,
+      "off_hand": 15806
+    },
+    "shield": {
+      "head": 16731,
+      "shoulder": 16733,
+      "chest": 16730,
+      "wrist": 16735,
+      "hands": 16737,
+      "waist": 16736,
+      "legs": 16732,
+      "feet": 16734,
+      "main_hand": 17705,
+      "off_hand": 12602
+    }
+  }
+}

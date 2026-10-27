@@ -47,7 +47,7 @@ available; see [Warrior setup and playback](../../WARRIOR.md). Metadata marks
 Improved Heroic Strike, Improved Tactical Mastery and Boundless Rage as active,
 Dual Wield Specialization as partial (rage only), and other talents as planned.
 
-Item-based gear, the complete ability/talent kit, and neural training remain
+Initial item-based gear is supported. The complete ability/talent kit and neural training remain
 unsupported. The compact melee table uses explicit hit, combined avoidance,
 crit and armor-reduction inputs rather than verified PvP attack-table rules.
 Incoming-damage rage is deliberately not enabled by this arena pass.

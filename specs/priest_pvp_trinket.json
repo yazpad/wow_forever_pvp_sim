@@ -1,0 +1,31 @@
+{
+  "class": "priest",
+  "race": "human",
+  "name": "PvP Trinket Demo - priest",
+  "description": "Forever Greater Insignia on the existing compact caster baseline. Empty talents; select trinket actions automatically. See ITEM_ACTIVES.md.",
+  "gear": {
+    "waist": 11662,
+    "main_hand": 13964,
+    "neck": 18691,
+    "back": 11623,
+    "hands": 13253,
+    "wrist": 18497,
+    "off_hand": 11904,
+    "trinket1": 12930,
+    "head": 18727,
+    "feet": 18735,
+    "chest": 14136,
+    "ring2": 12543,
+    "trinket2": 274445,
+    "legs": 13170,
+    "ring1": 13001,
+    "shoulder": 18681,
+    "wand": 13396
+  },
+  "automatic_actions": true,
+  "trees": {
+    "Discipline": {},
+    "Holy": {},
+    "Shadow Magic": {}
+  }
+}

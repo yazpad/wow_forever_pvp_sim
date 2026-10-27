@@ -299,3 +299,27 @@ test "pet utility talents apply by lane and side in mirrors and mixed combat" {
         }
     }
 }
+
+test "Warlock masks disable catalog placeholders on both sides and every SIMD lane" {
+    var duel = try sim.Duel(.warlock, .warlock).init(std.testing.allocator);
+    defer duel.deinit();
+    const state = duel.arena.combat();
+    for (0..16) |lane| {
+        state.race_a[lane] = @intCast(lane % 5);
+        state.race_b[lane] = @intCast((lane + 1) % 5);
+        state.horror_timer_a[lane] = if (lane % 2 == 0) 3 else 0;
+        state.horror_timer_b[lane] = if (lane % 2 == 1) 3 else 0;
+        pets.set(state, true, lane, if (lane % 3 == 0) .succubus else .imp);
+        pets.set(state, false, lane, if (lane % 3 == 0) .felhunter else .voidwalker);
+    }
+    // Check the raw builders as well as the class-aware wrapper: later filters
+    // must never receive uninitialized legality bits from an unused slot.
+    const Mask = [combat.WarlockAction.COUNT]@Vector(16, bool);
+    for ([_]Mask{ state.getActionMaskA(0), state.getActionMaskB(0), duel.getActionMaskA(0), duel.getActionMaskB(0) }) |masks| {
+        inline for (std.meta.fields(combat.WarlockAction)) |field| {
+            if (comptime std.mem.startsWith(u8, field.name, "Unused")) {
+                for (0..16) |lane| try std.testing.expect(!masks[field.value][lane]);
+            }
+        }
+    }
+}

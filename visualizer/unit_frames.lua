@@ -57,6 +57,10 @@ function frames.describe(meta,f,side,extra)
         if not available(name) then return end
         result.cooldowns[#result.cooldowns+1]={icon=icon,remaining=value(index),total=total}
     end
+    local itemId=meta['pvp_trinket_'..suffix] or 0
+    if itemId~=0 and meta.item_cooldown_column then
+        cd('PvP Trinket',itemId==274444 and 'inv_jewelry_trinketpvp_02' or 'inv_jewelry_trinketpvp_01',meta.item_cooldown_column,300)
+    end
     if mage then
         cd('Blink','blink',41,15);cd('Frost Nova','frostnova',43,25);cd('Counterspell','counterspell',29,24);cd('Ice Barrier','icebarrier',27,25)
         if value(25)>0 or result.shield>0 then

@@ -91,18 +91,18 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             return result;
         }
         pub fn needsDecisionA(self: *const Self, i: usize) bool16 {
-            return self.state.needsDecisionA(i);
+            return vOr16(self.state.needsDecisionA(i), @import("item_actions.zig").legal(self, true, i, spec_b));
         }
         pub fn needsTacticalDecisionA(self: *const Self, i: usize) bool16 {
-            if (spec_a == .warrior) return self.column("react_timer", true, i).* <= splat(0);
-            return self.state.needsTacticalDecisionA(i);
+            if (spec_a == .warrior) return vOr16(self.column("react_timer", true, i).* <= splat(0), @import("item_actions.zig").legal(self, true, i, spec_b));
+            return vOr16(self.state.needsTacticalDecisionA(i), @import("item_actions.zig").legal(self, true, i, spec_b));
         }
         pub fn needsDecisionB(self: *const Self, i: usize) bool16 {
-            return self.state.needsDecisionB(i);
+            return vOr16(self.state.needsDecisionB(i), @import("item_actions.zig").legal(self, false, i, spec_a));
         }
         pub fn needsTacticalDecisionB(self: *const Self, i: usize) bool16 {
-            if (spec_b == .warrior) return self.column("react_timer", false, i).* <= splat(0);
-            return self.state.needsTacticalDecisionB(i);
+            if (spec_b == .warrior) return vOr16(self.column("react_timer", false, i).* <= splat(0), @import("item_actions.zig").legal(self, false, i, spec_a));
+            return vOr16(self.state.needsTacticalDecisionB(i), @import("item_actions.zig").legal(self, false, i, spec_a));
         }
         pub fn getObservationsA(self: *const Self, i: usize) [24]f32x16 {
             return self.observations(true, i);
@@ -143,6 +143,11 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
             return self.masks(false, i);
         }
         fn masks(self: *const Self, comptime side_a: bool, i: usize) [combat_spec.WarlockAction.COUNT]bool16 {
+            var result = self.classMasks(side_a, i);
+            result[@import("item_actions.zig").action_id] = @import("item_actions.zig").legal(self, side_a, i, if (side_a) spec_b else spec_a);
+            return result;
+        }
+        fn classMasks(self: *const Self, comptime side_a: bool, i: usize) [combat_spec.WarlockAction.COUNT]bool16 {
             const actor = if (side_a) spec_a else spec_b;
             if (actor == .warrior) return warrior_combat.masks(self, side_a, i);
             const alive = vAnd16(self.state.is_active[i..][0..VEC_LEN].* != ids(0), vAnd16(self.column("hp", side_a, i).* > splat(0), self.column("hp", !side_a, i).* > splat(0)));
@@ -220,9 +225,11 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
                 root.* = select16(root_dmg.* >= splat(250), splat(0), root.*);
             }
         }
-        fn apply(self: *Self, comptime side_a: bool, i: usize, requested: u32x16, movement: f32x16, comptime staged: bool) void {
+        fn apply(self: *Self, comptime side_a: bool, i: usize, incoming: u32x16, movement: f32x16, comptime staged: bool) void {
             const actor = if (side_a) spec_a else spec_b;
             const opponent = if (side_a) spec_b else spec_a;
+            @import("item_actions.zig").apply(self, side_a, i, incoming, opponent);
+            const requested = @select(u32, incoming == ids(@import("item_actions.zig").action_id), ids(0), incoming);
             const active = self.state.is_active[i..][0..VEC_LEN].* != ids(0);
             if (actor == .warrior) return warrior_combat.apply(self, side_a, i, requested, movement);
             if (actor == .priest) {
@@ -1200,6 +1207,7 @@ pub fn ArenaPool(comptime spec_a: Spec, comptime spec_b: Spec) type {
 
                 self.state.is_active[i..][0..VEC_LEN].* = v_duel_act;
                 @import("racials.zig").tick(&self.state, i, dt);
+                @import("item_actions.zig").tick(&self.state, i, dt);
 
                 active_duels_sum += @reduce(.Add, v_duel_act);
             }

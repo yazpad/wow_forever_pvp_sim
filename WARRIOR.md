@@ -27,8 +27,9 @@ block chances are configurable in combat stats; block value reduces blocked
 hits, and legacy melee avoidance is treated as dodge. Improved Overpower adds
 25% or 50% critical chance. Both starters invest three points in
 Improved Heroic Strike. All 53 Forever talents are editable, with hover text
-showing active, partial or planned support. The remaining abilities and talents,
-item gear and Warrior neural training are still pending. Training/champion-policy
+showing active, partial or planned support. Initial item gear is now supported.
+The remaining abilities/talents and Warrior neural training are still pending.
+Training/champion-policy
 controls are disabled for Warrior until that integration is complete.
 
 Generate a short replay directly:
@@ -162,3 +163,13 @@ seconds of replay time. This is visual only and follows pause, playback speed
 and seeking. Click targets follow the displayed portraits. New replays include
 opening positions so first-tick charges animate too; older replays need a frame
 before the charge. Combat movement and ability timing remain instantaneous.
+
+
+## Item equipment
+
+The Gear panel and preset picker now offer initial Classic item loadouts for
+two-hand, dual-wield and sword-and-shield setups. Weapon ranges/speeds and
+supported melee/defensive stats resolve in both the editor and native loader.
+Explicit weapon/stat presets remain supported. See
+[WARRIOR_GEAR.md](WARRIOR_GEAR.md) for the compact baseline, validation,
+override precedence, source provenance and unsupported effects.

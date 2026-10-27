@@ -81,6 +81,32 @@ pub const Policy = struct {
         if (try file.readAll(&cnt_buf) != 4) return error.InvalidPolicyFile;
         const cnt = std.mem.readInt(u32, &cnt_buf, .little);
         var p: Policy = .{};
+        // The item action was appended at 26, before the three movement
+        // outputs. Preserve old ability/movement rows rather than shifting a
+        // learned movement logit into the new item action.
+        inline for (.{ 2, 3, Version }, .{ 36, 41, NumFeatures }) |legacy_version, old_features| {
+            const old_outputs = 26 + NumMovements;
+            const old_count = NumHidden * old_features + NumHidden + old_outputs * NumHidden + old_outputs;
+            if (ver == legacy_version and cnt == old_count) {
+                var old: [old_count]f32 = undefined;
+                const bytes = std.mem.sliceAsBytes(&old);
+                if (try file.readAll(bytes) != bytes.len) return error.UnexpectedEof;
+                for (0..NumHidden) |h| @memcpy(p.params[h * NumFeatures ..][0..old_features], old[h * old_features ..][0..old_features]);
+                const old_b1 = NumHidden * old_features;
+                const new_b1 = NumHidden * NumFeatures;
+                @memcpy(p.params[new_b1..][0..NumHidden], old[old_b1..][0..NumHidden]);
+                const old_w2 = old_b1 + NumHidden;
+                const new_w2 = new_b1 + NumHidden;
+                const old_b2 = old_w2 + old_outputs * NumHidden;
+                const new_b2 = new_w2 + NumOutputs * NumHidden;
+                for (0..old_outputs) |row| {
+                    const destination = if (row >= 26) row + 1 else row;
+                    @memcpy(p.params[new_w2 + destination * NumHidden ..][0..NumHidden], old[old_w2 + row * NumHidden ..][0..NumHidden]);
+                    p.params[new_b2 + destination] = old[old_b2 + row];
+                }
+                return p;
+            }
+        }
         inline for (.{ 2, 3 }, .{ 36, 41 }) |legacy_version, old_features| {
             if (ver == legacy_version) {
                 // Preserve every old input weight and the complete output layer.
@@ -103,7 +129,7 @@ pub const Policy = struct {
         return p;
     }
 
-    /// 16-lane SIMD batch forward pass: Input(44) -> Linear -> ReLU(24) -> Linear -> Output(29)
+    /// 16-lane SIMD batch forward pass: Input(44) -> Linear -> ReLU(24) -> Linear -> Output(30)
     pub fn forward16(self: *const Policy, features: *const [NumFeatures]f32x16, out: *[NumOutputs]f32x16) void {
         const v_zero: f32x16 = @splat(0.0);
         const w1_offset: usize = 0;
@@ -482,4 +508,35 @@ test "neuro_policy forward pass and action selection" {
     const masks = duel.getActionMaskA(0);
     try std.testing.expect(masks[act_a.ability][0]);
     try std.testing.expect(act_a.movement == -1.0 or act_a.movement == 0.0 or act_a.movement == 1.0);
+}
+
+test "26 action policies retain ability and movement rows when adding the item action" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(path);
+    const file_path = try std.fs.path.join(std.testing.allocator, &.{ path, "old.nepl" });
+    defer std.testing.allocator.free(file_path);
+    const old_outputs = 29;
+    const old_count = NumHidden * NumFeatures + NumHidden + old_outputs * NumHidden + old_outputs;
+    var old: [old_count]f32 = undefined;
+    for (&old, 0..) |*value, index| value.* = @floatFromInt(index + 1);
+    const file = try tmp.dir.createFile("old.nepl", .{});
+    try file.writeAll(&Magic);
+    try file.writer().writeInt(u32, Version, .little);
+    try file.writer().writeInt(u32, old_count, .little);
+    try file.writeAll(std.mem.sliceAsBytes(&old));
+    file.close();
+    const policy = try Policy.loadFile(file_path);
+    const w2 = NumHidden * NumFeatures + NumHidden;
+    const old_b2 = w2 + old_outputs * NumHidden;
+    const new_b2 = w2 + NumOutputs * NumHidden;
+    try std.testing.expectEqualSlices(f32, old[0..w2], policy.params[0..w2]);
+    for (0..old_outputs) |row| {
+        const target = if (row >= 26) row + 1 else row;
+        try std.testing.expectEqualSlices(f32, old[w2 + row * NumHidden ..][0..NumHidden], policy.params[w2 + target * NumHidden ..][0..NumHidden]);
+        try std.testing.expectEqual(old[old_b2 + row], policy.params[new_b2 + target]);
+    }
+    for (policy.params[w2 + 26 * NumHidden ..][0..NumHidden]) |value| try std.testing.expectEqual(@as(f32, 0), value);
+    try std.testing.expectEqual(@as(f32, 0), policy.params[new_b2 + 26]);
 }

@@ -1,0 +1,34 @@
+{
+  "name": "Reference Level 60 Warlock (Provisional)",
+  "description": "Opt-in local reference stats; base crit conflicts and client rounding are unverified. Empty talents. See STAT_PROFILES.md.",
+  "class": "warlock",
+  "race": "human",
+  "level": 60,
+  "stat_profile": "level60_reference_v1",
+  "gear": {
+    "waist": 11662,
+    "main_hand": 13964,
+    "neck": 18691,
+    "back": 11623,
+    "hands": 13253,
+    "wrist": 18497,
+    "off_hand": 11904,
+    "trinket1": 12930,
+    "head": 18727,
+    "feet": 18735,
+    "chest": 14153,
+    "ring2": 12543,
+    "trinket2": 13968,
+    "legs": 13170,
+    "ring1": 13001,
+    "shoulder": 18681,
+    "wand": 13396
+  },
+  "trees": {
+    "Affliction": {},
+    "Demonology": {},
+    "Destruction": {}
+  },
+  "automatic_actions": true,
+  "pet": "imp"
+}

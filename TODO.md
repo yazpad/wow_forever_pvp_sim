@@ -2,7 +2,15 @@
 
 Use this file for current priorities and links to detailed checklists. Keep
 mechanic-level completion status in the relevant checklist rather than duplicating
-it here. Last reviewed: 2026-10-16.
+it here. Last reviewed: 2026-10-23.
+
+## Items and equipment
+
+Next equipment milestone: finish base/gear validation and expand supported items.
+Native/editor loadout resolution and initial Warrior weapons, armor and shields
+are implemented; see [WARRIOR_GEAR.md](WARRIOR_GEAR.md). Then
+implement on-use items through combat, search and replay, followed by procs.
+Track scope and acceptance criteria in [ITEMS_TODO.md](ITEMS_TODO.md).
 
 ## Next implementation order
 
@@ -27,6 +35,7 @@ making existing builds faithful before expanding the spell catalog.
 | File | Purpose |
 | --- | --- |
 | [TODO.md](TODO.md) | Current priorities and entry point for all TODOs. |
+| [ITEMS_TODO.md](ITEMS_TODO.md) | Item data, native equipment resolution, stat audits, Warrior gear, on-use effects and procs. |
 | [PRIEST_TODO.md](PRIEST_TODO.md) | Forever Priest class implementation status, SIMD column mapping, and remaining talents/spells. |
 | [WARRIOR_TODO.md](WARRIOR_TODO.md) | Forever Warrior roadmap: source audit, melee/rage/stances, full talent inventory, integration and validation. |
 | [WARLOCK_TODO.md](WARLOCK_TODO.md) | Warlock spells, talents, pets, combat accuracy and mechanic validation. |
@@ -39,7 +48,7 @@ making existing builds faithful before expanding the spell catalog.
 Warrior development is tracked in [WARRIOR_TODO.md](WARRIOR_TODO.md). The staged
 headless arena supports swings, Heroic Strike, Hamstring and stance changes;
 two starter presets, editor controls and recorded playback are now available.
-The complete Arms kit, item gear and Warrior neuroevolution through the existing
+The complete Arms kit, broader item effects and Warrior neuroevolution through the existing
 Evolve/Train workflow remain pending; see section 7 of the Warrior checklist. Warrior state
 is allocated only for its matchups so caster snapshot size and action/choice
 capacity remain unchanged. Performance evidence belongs in `benchmarks/warrior/`.

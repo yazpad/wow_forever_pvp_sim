@@ -9,7 +9,7 @@ Current priorities and detailed checklists: [Project TODO](TODO.md).
 The partial Forever Warrior kit now has starter presets, editable weapon stats,
 rage/stance displays and recorded playback. See [Warrior setup](WARRIOR.md).
 
-The visualizer supports per-slot Vanilla pre-raid gear for Warlock and Frost Mage, with resolved combat stats. See [Gear setup and data sources](GEAR.md).
+The visualizer supports per-slot caster gear and initial Warrior weapon, armor and shield loadouts, with resolved combat stats. See [Gear setup and data sources](GEAR.md).
 
 ---
 

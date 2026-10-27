@@ -39,7 +39,7 @@ assert(editor.setWarriorStat('main_hand.two_handed',false))
 assert(editor.setWarriorStat('off_hand',true))
 assert(warrior.value(editor.getCurrentSpecConfig().warrior,'main_hand.two_handed')==false)
 assert(warrior.supportText(assert(talents.findTalent(talents.load('warrior'),12282)))=='Active in fights')
-assert(warrior.supportText(assert(talents.findTalent(talents.load('warrior'),12294))):find('Planned'))
+assert(warrior.supportText(assert(talents.findTalent(talents.load('warrior'),12294)))=='Active in fights')
 local f={};for i=1,136 do f[i]=0 end
 f[5],f[6],f[125],f[126],f[127],f[128],f[129],f[130],f[131],f[134]=3500,3000,55,22,4,2,1.2,0.7,1,9
 local meta={spec_a='warrior',spec_b='warrior',max_health_a=4000,max_health_b=4000,max_rage_a=130,max_rage_b=100}

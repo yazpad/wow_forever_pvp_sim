@@ -190,6 +190,13 @@
       "name": "None",
       "icon": "border",
       "selectable": false
+    },
+    {
+      "id": 26,
+      "symbol": "PvpTrinket",
+      "name": "PvP Trinket",
+      "icon": "inv_jewelry_trinketpvp_01",
+      "item_effect": "forever_greater_insignia_v1"
     }
   ],
   "frost_mage": [
@@ -368,6 +375,13 @@
       "name": "None",
       "icon": "border",
       "selectable": false
+    },
+    {
+      "id": 26,
+      "symbol": "PvpTrinket",
+      "name": "PvP Trinket",
+      "icon": "inv_jewelry_trinketpvp_01",
+      "item_effect": "forever_greater_insignia_v1"
     }
   ],
   "priest": [
@@ -563,6 +577,13 @@
       "symbol": "InnerFire",
       "name": "Inner Fire",
       "icon": "spell_holy_innerfire"
+    },
+    {
+      "id": 26,
+      "symbol": "PvpTrinket",
+      "name": "PvP Trinket",
+      "icon": "inv_jewelry_trinketpvp_01",
+      "item_effect": "forever_greater_insignia_v1"
     }
   ],
   "warrior": [
@@ -759,6 +780,13 @@
       "name": "None",
       "icon": "sword",
       "selectable": false
+    },
+    {
+      "id": 26,
+      "symbol": "PvpTrinket",
+      "name": "PvP Trinket",
+      "icon": "inv_jewelry_trinketpvp_01",
+      "item_effect": "forever_greater_insignia_v1"
     }
   ]
 }

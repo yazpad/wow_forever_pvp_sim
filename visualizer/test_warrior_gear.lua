@@ -1,0 +1,51 @@
+package.path='visualizer/?.lua;'..package.path
+local json=require('json')
+local gear=require('gear')
+local editor=require('spec_editor')
+local function clone(x) return json.decode(json.encode(x)) end
+local function near(a,b) assert(math.abs(a-b)<1e-6,tostring(a)..' != '..tostring(b)) end
+local function compare(actual,expected)
+    for key,value in pairs(expected) do
+        if type(value)=='table' then compare(actual[key],value)
+        elseif type(value)=='number' then near(actual[key],value)
+        else assert(actual[key]==value,key..' differs') end
+    end
+end
+local file=assert(io.open('src/testdata/warrior_equipment.json'))
+local cases=json.decode(file:read('*a'));file:close()
+for _,case in ipairs(cases) do
+    assert(editor.loadSpec(case.input)~=false)
+    local spec=clone(editor.getCurrentSpecConfig())
+    compare(spec.combat_stats,case.expected_stats)
+    compare(spec.warrior,case.expected_warrior)
+    editor.loadSpec(spec)
+    compare(editor.getCurrentSpecConfig().combat_stats,case.expected_stats)
+    compare(editor.getCurrentSpecConfig().warrior,case.expected_warrior)
+end
+editor.loadSpec(cases[1].input)
+assert(editor.equipWarriorStarter('dual_wield'))
+compare(editor.getCurrentSpecConfig().combat_stats,cases[2].expected_stats)
+compare(editor.getCurrentSpecConfig().warrior,cases[2].expected_warrior)
+assert(editor.equipWarriorStarter('shield'))
+compare(editor.getCurrentSpecConfig().combat_stats,cases[3].expected_stats)
+compare(editor.getCurrentSpecConfig().warrior,cases[3].expected_warrior)
+assert(editor.setGear('off_hand',0))
+assert(not editor.getCurrentSpecConfig().warrior.shield)
+assert(editor.getCurrentSpecConfig().combat_stats.melee_block_chance==0)
+assert(editor.getCurrentSpecConfig().combat_stats.melee_block_value==0)
+assert(editor.setGear('main_hand',12784))
+assert(editor.getCurrentSpecConfig().warrior.main_hand.two_handed)
+local before=clone(editor.getCurrentSpecConfig())
+assert(not editor.setGear('off_hand',12602))
+compare(editor.getCurrentSpecConfig(),before)
+assert(not editor.setGear('main_hand',0))
+assert(not gear.validate({main_hand=12784,off_hand=12602},'warrior'))
+assert(not gear.validate({main_hand=17705,off_hand=17705},'warrior'))
+assert(not gear.validate({main_hand=12784},'warlock'))
+assert(not gear.validate({main_hand=13964},'warrior'))
+editor.clearGear()
+local cleared=editor.getCurrentSpecConfig()
+assert(not cleared.gear and not cleared.gear_base_warrior)
+near(cleared.combat_stats.max_health,4000)
+near(cleared.warrior.attack_power,700)
+print('Seven independent Warrior loadouts, weapon/shield swaps, invalid items, round trips and base restoration passed.')

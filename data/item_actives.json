@@ -1,0 +1,39 @@
+{
+  "ruleset": "Forever Greater Insignia v1; distinct from Classic class-specific insignias",
+  "source": "assets/db_inputs/wowhead_forever_gearplanner.txt",
+  "source_sha256": "72f8265d8954efc282efaf691a88bb065d6fe0159c8180b09d2c6b4dbc8e3dd6",
+  "effect_source": "https://www.wowhead.com/forever/item=274444/greater-insignia-of-the-horde",
+  "spell_id": 438273,
+  "items": [
+    {
+      "id": 274445,
+      "name": "Greater Insignia of the Alliance",
+      "slot": "trinket",
+      "all_classes": true,
+      "unique": true,
+      "unique_group": "pvp_control_break",
+      "stats": {},
+      "quality": 3,
+      "icon": "inv_jewelry_trinketpvp_01",
+      "url": "https://www.wowhead.com/forever/item=274445",
+      "effect_id": "forever_greater_insignia_v1",
+      "cooldown_seconds": 300.0,
+      "effect_note": "Use: removes modeled movement impairments and control. 300 sec cooldown; no ongoing immunity."
+    },
+    {
+      "id": 274444,
+      "name": "Greater Insignia of the Horde",
+      "slot": "trinket",
+      "all_classes": true,
+      "unique": true,
+      "unique_group": "pvp_control_break",
+      "stats": {},
+      "quality": 3,
+      "icon": "inv_jewelry_trinketpvp_02",
+      "url": "https://www.wowhead.com/forever/item=274444",
+      "effect_id": "forever_greater_insignia_v1",
+      "cooldown_seconds": 300.0,
+      "effect_note": "Use: removes modeled movement impairments and control. 300 sec cooldown; no ongoing immunity."
+    }
+  ]
+}

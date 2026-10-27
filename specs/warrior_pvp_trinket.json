@@ -1,0 +1,27 @@
+{
+  "name": "PvP Trinket Demo - Warrior",
+  "class": "warrior",
+  "race": "human",
+  "gear": {
+    "head": 16731,
+    "shoulder": 16733,
+    "chest": 16730,
+    "wrist": 16735,
+    "hands": 16737,
+    "waist": 16736,
+    "legs": 16732,
+    "feet": 16734,
+    "main_hand": 17705,
+    "off_hand": 12602,
+    "trinket2": 274445
+  },
+  "level": 60,
+  "trees": {
+    "Arms": {},
+    "Fury": {},
+    "Protection": {}
+  },
+  "automatic_actions": true,
+  "pet": "none",
+  "description": "Forever Greater Insignia with the compact Warrior shield starter. Empty talents. See ITEM_ACTIVES.md."
+}

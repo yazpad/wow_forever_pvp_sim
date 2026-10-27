@@ -18,6 +18,9 @@ const ActionWrite = enum { unchanged, owner, shared };
 // physics-only CC bookkeeping are never changed by an action. Geometry remains
 // shared because launch synchronization and Blink can move both positions.
 fn actionWrite(comptime name: []const u8, comptime has_priest: bool) ActionWrite {
+    if (std.mem.startsWith(u8, name, "item_id_")) return .unchanged;
+    if (std.mem.startsWith(u8, name, "item_cd_")) return .owner;
+    if (std.mem.startsWith(u8, name, "horror_timer_")) return .shared;
     if ((std.mem.startsWith(u8, name, "pet_rng_") or std.mem.startsWith(u8, name, "pet_outcome_"))) return .owner;
     if (std.mem.startsWith(u8, name, "pet_") or std.mem.startsWith(u8, name, "impact_") or std.mem.eql(u8, name, "is_active")) return .unchanged;
     if (std.mem.startsWith(u8, name, "talent_ranks_") or std.mem.startsWith(u8, name, "talent_flags_") or std.mem.startsWith(u8, name, "talent_extra_")) return .unchanged;
@@ -143,6 +146,9 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
         }
         pub fn setPriestTalentRanksB(self: *Self, encoded: u128) void {
             self.setWarlockTalentRanksB(encoded);
+        }
+        pub fn setPvpTrinket(self: *Self, comptime side: bool, id: u32) void {
+            inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| @memset(@field(pool.combat(), if (side) "item_id_a" else "item_id_b"), id);
         }
         pub fn setRace(self: *Self, comptime side: bool, race: @import("spec.zig").Race) void {
             inline for (.{ &self.arena, &self.scratch, &self.original }) |pool| {
@@ -429,6 +435,7 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 }
                 self.arena.extras[j * 16 ..][0..16].* = value;
             };
+            @import("item_actions.zig").reconcile(&self.arena, self.original.combat(), side_a, actions, ready_mask, if (side_a) b else a);
         }
         fn applyMaskedImpl(
             self: *Self,
@@ -521,6 +528,8 @@ pub fn Duel(comptime a: Spec, comptime b: Spec) type {
                 const y = @select(f32, rb, @as(V, self.scratch.extras[j * 16 ..][0..16].*), old);
                 self.arena.extras[j * 16 ..][0..16].* = if (j % 5 == 2) @max(@as(V, @splat(0)), old + (x - old) + (y - old)) else if (j < 5) @select(f32, y != old, y, x) else @select(f32, x != old, x, y);
             };
+            @import("item_actions.zig").reconcile(&self.arena, self.original.combat(), true, va, ra, b);
+            @import("item_actions.zig").reconcile(&self.arena, self.original.combat(), false, vb, rb, a);
         }
         pub fn tick(self: *Self, limit: u32) void {
             _ = self.arena.tickPhysics16WithEffects(0.01, 0, &self.warlock_effects_a, &self.warlock_effects_b);

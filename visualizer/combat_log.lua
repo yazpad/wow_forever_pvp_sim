@@ -40,6 +40,8 @@ function log.format(meta,ev)
         desc = "cast Blink"
     elseif ev.k == 14 then
         desc = "cast Counterspell"
+    elseif ev.k == 19 then
+        desc = "activated PvP Trinket"
     elseif ev.k == 18 then
         desc = string.format("Blackout stunned for %.2fs", (ev.a or 0))
     elseif ev.k == 17 then

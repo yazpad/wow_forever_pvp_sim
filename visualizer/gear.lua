@@ -10,6 +10,14 @@ local gear={slots={
 local file=io.open('data/vanilla_gear.json','r') or io.open('../data/vanilla_gear.json','r')
 assert(file,'Missing Vanilla gear catalog')
 gear.catalog=json.decode(file:read('*a'));file:close()
+local warriorFile=io.open('data/warrior_gear.json') or io.open('../data/warrior_gear.json')
+assert(warriorFile,'Missing Warrior gear catalog')
+gear.warriorCatalog=json.decode(warriorFile:read('*a'));warriorFile:close()
+for _,item in ipairs(gear.warriorCatalog.items) do gear.catalog.items[#gear.catalog.items+1]=item end
+local activesFile=io.open('data/item_actives.json') or io.open('../data/item_actives.json')
+assert(activesFile,'Missing item effect catalog')
+gear.activesCatalog=json.decode(activesFile:read('*a'));activesFile:close()
+for _,item in ipairs(gear.activesCatalog.items) do gear.catalog.items[#gear.catalog.items+1]=item end
 local items={}
 for _,item in ipairs(gear.catalog.items) do items[item.id]=item end
 function gear.item(id) return items[id] end
@@ -22,7 +30,8 @@ local function kind(slot) return slot:gsub('[12]$','') end
 function gear.choices(slot,class)
     local result={0}
     for _,item in ipairs(gear.catalog.items) do
-        if item.slot==kind(slot) and (not item.class or item.class==class) then result[#result+1]=item.id end
+        local matches=item.slot==kind(slot) or (slot=='off_hand' and item.off_hand_eligible)
+        if matches and (class~='warrior' or item.class=='warrior' or item.all_classes) and (not item.class or item.class==class) then result[#result+1]=item.id end
     end
     return result
 end
@@ -31,9 +40,9 @@ function gear.equip(loadout,slot,id,class)
     for _,candidate in ipairs(gear.choices(slot,class)) do if id==candidate then valid=true end end
     if not valid then return false,'Item cannot be equipped in this slot.' end
     local item=items[id]
-    if item and item.unique then
+    if item and (item.unique or item.unique_group) then
         for other,value in pairs(loadout) do
-            if other~=slot and value==id then return false,'This item is unique.' end
+            if other~=slot and (value==id or (item.unique_group and items[value] and items[value].unique_group==item.unique_group)) then return false,'This item effect is unique.' end
         end
     end
     loadout[slot]=id
@@ -42,11 +51,22 @@ function gear.equip(loadout,slot,id,class)
     return true
 end
 function gear.validate(loadout,class)
+    if type(loadout)~='table' then return nil,'Invalid equipment.' end
+    local known={};for _,slot in ipairs(gear.slots) do known[slot[1]]=true end
+    for slot,id in pairs(loadout) do
+        if not known[slot] then return nil,'Unknown equipment slot.' end
+        if type(id)~='number' or id<0 or id%1~=0 then return nil,'Invalid item ID.' end
+    end
+    local main=items[loadout.main_hand]
+    if main and main.two_hand and (loadout.off_hand or 0)~=0 then
+        return nil,'Two-hand weapon conflicts with off hand.'
+    end
     local result=gear.copy()
     for _,slot in ipairs(gear.slots) do
         local ok,err=gear.equip(result,slot[1],loadout[slot[1]] or 0,class)
         if not ok then return nil,err end
     end
+    if class=='warrior' and not (items[result.main_hand] and items[result.main_hand].weapon) and not gear.activeOnly(result) then return nil,'Equip a main-hand weapon first.' end
     return result
 end
 function gear.prebis(class)
@@ -72,14 +92,16 @@ function gear.totals(loadout)
     end
     return totals
 end
-function gear.resolve(loadout,class,base)
+function gear.resolve(loadout,class,base,reference)
     local t=gear.totals(loadout)
     local stats={};for key,value in pairs(base) do stats[key]=value end
     -- Gear adds to the simulator's compact unbuffed baseline. Level-60 PvP
     -- has 96% base spell hit and a 99% cap. Talent bonuses resolve in Zig.
     stats.spell_hit_chance=math.min(0.99,0.96+t.spell_hit/100)
-    stats.spell_crit_chance=math.min(1,(base.spell_crit_chance or 0)+t.spell_crit/100+t.intellect/(class=='warlock' and 60.6 or 59.5)/100)
+    local intellectCrit=reference and t.intellect*reference.crit_per_intellect or t.intellect/(class=='warlock' and 60.6 or 59.5)/100
+    stats.spell_crit_chance=math.min(1,(base.spell_crit_chance or 0)+t.spell_crit/100+intellectCrit)
     stats.armor_damage_reduction=1-(1-(base.armor_damage_reduction or 0))*(1-t.armor/(t.armor+400+85*60))
+    if reference then stats.armor_damage_reduction=(reference.armor+t.armor)/(reference.armor+t.armor+5500) end
     for _,school in ipairs({'shadow','fire','frost','arcane'}) do
         local key=school..'_resistance'
         stats[key]=(base[key] or 0)+(t[key] or 0)
@@ -92,12 +114,74 @@ function gear.resolve(loadout,class,base)
     stats.frost_power=(base.frost_power or 0)+t.spell_power+t.frost_power
     return stats,t
 end
+
+function gear.pvpItem(loadout)
+    for _,slot in ipairs({'trinket1','trinket2'}) do
+        local item=items[loadout and loadout[slot]]
+        if item and item.effect_id=='forever_greater_insignia_v1' then return item.id end
+    end
+end
+function gear.activeOnly(loadout)
+    if not gear.pvpItem(loadout) then return false end
+    for slot,id in pairs(loadout) do if id~=0 and slot~='trinket1' and slot~='trinket2' then return false end end
+    return true
+end
+function gear.warriorStarter(kind)
+    return gear.copy(assert(gear.warriorCatalog.starters[kind or 'two_hand'],'Unknown Warrior starter'))
+end
+function gear.resolveWarrior(loadout,base,baseConfig)
+    local valid,err=gear.validate(loadout,'warrior')
+    if not valid then return nil,err end
+    local warrior=require('warrior')
+    local config=warrior.copy(baseConfig)
+    local main=items[loadout.main_hand]
+    if not main and gear.activeOnly(loadout) then
+        local stats={};for key,value in pairs(base) do stats[key]=value end;stats.max_mana=1
+        return stats,config,gear.totals(loadout)
+    end
+    config.main_hand=warrior.copy({main_hand=main.weapon}).main_hand
+    config.off_hand=nil;config.shield=false
+    local block=0
+    local off=items[loadout.off_hand]
+    if off then
+        if off.weapon then config.off_hand=warrior.copy({main_hand=off.weapon}).main_hand
+        elseif off.shield_block then config.shield=true;block=off.shield_block
+        else return nil,'Invalid Warrior off hand.' end
+    end
+    local t=gear.totals(loadout)
+    local strength,agility=t.strength or 0,t.agility or 0
+    config.attack_power=config.attack_power+2*strength+(t.attack_power or 0)
+    config.crit=math.min(1,config.crit+agility*0.0005+(t.melee_crit or 0)/100)
+    config.white_hit=math.min(1,math.max(0,config.white_hit-(config.off_hand and 0.19 or 0)+(t.melee_hit or 0)/100))
+    config.special_hit=math.min(1,config.special_hit+(t.melee_hit or 0)/100)
+    local stats={};for key,value in pairs(base) do stats[key]=value end
+    stats.stamina=(base.stamina or 0)+t.stamina
+    stats.max_health=(base.max_health or 4000)+t.stamina*10
+    stats.max_mana=1
+    local reduction=base.armor_damage_reduction or 0
+    if reduction<1 then
+        local armor=5500*reduction/(1-reduction)+t.armor+2*agility
+        stats.armor_damage_reduction=armor/(armor+5500)
+    end
+    stats.melee_dodge_chance=(base.melee_dodge_chance or 0)+(base.melee_avoidance_chance or 0)+agility*0.0005
+    stats.melee_avoidance_chance=0
+    stats.melee_block_chance=config.shield and math.max(0.05,base.melee_block_chance or 0) or 0
+    stats.melee_block_value=config.shield and ((base.melee_block_value or 0)+block+math.max(0,strength*0.05-1)) or 0
+    for _,school in ipairs({'shadow','fire','frost','arcane'}) do
+        local key=school..'_resistance';stats[key]=(base[key] or 0)+(t[key] or 0)
+    end
+    local ok,why=warrior.validate(config);if not ok then return nil,why end
+    return stats,config,t
+end
+
 function gear.detail(id)
     local item=items[id]
     if not item then return 'Empty slot' end
     local lines={item.name}
     local keys={};for key in pairs(item.stats) do keys[#keys+1]=key end;table.sort(keys)
     for _,key in ipairs(keys) do lines[#lines+1]='+'..item.stats[key]..' '..key:gsub('_',' ') end
+    if item.weapon then lines[#lines+1]=string.format('%g-%g damage / %.2f sec',item.weapon.min,item.weapon.max,item.weapon.speed) end
+    if item.shield_block then lines[#lines+1]=item.shield_block..' shield block value' end
     if item.effect_note then lines[#lines+1]=item.effect_note end
     lines[#lines+1]='Wowhead Classic item '..item.id
     return table.concat(lines,'\n')

@@ -613,6 +613,10 @@ pub fn computePriors(comptime spec: Spec, comptime side: bool, d: anytype, lane:
     for (0..choices.len) |i| {
         const action = choices.items[i];
         var weight: f32 = 1.0; // base weight for legal action
+        if (action.ability == @import("item_actions.zig").action_id) {
+            p[i] = 8;
+            continue;
+        }
 
         if (spec == .warlock) {
             switch (action.ability) {

@@ -56,6 +56,7 @@ pub const Weapon = struct {
 pub const Config = struct {
     main_hand: Weapon = .{},
     off_hand: ?Weapon = null,
+    shield: bool = false,
     attack_power: f32 = 700,
     white_hit: f32 = 0.95,
     special_hit: f32 = 0.95,
@@ -69,6 +70,7 @@ pub const Config = struct {
 
     pub fn validate(self: Config) !void {
         try self.main_hand.validate();
+        if (self.shield and (self.main_hand.two_handed or self.off_hand != null)) return error.InvalidWarriorWeapon;
         if (self.off_hand) |weapon| {
             try weapon.validate();
             if (self.main_hand.two_handed or weapon.two_handed) return error.InvalidWarriorWeapon;

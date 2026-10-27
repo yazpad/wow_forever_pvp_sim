@@ -1,0 +1,26 @@
+{
+  "name": "Warrior Item Starter - Shield",
+  "class": "warrior",
+  "race": "undead",
+  "gear": {
+    "head": 16731,
+    "shoulder": 16733,
+    "chest": 16730,
+    "wrist": 16735,
+    "hands": 16737,
+    "waist": 16736,
+    "legs": 16732,
+    "feet": 16734,
+    "main_hand": 17705,
+    "off_hand": 12602
+  },
+  "level": 60,
+  "trees": {
+    "Arms": {},
+    "Fury": {},
+    "Protection": {}
+  },
+  "automatic_actions": true,
+  "pet": "none",
+  "description": "Classic item starter with a compact baseline. No item procs, set bonuses or defense scaling. See WARRIOR_GEAR.md."
+}

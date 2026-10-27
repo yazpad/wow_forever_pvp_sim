@@ -1,0 +1,31 @@
+{
+  "class": "frost_mage",
+  "race": "human",
+  "name": "PvP Trinket Demo - frost_mage",
+  "description": "Forever Greater Insignia on the existing compact caster baseline. Empty talents; select trinket actions automatically. See ITEM_ACTIVES.md.",
+  "gear": {
+    "waist": 11662,
+    "main_hand": 13964,
+    "neck": 12103,
+    "back": 11623,
+    "hands": 13253,
+    "wrist": 18497,
+    "off_hand": 11904,
+    "trinket1": 12930,
+    "head": 18727,
+    "feet": 11822,
+    "chest": 14152,
+    "ring2": 942,
+    "trinket2": 274445,
+    "legs": 13170,
+    "ring1": 942,
+    "shoulder": 11782,
+    "wand": 13938
+  },
+  "automatic_actions": true,
+  "trees": {
+    "Arcane": {},
+    "Fire": {},
+    "Frost": {}
+  }
+}

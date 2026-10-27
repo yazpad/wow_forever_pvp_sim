@@ -61,6 +61,8 @@ pub const Options = struct {
     name_b: ?[]const u8 = null,
     spec_id_a: ?[]const u8 = null,
     spec_id_b: ?[]const u8 = null,
+    pvp_trinket_a: u32 = 0,
+    pvp_trinket_b: u32 = 0,
     race_a: @import("spec.zig").Race = .human,
     race_b: @import("spec.zig").Race = .human,
     combat_stats_a: @import("spell_resolution.zig").Stats = .{},
@@ -196,6 +198,7 @@ pub fn finalize(o: *Options) !void {
             o.a = cfg_a.class;
             o.combat_stats_a = cfg_a.combat_stats;
             o.race_a = cfg_a.race;
+            o.pvp_trinket_a = cfg_a.pvp_trinket;
             o.warlock_talents_a = cfg_a.warlock_talents;
             o.priest_talents_a = cfg_a.priest_talents;
             o.warrior_a = cfg_a.warrior;
@@ -209,6 +212,7 @@ pub fn finalize(o: *Options) !void {
             o.b = cfg_b.class;
             o.combat_stats_b = cfg_b.combat_stats;
             o.race_b = cfg_b.race;
+            o.pvp_trinket_b = cfg_b.pvp_trinket;
             o.warlock_talents_b = cfg_b.warlock_talents;
             o.priest_talents_b = cfg_b.priest_talents;
             o.warrior_b = cfg_b.warrior;
@@ -221,8 +225,8 @@ pub fn finalize(o: *Options) !void {
     // Persist resolved defaults in search metadata so saved runs are explicit.
     o.pet_a = o.pet_a orelse (if (o.a == .warlock) pets.Kind.imp else pets.Kind.none);
     o.pet_b = o.pet_b orelse (if (o.b == .warlock) pets.Kind.imp else pets.Kind.none);
-    o.action_mask_a = spec_mod.filterActionCapabilities(o.a, o.action_mask_a, o.warlock_talents_a, o.priest_talents_a, o.race_a, o.pet_a.?);
-    o.action_mask_b = spec_mod.filterActionCapabilities(o.b, o.action_mask_b, o.warlock_talents_b, o.priest_talents_b, o.race_b, o.pet_b.?);
+    o.action_mask_a = spec_mod.filterActionCapabilities(o.a, o.action_mask_a, o.warlock_talents_a, o.priest_talents_a, o.race_a, o.pet_a.?, o.pvp_trinket_a);
+    o.action_mask_b = spec_mod.filterActionCapabilities(o.b, o.action_mask_b, o.warlock_talents_b, o.priest_talents_b, o.race_b, o.pet_b.?, o.pvp_trinket_b);
     if ((o.a != .warlock and o.pet_a.? != .none) or (o.b != .warlock and o.pet_b.? != .none)) return error.PetRequiresWarlock;
     // Resummoning the sacrificed demon cancels the effect even with Demonic Pact.
     if (o.warlock_talents_a.demonic_sacrifice > 0 and o.warlock_talents_a.demonic_pact > 0 and @as(u8, @intCast(@intFromEnum(o.pet_a.?))) == o.warlock_talents_a.demonic_sacrifice_pet) o.warlock_talents_a.demonic_sacrifice = 0;
@@ -282,7 +286,9 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     pets.set(state, true, 0, active_pet_a);
     pets.set(state, false, 0, active_pet_b);
     d.setRace(true, o.race_a);
+    d.setPvpTrinket(true, o.pvp_trinket_a);
     d.setRace(false, o.race_b);
+    d.setPvpTrinket(false, o.pvp_trinket_b);
     try d.setCombatStats(true, o.combat_stats_a);
     try d.setCombatStats(false, o.combat_stats_b);
     state.mana_a[0] = if (a == .warrior) 0 else state.max_mana_a[0];
@@ -337,7 +343,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     defer metadata.close();
     var buffered = std.io.bufferedWriter(metadata.writer());
     const writer = buffered.writer();
-    try writer.writeAll("{\"label\":\"search-generated; not certified optimal\",\"simulator_version\":\"mcts-simultaneous-v2-pets\",\"options\":");
+    try writer.writeAll("{\"label\":\"search-generated; not certified optimal\",\"simulator_version\":\"mcts-simultaneous-v3-items\",\"options\":");
     try std.json.stringify(o, .{}, writer);
     try writer.writeAll(",\"simulator_fingerprint\":");
     try std.json.stringify(@import("simulator_identity_generated.zig").fingerprint, .{}, writer);
@@ -358,6 +364,8 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     };
     var traj = try recorder.MatchTrajectoryFor(a == .warrior or b == .warrior).init(allocator, display_a, display_b, 0, 0);
     defer traj.deinit();
+    traj.pvp_trinket_a = o.pvp_trinket_a;
+    traj.pvp_trinket_b = o.pvp_trinket_b;
     traj.initial_positions = .{ state.pos_x_a[0], state.pos_y_a[0], state.pos_x_b[0], state.pos_y_b[0] };
     traj.max_health_a = state.max_health_a[0];
     traj.max_health_b = state.max_health_b[0];
@@ -381,6 +389,7 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
     var elapsed: f64 = 0;
     var rounds: usize = 0;
     var cancelled = false;
+    var old_item_cd: [2]f32 = .{ 0, 0 };
     var old_fear_a: f32 = state.fear_timer_a[0];
     var old_fear_b: f32 = state.fear_timer_b[0];
     var old_horror_a: f32 = state.horror_timer_a[0];
@@ -727,8 +736,14 @@ pub fn run(comptime a: Spec, comptime b: Spec, mut_options: Options) !void {
         const wb = recorder.warriorTelemetry(&d.arena, b, false);
         const pa = recorder.priestAuraTelemetry(state, a, true);
         const pb = recorder.priestAuraTelemetry(state, b, false);
+        for ([_]f32{ state.item_cd_a[0], state.item_cd_b[0] }, 0..) |cd, side| {
+            if (cd > old_item_cd[side]) try traj.events.append(.{ .time_s = time_s, .source = @intCast(side), .target = @intCast(side), .kind = .ItemActivated, .spell_id = @import("item_actions.zig").action_id, .amount = 0 });
+            old_item_cd[side] = cd;
+        }
         try traj.frames.append(.{
             .warrior = if (a == .warrior or b == .warrior) .{ wa[0], wb[0], wa[1], wb[1], wa[2], wb[2], wa[3], wb[3], wa[4], wb[4], wa[5], wb[5], wa[6], wb[6], wa[7], wb[7], wa[8], wb[8], wa[9], wb[9], wa[10], wb[10], wa[11], wb[11], wa[12], wb[12], wa[13], wb[13], wa[14], wb[14], wa[15], wb[15], wa[16], wb[16], wa[17], wb[17], wa[18], wb[18] } else {},
+            .item_cd_a = state.item_cd_a[0],
+            .item_cd_b = state.item_cd_b[0],
             .priest_auras = .{ pa[0], pb[0], pa[1], pb[1], pa[2], pb[2], pa[3], pb[3], pa[4], pb[4] },
             .projectiles = flight_after,
             .pets = pets.telemetry(state, 0),
